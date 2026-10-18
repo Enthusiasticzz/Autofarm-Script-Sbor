@@ -69,6 +69,10 @@ return {
         local EXP_LOSS_TIMEOUT = 15
         --// Walking to a stop this long means it cannot be reached.
         local WALK_TIMEOUT = 120
+        --// The walker found no way through (no navmesh, a sealed room). It is
+        --// given this long, walking straight at the stop as a last resort,
+        --// before the stop is skipped instead of standing there for minutes.
+        local NO_PATH_TIMEOUT = 15
         --// The status line is rewritten at most this often.
         local STATUS_INTERVAL = 0.5
         --// Longest a stop name may be, for the list.
@@ -95,6 +99,8 @@ return {
                 SkipExpCheck = true,
                 ExpDeadline = 0,
                 RecoveredAt = nil,
+                --// When the walker first reported that it has no way there.
+                NoPathSince = nil,
                 --// Per visit, for the status line.
                 Resets = 0,
             },
@@ -346,6 +352,7 @@ return {
             S.SeenTarget = false
             S.KillAt = nil
             S.Teleported = false
+            S.NoPathSince = nil
             S.Resets = 0
             S.SkipExpCheck = true
             AICCombat.S.ClosestTarget = nil
@@ -360,6 +367,7 @@ return {
             S.FightStart = nil
             S.WalkStart = nil
             S.WaitUntil = nil
+            S.NoPathSince = nil
 
             if #Stops == 0 then
                 S.Phase = "Idle"
@@ -631,7 +639,23 @@ return {
             end
 
             SetStatus(string.format("STOP %d/%d  WALKING", S.Index, #GetStops()))
-            Movement:MoveTo(Stop.Position)
+
+            --// The walker paths when the straight line is blocked (navmesh,
+            --// holes, deadzones). When it cannot find a way at all, walk
+            --// straight at the spot for a while, then skip the stop rather
+            --// than stand here until the much longer WALK_TIMEOUT.
+            if Movement:MoveTo(Stop.Position) == "failed" then
+                S.NoPathSince = S.NoPathSince or Now
+                Humanoid:MoveTo(Stop.Position)
+
+                if Now - S.NoPathSince >= NO_PATH_TIMEOUT then
+                    Say("Boss Route", "No way to stop #" .. tostring(S.Index) .. "; skipping", 4)
+                    S.NoPathSince = nil
+                    Advance(Now)
+                end
+            else
+                S.NoPathSince = nil
+            end
         end
 
         local function FightStep(Stop, Now)

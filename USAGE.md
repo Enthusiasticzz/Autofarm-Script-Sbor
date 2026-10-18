@@ -1,6 +1,6 @@
 # AIC usage guide
 
-How to use Automated Industry Complex (AutoFarmV3, `v3.31`) once it is loaded. The
+How to use Automated Industry Complex (AutoFarmV3, `v3.32`) once it is loaded. The
 loadstring and what the loader fetches are in [README.md](README.md); this file is
 about the features and about why the farm sometimes appears to do nothing.
 
@@ -438,8 +438,9 @@ teleport) to a boss, fight it, and reset on a timer instead of dying to it.
 #### What a stop does
 
 1. Teleports to its waypoint (when one is set) and waits 2 s, then walks to the
-   stop with the same walker mining and smithing use. A stop it cannot reach in
-   120 s is skipped.
+   stop with the same walker mining and smithing use (see *Walking to a stop*
+   below). A stop the walker finds no way to after 15 s, or still has not
+   reached after 120 s, is skipped with a notice.
 2. Waits **Wait At Spot** seconds.
 3. Fights the nearest living mob inside **Engage Radius** that matches **Boss
    Names** (anything when empty), drawing the weapon first and using the same
@@ -453,6 +454,29 @@ teleport) to a boss, fight it, and reset on a timer instead of dying to it.
    most, so a game that applies the loss differently cannot stall the route).
 6. Then the next stop begins. Reaching the end loops, or finishes when **Loop
    Route** is off.
+
+#### Walking to a stop
+
+The walk is not a straight line: `WalkController` tests a body-sized box along
+the direct line every 0.1 s, and while that line is clear it simply walks it
+(holes in the floor are jumped when they are narrow enough). As soon as a wall,
+a too-wide gap, a climb or a deadzone blocks the line, it asks Roblox's
+`PathfindingService` for a path with the character's own radius and height,
+computed off the frame so a slow solve never stutters the game. Path waypoints
+that call for a jump are only jumped when something is actually in the way or
+the character has stalled. When no path exists it detours — probes out 30°, 60°,
+90°, 120° and 150° to either side, walks a clear one and retries the line — up
+to four times, then hops the obstacle if it is low enough. A stop it still
+cannot reach is walked at directly for 15 s as a last try and then skipped with
+a notice.
+
+Two limits worth knowing: pathfinding needs the game to have a navmesh where
+the character is standing — if it does not, only the direct line, hole jumps,
+low hops and detours are available; and a stop is reached when the character is
+within the place's **Waypoint Reach Distance** (5 studs by default) of the saved
+spot. That is why a **Teleport Waypoint #** near the boss is the reliable
+option: the character warps most of the way and only has to walk the last short
+leg.
 
 Notes:
 

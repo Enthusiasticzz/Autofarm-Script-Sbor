@@ -2,7 +2,7 @@
 
 Status: `[ ]` not started · `[x]` done or fixed (written, not yet verified in-game)
 
-All 100 items are complete — nothing here is pending. This file is the record of
+All 101 items are complete — nothing here is pending. This file is the record of
 what was asked for and what shipped, oldest work first: `## To Do` lists requested
 features, `## To Fix` lists reported bugs. Every item names the version it shipped
 in, and the note under it explains what actually changed and which tuning constants
@@ -451,6 +451,12 @@ were added.
 > - New save key `z` for the toggle, and `BOSS_ROUTE_LOOP` in `SaveConfig.Settings`; `USAGE.md` has a **Bosses tab** section, `UI/Descriptions.lua` describes every new control, and `README.md` lists the module
 > - `.gitignore` now keeps the local `Backup-Copy/` and `Others-code/` folders out of the tree
 > - Not tested in game: the reset timing (10 s by default), the EXP-loss wait and the boss-name matching need a run against a real boss
+
+### [x] Boss Route: a stop the walker cannot find a way to should not strand the route
+
+> **Done (v3.32):** `Features/BossNavigator.lua` reads the walker's result now instead of calling `MoveTo` and hoping
+> - When `WalkController` reports `failed` (no navmesh, no allowed path, every detour refused) the character walks straight at the stop as a last resort and the stop is skipped with a notice after 15 s (`NO_PATH_TIMEOUT`) instead of standing there until the 120 s `WALK_TIMEOUT`
+> - While the walker is still working (reported `moving` or `waiting` while a path solves) nothing changes; `USAGE.md` now has a **Walking to a stop** section describing the direct line, pathfinding, hole jumps, detours and the navmesh requirement
 
 ## To Fix
 
