@@ -1836,6 +1836,16 @@ return {
                     S.Teleported = true
                     S.PromptInteractAt = nil
                     S.TeleportFrom = RootPart.Position
+                    --// Off before the teleport, not on landing: waiting to
+                    --// mute afterwards left a frame or two where a press
+                    --// could still go out. Only the landing press below is
+                    --// let through (Force), because that is what fires the
+                    --// prompt the stop saved.
+                    S.InteractSuppressed = true
+
+                    if Runtime.MuteInteract then
+                        Runtime:MuteInteract(PROMPT_INTERACT_MUTE)
+                    end
 
                     if TeleportToPoint(PromptPosition) then
                         S.WaitUntil = Now + PROMPT_WAIT
@@ -1855,15 +1865,16 @@ return {
             if not S.Teleported and (Stop.Waypoint or 0) > 0 then
                 S.Teleported = true
                 S.TeleportFrom = RootPart.Position
+                --// A waypoint can land on a prompt, and the walk after it can
+                --// pass the same one again. Off for the visit, set before the
+                --// request goes out so no press can beat the mute.
+                S.InteractSuppressed = true
+
+                if Runtime.MuteInteract then
+                    Runtime:MuteInteract(PROMPT_INTERACT_MUTE)
+                end
 
                 if TeleportToWaypoint(Stop.Waypoint) then
-                    --// The waypoint can sit on a prompt too: stay off Interact
-                    --// for a moment after landing, then the walk may use the
-                    --// prompts it passes again.
-                    if Runtime.MuteInteract then
-                        Runtime:MuteInteract(PROMPT_INTERACT_MUTE)
-                    end
-
                     S.WaitUntil = Now + TELEPORT_WAIT
                     SetStatus(string.format("STOP %d/%d  TELEPORT WP%d", S.Index, #GetStops(), Stop.Waypoint))
                     return
@@ -1879,12 +1890,6 @@ return {
             --// actually fires before the walk to the stop starts.
             if S.PromptUsed and not S.PromptInteractAt then
                 S.PromptInteractAt = Now
-                S.InteractSuppressed = true
-
-                if Runtime.MuteInteract then
-                    Runtime:MuteInteract(PROMPT_INTERACT_MUTE)
-                end
-
                 PressInteract(Now, true)
             end
 

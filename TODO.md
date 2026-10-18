@@ -600,6 +600,13 @@ were added.
 > - Stored as `Wait` on the stop, clamped **0–600** in `NormalizeBossStops` and in the box; reset per visit (`SpotWaitUntil`) so a stop that loops waits every time it arrives.
 > - Harness: 136 checks (was 130). New ones assert the box exists, a new stop's wait is 0 with the box showing `0`, and a stop set to 2 s neither attacks nor leaves Approach until the wait is over, then fights. Mutations: ignoring the wait fails two checks, a 10 s default fails two.
 
+### [x] Boss Route: Interact sometimes still pressed after a teleport
+
+> **Done (v3.50):** `Features/BossNavigator.lua`, Boss Route only
+> - The mute was set **on landing**, so a press could still go out in the frames between the CFrame move and the mute. It is now set **before the teleport request** (prompt and waypoint), so nothing presses while it moves; the prompt stop's single landing press stays, as that is what fires the saved prompt.
+> - A **waypoint** teleport now turns the walk's presses off for the whole visit too, not just 10 s: a waypoint can sit on a prompt and the walk after it can pass the same one again. Stops that walk all the way (no teleport) still press every 0.5 s on the path, so doors on a recorded route keep working.
+> - Harness: 138 checks (was 136). New one: a waypoint stop teleports (including the one retry) and never presses Interact during the visit. Mutations: leaving the flag off for a waypoint visit fails one check; a 10-second-only mute fails one; removing the guard fails two.
+
 ## To Fix
 
 ### [x] Waypoints Looped & Paired Farmzone/Waypoint/Targets: walking back to waypoints that are not paired
