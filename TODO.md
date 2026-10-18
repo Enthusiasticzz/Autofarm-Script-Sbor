@@ -467,6 +467,15 @@ were added.
 > - **Reset**: **Reset Below HP %** is removed from the storage, the UI and the fight. A new **Reset After Kill** toggle (on for a new stop) resets once the boss is down so the next stop is travelled to from spawn. **Reset After (s)** stays only as a fight timeout and now defaults to 0 (fight until the boss is down); **Respawn Wait (s)** is relabelled **Wait After Reset (s)** — it is the pause after that reset, not a fight timer.
 > - Older saves migrate: `ResetBelow` is dropped, and a stop saved before `ResetAfterKill` existed (which always carried the old 10 s default timeout) becomes **Reset After Kill on**, **Reset After 0** — the run it had before, only resetting after the fight instead of mid-fight. An intentionally typed timeout is edited in the row as before.
 
+### [x] Boss Route: walking straight into buildings, no weapon or attack at the stop, and the refresh button
+
+> **Done (v3.34):** three fixes to `Features/BossNavigator.lua`
+> - **No navmesh**: the straight-line fallback is gone. When `PathfindingService` returns no path the walk is **steered**: probe rays pick a heading, and a blocked way to the stop is walked *along* the surface the ray hit (about 2.5 studs off it) on a side that is chosen once and kept. Wall following lasts until the straight line to the stop is clear **40 studs** ahead — a 6-stud look-ahead kept calling the way clear with the building still in it, which turned the character back into the same corner. Every heading is checked for body width and for ground (no holes, no ledges); a heading is held up to 1.2 s so the character walks a stretch instead of re-aiming every frame.
+> - **No sword, no attacks**: `FindTarget` ended with `AICCombat.IsCombatTargetValid`, which also demands the entity be on the **Enemy Priority** list and within Auto Farm's engage range. A boss named on the stop was found and then discarded, so the fight never started. The stop now validates its own target (a living model with a Humanoid and a root, in `workspace`); Enemy Priority and farm zones are irrelevant to a boss route.
+> - **Refresh button**: **Refresh Nearby Bosses** is created directly after the **Add Boss Name** picker, so it sits under it (the picker used to be rebuilt below the button). The picker build was moved out of `RefreshBossRoutePickers`, which had been creating it at the top of the section.
+> - The stop is given up on **progress**, not on the solver: no approach for 20 s skips it with a notice (was 15 s of "no path"), and the 120 s cap stays. `USAGE.md` has the rewritten **Walking to a stop** section.
+> - Harness: 42 checks, including an end-to-end simulated walk around a wall (the character can only reach the stop by going round it), steering versus a wall, the attack being issued at the stop, and the button's order under the picker. Verified by mutation: with the wall slide removed the wall walk fails, and with the priority validator restored the attack checks fail.
+
 ## To Fix
 
 ### [x] Waypoints Looped & Paired Farmzone/Waypoint/Targets: walking back to waypoints that are not paired

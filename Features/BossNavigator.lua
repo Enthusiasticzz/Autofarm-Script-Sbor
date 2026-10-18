@@ -18,11 +18,13 @@
 --
 -- The route loops unless Loop Route is off; then it plays once and switches
 -- itself off. Travel is a PathfindingService path followed waypoint by
--- waypoint, not the mining walker's detour probes: that walker is built to
--- creep around an ore on a straight line, and using it for boss travel made
--- the character pace backwards and sideways. The fight uses the same combat
--- inputs as Auto Farm. Auto Farm hands this module the frame while it is on,
--- with Auto Farm on or off.
+-- waypoint. The path sidesteps obstacles; the mining walker's detour probes
+-- did not, which made the character pace backwards and sideways. Where the
+-- game has no navmesh the solver fails, and driving at the stop in a straight
+-- line ran into buildings; that case now uses a probe-ray heading that walks
+-- round walls instead. The fight uses the same combat inputs as Auto Farm.
+-- Auto Farm hands this module the frame while it is on, with Auto Farm on or
+-- off.
 return {
     Name = "BossNavigator",
     IsFeature = true,
@@ -41,6 +43,7 @@ return {
         local Player = Context.Player
         local Replicated = Context.Services.Replicated
         local PathfindingService = Context.Services.PathfindingService
+        local Players = Context.Services.Players
         local AICCombatUtils = Context.AICCombatUtils
         local CONFIG = Context.CONFIG
         local FeatureState = Context.Feature
@@ -72,10 +75,10 @@ return {
         local EXP_LOSS_TIMEOUT = 15
         --// Walking to a stop this long means it cannot be reached.
         local WALK_TIMEOUT = 120
-        --// The walker found no way through (no navmesh, a sealed room). It is
-        --// given this long, walking straight at the stop as a last resort,
-        --// before the stop is skipped instead of standing there for minutes.
-        local NO_PATH_TIMEOUT = 15
+        --// No progress toward the stop for this long (no navmesh, a sealed
+        --// room, a wall the steering keeps sliding along): skip it instead of
+        --// standing there until WALK_TIMEOUT.
+        local NO_PROGRESS_TIMEOUT = 20
         --// Path following. A path is solved off the frame and its waypoints are
         --// walked in order; it is solved again only when the destination has
         --// moved, the path is old, or the character is stuck, so the character
@@ -90,6 +93,29 @@ return {
         --// when less than this many studs were covered in that window.
         local STUCK_SAMPLE = 0.5
         local STUCK_DISTANCE = 0.75
+        --// Steering, for games where PathfindingService has no navmesh. The
+        --// heading is picked from rays fanned around the goal direction and
+        --// kept while it stays clear, so a wall is followed instead of the
+        --// character running into it and turning every frame.
+        local STEER_PROBE = 6
+        local STEER_SHORT_PROBE = 2.5
+        local STEER_STEP = 5
+        local STEER_SAMPLE = 0.15
+        --// Longest a heading is held before it is looked at again, so walking
+        --// along a wall cannot turn into walking away from the stop forever.
+        local STEER_HOLD = 1.2
+        --// How far from a wall the slide tries to keep the character.
+        local STEER_WALL_STANDOFF = 2.5
+        --// How far ahead the straight way to the stop is checked before a wall
+        --// is considered gone. Six studs said "clear" with the building still
+        --// in the way, so the character turned into it again and sawed.
+        local STEER_GOAL_PROBE = 40
+        local STEER_BACKOFF = 0.7
+        local STEER_ANGLES = { 0, 30, -30, 60, -60, 90, -90, 120, -120, 150, -150 }
+        local STEER_RAY_HEIGHTS = { 1.2, 3.5 }
+        local STEER_RAY_OFFSETS = { -0.9, 0, 0.9 }
+        --// How far below the feet a step may land and still be taken.
+        local STEER_STEP_DOWN = 7
         --// How far from the character a mob name is offered in the picker.
         local NAME_SCAN_RADIUS = 300
         --// The status line is rewritten at most this often.
@@ -118,8 +144,11 @@ return {
                 SkipExpCheck = true,
                 ExpDeadline = 0,
                 RecoveredAt = nil,
-                --// When the walker first reported that it has no way there.
-                NoPathSince = nil,
+                --// Closest the character has been to the stop this visit, and
+                --// when it was last closer than before. A stop the character
+                --// stops approaching is the only unreachable stop.
+                BestDistance = nil,
+                LastProgressAt = nil,
                 --// Per visit, for the status line.
                 Resets = 0,
             },
@@ -271,10 +300,363 @@ return {
             end)
         end
 
-        --// "moving", "waiting" (a path is being solved), "failed" (no path:
-        --// walk straight at the destination while the solver retries) or
-        --// "done" at the destination. No detour probes: those are what made
-        --// boss travel pace backwards and sideways.
+        ------------------------------------------------------------------------
+        --// Steering: walking round walls where the game has no navmesh
+        ------------------------------------------------------------------------
+
+        local Steer = {
+            Direction = nil,
+            Params = nil,
+            Key = nil,
+            DecidedAt = 0,
+            ChosenAt = 0,
+            Side = 0,
+            BackOffPoint = nil,
+            BackOffUntil = 0,
+            NoHeadingAt = nil,
+            Sliding = false,
+        }
+
+        local function RotateFlat(Direction, Degrees)
+            local Radians = math.rad(Degrees)
+            local Cos, Sin = math.cos(Radians), math.sin(Radians)
+
+            return Vector3.new(
+                Direction.X * Cos - Direction.Z * Sin,
+                0,
+                Direction.X * Sin + Direction.Z * Cos
+            )
+        end
+
+        --// Raycast parameters that ignore the character, the other players'
+        --// characters and the mobs: a mob standing in the way is not a wall.
+        local function GetProbeParams(Character)
+            if not Character then
+                return nil
+            end
+
+            if Steer.Params and Steer.Key == Character then
+                return Steer.Params
+            end
+
+            local Filter = { Character }
+            local MobFolder = workspace:FindFirstChild("Mobs")
+
+            if MobFolder then
+                table.insert(Filter, MobFolder)
+            end
+
+            if Players then
+                for _, Other in ipairs(Players:GetPlayers()) do
+                    if Other.Character and Other.Character ~= Character then
+                        table.insert(Filter, Other.Character)
+                    end
+                end
+            end
+
+            if AICCombatUtils.S and AICCombatUtils.S.DebugFolder then
+                table.insert(Filter, AICCombatUtils.S.DebugFolder)
+            end
+
+            local Params = RaycastParams.new()
+            Params.FilterType = Enum.RaycastFilterType.Exclude
+            Params.FilterDescendantsInstances = Filter
+            Params.IgnoreWater = true
+
+            Steer.Params = Params
+            Steer.Key = Character
+
+            return Params
+        end
+
+        --// Is Direction walkable? One centre ray carries the look-ahead; the
+        --// side rays are body width but only a short way ahead, so walking
+        --// parallel to a wall is not rejected by a ray grazing it.
+        local function IsDirectionClear(Origin, Direction, Distance, Params)
+            if workspace:Raycast(Origin + Vector3.new(0, 2.2, 0), Direction * Distance, Params) then
+                return false
+            end
+
+            local Side = Vector3.new(-Direction.Z, 0, Direction.X)
+            local Width = math.min(Distance, STEER_SHORT_PROBE)
+
+            for _, Height in ipairs(STEER_RAY_HEIGHTS) do
+                for _, Offset in ipairs(STEER_RAY_OFFSETS) do
+                    local Start = Origin + Vector3.new(0, Height, 0) + Side * Offset
+
+                    if workspace:Raycast(Start, Direction * Width, Params) then
+                        return false
+                    end
+                end
+            end
+
+            return true
+        end
+
+        --// A step has to land on ground at about the character's height: no
+        --// hole to fall into and no ledge to climb.
+        local function HasStepGround(Point, FeetY, Params)
+            local Hit = workspace:Raycast(Point + Vector3.new(0, 4, 0), Vector3.new(0, -16, 0), Params)
+
+            if not Hit or Hit.Material == Enum.Material.Water then
+                return false
+            end
+
+            return math.abs(Hit.Position.Y - FeetY) <= STEER_STEP_DOWN
+        end
+
+        --// The clearest heading that still makes progress toward the stop:
+        --// straight first, then widening to either side. This handles props and
+        --// doorways; a wall is walked along instead (ChooseSlide).
+        local function ChooseHeading(Origin, Destination, Params, Distance)
+            local Offset = Destination - Origin
+            local Flat = Vector3.new(Offset.X, 0, Offset.Z)
+
+            if Flat.Magnitude <= 0.01 then
+                return nil
+            end
+
+            local Forward = Flat.Unit
+            local Best, BestScore = nil, -math.huge
+
+            for _, Angle in ipairs(STEER_ANGLES) do
+                local Direction = RotateFlat(Forward, Angle)
+
+                if IsDirectionClear(Origin, Direction, Distance, Params)
+                    and HasStepGround(Origin + Direction * Distance, Origin.Y, Params)
+                then
+                    local Score = math.cos(math.rad(Angle)) - math.abs(Angle) / 180 * 0.5
+
+                    if Score > BestScore then
+                        Best, BestScore = Direction, Score
+                    end
+
+                    if Angle == 0 then
+                        break
+                    end
+                end
+            end
+
+            if not Best then
+                return nil
+            end
+
+            return Best
+        end
+
+        --// Walking along a wall. The ray toward the stop gives the surface
+        --// normal; the heading runs across it, leaning toward or away from the
+        --// wall to hold roughly STEER_WALL_STANDOFF, and the side it is
+        --// followed on is picked once and kept until the way opens. A fan of
+        --// fixed angles cannot do this: against a long wall it turns away in
+        --// 30° steps and then flips to the other side, which is the
+        --// side-to-side pacing this replaces.
+        local function ChooseSlide(Origin, Destination, Params)
+            local Offset = Destination - Origin
+            local Flat = Vector3.new(Offset.X, 0, Offset.Z)
+
+            if Flat.Magnitude <= 0.01 then
+                return nil
+            end
+
+            local Forward = Flat.Unit
+            local Reach = math.min(Flat.Magnitude, STEER_GOAL_PROBE)
+            local Hit = workspace:Raycast(Origin + Vector3.new(0, 2.2, 0), Forward * Reach, Params)
+
+            if not Hit then
+                return nil
+            end
+
+            local Normal = Vector3.new(Hit.Normal.X, 0, Hit.Normal.Z)
+
+            if Normal.Magnitude <= 0.01 then
+                Normal = -Forward
+            else
+                Normal = Normal.Unit
+            end
+
+            --// One consistent way round the surface: 90° from its normal.
+            local Tangent = Vector3.new(-Normal.Z, 0, Normal.X)
+
+            if Tangent.Magnitude <= 0.01 then
+                return nil
+            end
+
+            Tangent = Tangent.Unit
+
+            --// No side picked for this wall yet: take the way round that ends
+            --// up nearer the stop.
+            if Steer.Side == 0 then
+                local Right = Origin + Tangent * STEER_STEP
+                local Left = Origin - Tangent * STEER_STEP
+                local RightRemain = Vector3.new(Destination.X - Right.X, 0, Destination.Z - Right.Z).Magnitude
+                local LeftRemain = Vector3.new(Destination.X - Left.X, 0, Destination.Z - Left.Z).Magnitude
+
+                Steer.Side = RightRemain <= LeftRemain and 1 or -1
+            end
+
+            --// Lean toward the wall when it is far, away when it is close, so
+            --// the walk follows it at roughly the same distance instead of
+            --// drifting off in a wide arc.
+            local Perpendicular = math.abs(Forward:Dot(Normal))
+            local WallDistance = Hit.Distance
+                and Hit.Distance * math.max(Perpendicular, 0.2)
+                or STEER_WALL_STANDOFF
+            local Lean = math.clamp(
+                (WallDistance - STEER_WALL_STANDOFF) / STEER_WALL_STANDOFF,
+                -0.4,
+                0.4
+            )
+
+            local function DirectionFor(Side)
+                return (Tangent * Side - Normal * Lean).Unit
+            end
+
+            local function Usable(Direction)
+                return IsDirectionClear(Origin, Direction, STEER_PROBE, Params)
+                    and HasStepGround(Origin + Direction * STEER_STEP, Origin.Y, Params)
+            end
+
+            local Direction = DirectionFor(Steer.Side)
+
+            if not Usable(Direction) then
+                --// A corner or a prop on this side: try the other way round,
+                --// and keep that side while it works.
+                Steer.Side = -Steer.Side
+                Direction = DirectionFor(Steer.Side)
+
+                if not Usable(Direction) then
+                    return nil
+                end
+            end
+
+            return Direction
+        end
+
+        --// Straight line to the stop, up to STEER_GOAL_PROBE studs. Wall
+        --// following lasts until this is clear, not until the next few studs
+        --// are: a six-stud look-ahead kept saying the wall was gone while the
+        --// building was still between the character and the stop.
+        local function IsGoalLineClear(Origin, Destination, Params)
+            local Offset = Destination - Origin
+            local Flat = Vector3.new(Offset.X, 0, Offset.Z)
+
+            if Flat.Magnitude <= STEER_SHORT_PROBE then
+                return true
+            end
+
+            return IsDirectionClear(
+                Origin,
+                Flat.Unit,
+                math.min(Flat.Magnitude, STEER_GOAL_PROBE),
+                Params
+            )
+        end
+
+        --// One heading at a time, re-checked a few times a second, so the
+        --// character walks a straight stretch and then turns, instead of
+        --// re-aiming every frame. Returns "moving" while it has somewhere to
+        --// go, "blocked" when nothing around is clear (it jumps and backs out,
+        --// and the caller's progress check decides when to give the stop up).
+        local function SteerTo(Destination, Now, RootPart, Humanoid)
+            local Character = Runtime:GetCharacter()
+            local Params = GetProbeParams(Character)
+
+            if not Params then
+                return "failed"
+            end
+
+            local Origin = RootPart.Position
+
+            if Steer.BackOffPoint and Now < Steer.BackOffUntil then
+                Humanoid:MoveTo(Steer.BackOffPoint)
+                return "moving"
+            end
+
+            Steer.BackOffPoint = nil
+
+            if Now - Steer.DecidedAt >= STEER_SAMPLE or not Steer.Direction then
+                Steer.DecidedAt = Now
+
+                local ToStop = Vector3.new(Destination.X - Origin.X, 0, Destination.Z - Origin.Z)
+                local Forward = ToStop.Magnitude > 0.01 and ToStop.Unit or nil
+                local Heading = Steer.Direction
+                local GoalClear = Forward ~= nil and IsGoalLineClear(Origin, Destination, Params)
+                local Clear = Heading ~= nil
+                    and Forward ~= nil
+                    and (Steer.Sliding or Heading:Dot(Forward) > 0)
+                    and Now - Steer.ChosenAt < STEER_HOLD
+                    and IsDirectionClear(Origin, Heading, STEER_PROBE, Params)
+                    and HasStepGround(Origin + Heading * STEER_PROBE, Origin.Y, Params)
+
+                --// The straight way opened: stop walking the wall.
+                if Steer.Sliding and GoalClear then
+                    Clear = false
+                end
+
+                if not Clear then
+                    if GoalClear then
+                        Heading = Forward
+                        Steer.Sliding = false
+                    else
+                        Heading = ChooseSlide(Origin, Destination, Params)
+                        Steer.Sliding = Heading ~= nil
+
+                        --// A prop or a doorway rather than a wall: the fan
+                        --// finds a way through where a slide would not.
+                        if not Heading then
+                            Heading = ChooseHeading(Origin, Destination, Params, STEER_PROBE)
+                        end
+
+                        --// Boxed in close up: a short step through a doorway
+                        --// or between two props.
+                        if not Heading then
+                            Heading = ChooseHeading(Origin, Destination, Params, STEER_SHORT_PROBE)
+                        end
+                    end
+                end
+
+                if not Heading then
+                    AICCombatUtils.DoJump()
+                    Steer.Direction = nil
+                    Steer.Side = -Steer.Side
+                    Steer.NoHeadingAt = Steer.NoHeadingAt or Now
+
+                    --// Turning on the spot never gets out of a corner.
+                    if Now - Steer.NoHeadingAt >= STEER_BACKOFF then
+                        local Away = Vector3.new(Origin.X - Destination.X, 0, Origin.Z - Destination.Z)
+
+                        if Away.Magnitude > 0.01 then
+                            Steer.BackOffPoint = Origin + Away.Unit * STEER_STEP
+                            Steer.BackOffUntil = Now + STEER_BACKOFF
+                            Humanoid:MoveTo(Steer.BackOffPoint)
+                        end
+
+                        Steer.NoHeadingAt = Now
+                    end
+
+                    return "blocked"
+                end
+
+                Steer.NoHeadingAt = nil
+
+                if Heading ~= Steer.Direction then
+                    Steer.ChosenAt = Now
+                end
+
+                Steer.Direction = Heading
+            end
+
+            local Step = Origin + Steer.Direction * STEER_STEP
+            AICCombatUtils.DoJumpIfObstacle(Step)
+            Humanoid:MoveTo(Step)
+
+            return "moving"
+        end
+
+        --// "moving", "waiting" (a path is being solved), "blocked" (no path
+        --// and no clear heading) or "done" at the destination. Never a straight
+        --// line at the stop: without a navmesh that walked into walls.
         local function WalkTo(Destination, Now)
             local _, Humanoid, RootPart = Runtime:GetCharacter()
 
@@ -324,9 +706,7 @@ return {
             end
 
             if not PathState.Waypoints then
-                AICCombatUtils.DoJumpIfObstacle(Destination)
-                Humanoid:MoveTo(Destination)
-                return PathState.Computing and "waiting" or "failed"
+                return SteerTo(Destination, Now, RootPart, Humanoid)
             end
 
             while PathState.Index <= #PathState.Waypoints do
@@ -598,7 +978,6 @@ return {
             end
 
             RefreshEditor()
-            AICUI.RefreshBossNames()
         end
 
         local function Commit(StatusText)
@@ -656,8 +1035,17 @@ return {
             S.SeenTarget = false
             S.KillAt = nil
             S.Teleported = false
-            S.NoPathSince = nil
+            S.BestDistance = nil
+            S.LastProgressAt = Now
             S.Resets = 0
+            Steer.Direction = nil
+            Steer.DecidedAt = 0
+            Steer.ChosenAt = 0
+            Steer.Sliding = false
+            Steer.Side = 0
+            Steer.BackOffPoint = nil
+            Steer.BackOffUntil = 0
+            Steer.NoHeadingAt = nil
             S.SkipExpCheck = true
             AICCombat.S.ClosestTarget = nil
             ResetPath()
@@ -671,7 +1059,8 @@ return {
             S.FightStart = nil
             S.WalkStart = nil
             S.WaitUntil = nil
-            S.NoPathSince = nil
+            S.BestDistance = nil
+            S.LastProgressAt = nil
 
             if #Stops == 0 then
                 S.Phase = "Idle"
@@ -795,6 +1184,23 @@ return {
         --// nothing: without it an empty spot would rescan every frame.
         local ScanDone = false
 
+        --// Auto Farm's own IsCombatTargetValid also demands the name be on the
+        --// Enemy Priority list and that the mob be within its farm engage
+        --// range. A boss stop knows nothing about that list, so a boss the stop
+        --// names was found and then thrown away: the character stood at the
+        --// stop without drawing its weapon. A boss stop validates its own
+        --// target instead.
+        local function IsStopTargetAlive(Mob)
+            if not Mob or not Mob:IsA("Model") or not Mob:IsDescendantOf(workspace) then
+                return false
+            end
+
+            local MobHumanoid = Mob:FindFirstChildOfClass("Humanoid")
+            local MobRoot = Mob:FindFirstChild("HumanoidRootPart")
+
+            return MobHumanoid ~= nil and MobRoot ~= nil and MobHumanoid.Health > 0
+        end
+
         local function FindTarget(Stop, Now)
             local Key = string.format(
                 "%d|%s|%s",
@@ -835,7 +1241,7 @@ return {
                 ScanResult = Best
             end
 
-            if ScanResult and AICCombat.IsCombatTargetValid(ScanResult) then
+            if IsStopTargetAlive(ScanResult) then
                 return ScanResult
             end
 
@@ -936,7 +1342,18 @@ return {
                 return
             end
 
-            if Now - (S.WalkStart or Now) > WALK_TIMEOUT then
+            --// Progress, not the solver's opinion: a map without a navmesh
+            --// reports no path while the steering still gets there, so only a
+            --// stop the character stops getting closer to is skipped. Half a
+            --// stud of slack absorbs the dodging round an obstacle.
+            if not S.BestDistance or Flat < S.BestDistance - 0.5 then
+                S.BestDistance = Flat
+                S.LastProgressAt = Now
+            end
+
+            if Now - (S.LastProgressAt or Now) >= NO_PROGRESS_TIMEOUT
+                or Now - (S.WalkStart or Now) > WALK_TIMEOUT
+            then
                 Say("Boss Route", "Could not reach stop #" .. tostring(S.Index) .. "; skipping", 4)
                 Advance(Now)
                 return
@@ -944,20 +1361,9 @@ return {
 
             SetStatus(string.format("STOP %d/%d  WALKING", S.Index, #GetStops()))
 
-            --// One path, walked waypoint by waypoint (WalkTo). When the game
-            --// has no path it walks straight at the stop while retrying, and
-            --// only gives up on the stop after NO_PATH_TIMEOUT of that.
-            if WalkTo(Stop.Position, Now) == "failed" then
-                S.NoPathSince = S.NoPathSince or Now
-
-                if Now - S.NoPathSince >= NO_PATH_TIMEOUT then
-                    Say("Boss Route", "No way to stop #" .. tostring(S.Index) .. "; skipping", 4)
-                    S.NoPathSince = nil
-                    Advance(Now)
-                end
-            else
-                S.NoPathSince = nil
-            end
+            --// One path, walked waypoint by waypoint; with no navmesh a
+            --// steering heading round whatever is in the way (WalkTo).
+            WalkTo(Stop.Position, Now)
         end
 
         local function FightStep(Stop, Now)
@@ -1408,7 +1814,11 @@ return {
         --// way Zone Targets does it, so nothing has to be typed.
         UIRef.BossNamesComponent = UIRef.BossSection:AddPriority("Boss Names", {})
 
-        UIRef.BossSection:AddButton("Refresh Nearby Bosses", function()
+        --// Built here, before the refresh button, so the button sits directly
+        --// under the picker: both take the next two slots of the section.
+        AICUI.RefreshBossNames()
+
+        UIRef.BossRefreshButton = UIRef.BossSection:AddButton("Refresh Nearby Bosses", function()
             AICUI.RefreshBossNames()
             SetStatus("NEARBY BOSSES REFRESHED")
         end)

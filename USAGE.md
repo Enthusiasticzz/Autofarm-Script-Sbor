@@ -1,6 +1,6 @@
 # AIC usage guide
 
-How to use Automated Industry Complex (AutoFarmV3, `v3.33`) once it is loaded. The
+How to use Automated Industry Complex (AutoFarmV3, `v3.34`) once it is loaded. The
 loadstring and what the loader fetches are in [README.md](README.md); this file is
 about the features and about why the farm sometimes appears to do nothing.
 
@@ -437,7 +437,8 @@ teleport) to a boss, fight it, and reset back to spawn before the next one.
   Zone Targets.
 - **Boss Names** (list) — the names the stop fights, in order; drag to reorder,
   ▲▼ or ✕ to change. Empty fights whatever is at the spot.
-- **Refresh Nearby Bosses** — rebuilds that dropdown after walking somewhere new.
+- **Refresh Nearby Bosses** — sits directly under **Add Boss Name**; rebuilds the
+  dropdown after walking somewhere new.
 - **Move Stop Here** / **Remove Stop** — move the selected stop to the character,
   or delete it.
 - **Loop Route** (on by default) — after the last stop, start again at the first.
@@ -452,7 +453,11 @@ teleport) to a boss, fight it, and reset back to spawn before the next one.
 2. Waits **Wait At Spot** seconds.
 3. Fights the nearest living mob inside **Engage Radius** that matches **Boss
    Names** (anything when empty), drawing the weapon first and using the same
-   attack and skill inputs as Auto Farm.
+   attack and skill inputs as Auto Farm. The name does **not** have to be on the
+   Enemy Priority list: a boss stop validates its own target, which it did not
+   do before (Auto Farm's validator also demands Enemy Priority, so a named boss
+   was found and then thrown away — the character stood at the stop with its
+   weapon sheathed).
 4. Ends the stop when the target dies and nothing else is left there (a 2 s
    grace), when the row's `Reset (s)` timeout runs out with the boss still
    standing (0 = never, the default), or when there is nothing to fight for 5 s.
@@ -484,13 +489,23 @@ either side before retrying. On a long walk to a boss those detours are what
 looked like running backwards and sideways, so the boss route no longer uses
 it.
 
-When the game has no path at all (no navmesh, a sealed room) the character
-walks straight at the stop while the solver retries every 2 s, and the stop is
-skipped with a notice after 15 s of that. A stop counts as reached within the
-place's **Waypoint Reach Distance** (5 studs by default) of the saved spot, and
-the whole walk gives up after 120 s. A **Teleport Waypoint #** near the boss is
-still the most reliable option: it warps most of the way, leaving only the last
-short leg to walk.
+**When the game has no navmesh** the solver returns no path, and that is where
+the straight line used to run into buildings. The walk is steered instead:
+short body-wide probe rays pick a heading, and when the way to the stop is
+blocked the character walks *along* the wall — using the surface the ray hit,
+keeping about 2.5 studs off it, and staying on the same side until the straight
+line to the stop is clear for 40 studs. That last part matters: a six-stud look
+ahead said "clear" with the building still in the way, which made the character
+turn back into it and saw the same corner over and over. Nothing is walked
+blindly: every heading is checked for a clear body width and for ground to land
+on (no holes, no ledges).
+
+A stop counts as reached within the place's **Waypoint Reach Distance** (5 studs
+by default) of the saved spot. The route gives a stop up when the character has
+not got **closer** to it for 20 s (it measures progress, so a slow detour around
+a building is not a failure), and always after 120 s. A **Teleport Waypoint #**
+near the boss is still the most reliable option: it warps most of the way,
+leaving only the last short leg to walk.
 
 Notes:
 
