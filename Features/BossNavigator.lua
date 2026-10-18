@@ -15,7 +15,7 @@
 -- standing.
 -- Wait Exp holds the next stop until the game's EXP actually dropped after the
 -- reset, so the loss is registered before walking off. A stop with it off
--- moves on after Wait After Reset instead. Dying, rather than being reset by
+-- moves straight on instead. Dying, rather than being reset by
 -- the route, is never taken as the stop being done: once the character is back
 -- the same stop is run again, teleporting to its waypoint and walking its Path
 -- from the first point. The sword is asked for before the fight, not at it.
@@ -494,7 +494,6 @@ return {
 
             if UIRef.BossNameBox then UIRef.BossNameBox:Set(Stop.Label, false) end
             if UIRef.BossWaypointBox then UIRef.BossWaypointBox:Set(tostring(Stop.Waypoint or 0), false) end
-            if UIRef.BossRespawnWaitBox then UIRef.BossRespawnWaitBox:Set(tostring(Stop.RespawnWait or 0), false) end
             if UIRef.BossRadiusBox then UIRef.BossRadiusBox:Set(tostring(Stop.Radius or 0), false) end
             if UIRef.BossResetAfterKillToggle then
                 UIRef.BossResetAfterKillToggle:Set(Stop.ResetAfterKill == true, false)
@@ -736,18 +735,11 @@ return {
                 S.ExpDeadline = Now + EXP_LOSS_TIMEOUT
             end
 
+            --// Back on the character and straight on: the pause that matters
+            --// is the one before the reset (Reset After). The old second wait
+            --// after the respawn only delayed the next stop, so it is gone;
+            --// Wait Exp is the only thing that can hold the route here.
             local Stop = CurrentStop()
-            local RespawnWait = Stop and tonumber(Stop.RespawnWait) or 0
-
-            if Now - S.RecoveredAt < RespawnWait then
-                SetStatus(string.format(
-                    "STOP %d/%d  RESPAWNED  %ds",
-                    S.Index,
-                    #GetStops(),
-                    math.ceil(RespawnWait - (Now - S.RecoveredAt))
-                ))
-                return true
-            end
 
             if Stop and Stop.WaitExp and not S.SkipExpCheck then
                 local Exp = GetExp()
@@ -1277,7 +1269,6 @@ return {
                 Waypoint = 0,
                 ResetAfterKill = true,
                 ResetWait = 0,
-                RespawnWait = AICConfig.DEFAULT_BOSS_RESPAWN_WAIT,
                 WaitExp = false,
                 Radius = AICConfig.DEFAULT_BOSS_RADIUS,
             })
@@ -1450,20 +1441,6 @@ return {
             end
 
             Stop.Waypoint = math.clamp(math.floor(Number), 0, AICConfig.MAX_BOSS_WAYPOINT)
-            return true
-        end)
-
-        --// How long to wait after the reset's respawn before walking on. The
-        --// stored key keeps its old name (RespawnWait) so existing profiles
-        --// still load; only the label changed.
-        UIRef.BossRespawnWaitBox = AddStopBox("Wait After Reset (s)", function(Stop, Value)
-            local Number = tonumber(Value)
-
-            if not Number or Number < 0 then
-                return false
-            end
-
-            Stop.RespawnWait = math.clamp(Number, 0, AICConfig.MAX_BOSS_RESPAWN_WAIT)
             return true
         end)
 

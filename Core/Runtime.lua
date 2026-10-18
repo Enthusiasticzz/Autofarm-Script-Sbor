@@ -901,12 +901,10 @@ return {
         --// reaches across a boss room from the standing spot. A stop's Path is
         --// the travel points walked before it; there is no fight timer, so a
         --// stop only ever resets after the kill.
-        AICConfig.DEFAULT_BOSS_RESPAWN_WAIT = 4
         AICConfig.DEFAULT_BOSS_RADIUS = 120
         AICConfig.DEFAULT_BOSS_RESET_WAIT = 0
         AICConfig.MAX_BOSS_PATH = 64
         AICConfig.MAX_BOSS_RESET = 600
-        AICConfig.MAX_BOSS_RESPAWN_WAIT = 120
         AICConfig.MAX_BOSS_RADIUS = 500
         AICConfig.MAX_BOSS_WAYPOINT = 999
 
@@ -938,7 +936,6 @@ return {
         --//   Waypoint    game waypoint number teleported to first, 0 walks
         --//   ResetAfterKill  reset once the boss is down, then the next stop
         --//   ResetWait   seconds held at the corpse before that reset
-        --//   RespawnWait seconds after respawning before the next stop
         --//   WaitExp     hold the next stop until EXP actually dropped
         --//   Radius      how far from Position a boss is picked up
         function AICConfig.NormalizeBossStops(List)
@@ -980,11 +977,6 @@ return {
                                 or AICConfig.DEFAULT_BOSS_RESET_WAIT,
                             0,
                             AICConfig.MAX_BOSS_RESET
-                        ),
-                        RespawnWait = math.clamp(
-                            tonumber(Stop.RespawnWait) or AICConfig.DEFAULT_BOSS_RESPAWN_WAIT,
-                            0,
-                            AICConfig.MAX_BOSS_RESPAWN_WAIT
                         ),
                         WaitExp = Stop.WaitExp == true,
                         Radius = math.clamp(

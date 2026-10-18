@@ -511,6 +511,14 @@ were added.
 > - Harness: 60 checks. New ones cover the stale `Equipped` flag still drawing the sword, a death restarting at point 1 rather than the point it died on, and the stop's waypoint being fired again after the death. Mutations: the old `Equipped` gate fails the stale-flag check; removing the death hook fails three retry checks.
 > - `USAGE.md` documents the draw timing and the death retry.
 
+### [x] Boss Route: the pause before the reset is repeated after it
+
+> **Done (v3.39):** `Features/BossNavigator.lua`
+> - The second pause is gone. **Wait After Reset (s)** is removed from the stop, the storage and the UI; once the character is back the route walks the next leg at once. Only **Wait Exp** can still hold it (until the game registers the EXP loss).
+> - **Reset After (s)** (the pause at the corpse before the reset) is untouched, so a stop showing 10 still waits 10 s after the kill, then resets and carries on immediately instead of waiting another 10.
+> - Old saves that carry `RespawnWait` simply ignore it; `Core/Runtime.lua` no longer stores it.
+> - Harness: 57 checks. The new one uses a stop with `ResetWait 10` and `RespawnWait 10` and asserts the next stop starts within a second of the respawn. Mutation: restoring the post-reset wait fails that check.
+
 ## To Fix
 
 ### [x] Waypoints Looped & Paired Farmzone/Waypoint/Targets: walking back to waypoints that are not paired

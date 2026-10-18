@@ -1,6 +1,6 @@
 # AIC usage guide
 
-How to use Automated Industry Complex (AutoFarmV3, `v3.38`) once it is loaded. The
+How to use Automated Industry Complex (AutoFarmV3, `v3.39`) once it is loaded. The
 loadstring and what the loader fetches are in [README.md](README.md); this file is
 about the features and about why the farm sometimes appears to do nothing.
 
@@ -410,8 +410,8 @@ teleport) to a boss, fight it, and reset back to spawn before the next one.
   `STOP 2/4  WALKING`, `… FIGHT`, `… CLEARING`, `… RESPAWNED`, `… WAITING FOR
   EXP LOSS`, `ROUTE FINISHED`, `OFF`.
 - **Add Boss Stop Here** — saves a stop at your current position, with an empty
-  **Path to Boss**. A new stop starts with **Reset After 0 s**, **Wait After
-  Reset 4 s**, **Reset After Kill on** and a 120-stud engage radius.
+  **Path to Boss**. A new stop starts with **Reset After 0 s**, **Reset After
+  Kill on** and a 120-stud engage radius.
 - **Boss Route** (list) — one row per stop, `#1  Boss 1  > WP3  P6  Goblin
   (x, y, z)`: the stop's name, its teleport waypoint, how many path points it
   has, its first boss name and where it is. Drag a row (or use ▲▼) to reorder
@@ -426,8 +426,6 @@ teleport) to a boss, fight it, and reset back to spawn before the next one.
 - **Teleport Waypoint #** — one of the game's waypoints to teleport to before
   walking to the stop (0 walks the whole way). Uses the same `TeleportEvent`
   remote as the Teleport tab.
-- **Wait After Reset (s)** — seconds after the reset's respawn before the next
-  stop starts (time for the character to load and for the EXP loss to apply).
 - **Engage Radius** — how far from the stop a boss is picked up.
 - **Reset After Kill** (on for a new stop) — once the boss is down, reset the
   character so the next stop is travelled to from spawn. Off, the next stop
@@ -489,10 +487,10 @@ final point can be the doorway and the stop the boss.
    **only** reset: the character never resets while the boss is still standing,
    and there is no fight timeout to reset on. `CLEARING  7s` counts the pause
    down in the status line.
-6. Once the character is back it waits **Wait After Reset**, and with **Wait
-   Exp** on it also holds until `PlayerStats.EXP` is lower than before the reset
-   (15 s at most, so a game that applies the loss differently cannot stall the
-   route).
+6. Once the character is back it goes straight on to the next leg — there is no
+   second pause after the reset. With **Wait Exp** on it first holds until
+   `PlayerStats.EXP` is lower than before the reset (15 s at most, so a game
+   that applies the loss differently cannot stall the route).
 7. Then the next stop begins — teleporting to its own waypoint first. Reaching
    the end loops, or finishes when **Loop Route** is off.
 
@@ -526,7 +524,7 @@ Notes:
   starts empty and adding stops needs a loaded profile (`CREATE / LOAD PROFILE
   FIRST`, `DEFAULT PLACE_CONFIG IS READ-ONLY` on a built-in preset).
 - Dying on the way, or in the fight, is **not** treated as the stop being done:
-  the route waits for the respawn (and **Wait After Reset**), then teleports to
+  the route waits for the respawn, then teleports to
   that stop's **Teleport Waypoint #** again (if it has one) and walks the same
   **Path to Boss** from its first point. Only a kill moves the route on. A
   teleport the game drops while the new body is still loading is retried once,
