@@ -206,6 +206,16 @@ return {
                 WaitUntil = nil,
                 --// End of Wait At Spot, when the stop set one. nil = no wait.
                 SpotWaitUntil = nil,
+                --// This visit walks back to a stop the character died at, so
+                --// Wait At Spot is not held: the boss is already standing
+                --// there - it killed the character a moment ago - and holding
+                --// the fight for a spawn that already happened only wastes the
+                --// run back.
+                SkipSpotWait = false,
+                --// Set by the recovery that restarts the stop, taken by the
+                --// BeginStop it leads to. Kept apart so the skip belongs to
+                --// that visit and not to every later one.
+                SkipSpotWaitNext = false,
                 WalkStart = nil,
                 Teleported = false,
                 --// A target was fought at this stop, so its absence now means
@@ -901,7 +911,11 @@ return {
             S.LastTarget = nil
             S.KillAt = nil
             S.WaitUntil = nil
+            S.SpotWaitUntil = nil
             S.WalkStart = nil
+            --// Nothing carries a death's skip into a later run.
+            S.SkipSpotWait = false
+            S.SkipSpotWaitNext = false
             EndDodge()
             StopFlee()
             AICCombat.S.ClosestTarget = nil
@@ -936,6 +950,8 @@ return {
             S.Teleports = 0
             S.PromptUsed = false
             S.SpotWaitUntil = nil
+            S.SkipSpotWait = S.SkipSpotWaitNext == true
+            S.SkipSpotWaitNext = false
             S.InteractSuppressed = false
             S.PromptFallback = nil
             S.ResetHumanoid = nil
@@ -1033,6 +1049,10 @@ return {
         local function FinishRecovery(Now)
             if S.RestartStop then
                 S.RestartStop = false
+                --// The stop is walked again after a death. The walk back is
+                --// followed by the fight straight away, whatever the stop's
+                --// Wait At Spot says: nothing is being waited for.
+                S.SkipSpotWaitNext = true
                 BeginStop(Now)
             else
                 Advance(Now)
@@ -2021,8 +2041,11 @@ return {
                     --// Wait At Spot (s), 0 for a new stop: hold the fight long
                     --// enough for a boss that spawns a moment after the walk
                     --// arrives. At 0 the fight starts on this frame, which is
-                    --// what most stops want.
-                    local Wait = tonumber(Stop.Wait) or 0
+                    --// what most stops want. Never held on a visit that
+                    --// continues a stop the character died at: whatever is
+                    --// there already killed the character, so there is no
+                    --// spawn to wait for.
+                    local Wait = S.SkipSpotWait and 0 or (tonumber(Stop.Wait) or 0)
 
                     if Wait > 0 and not S.SpotWaitUntil then
                         S.SpotWaitUntil = Now + Wait
@@ -2316,7 +2339,10 @@ return {
             S.LastTarget = nil
             S.KillAt = nil
             S.WaitUntil = nil
+            S.SpotWaitUntil = nil
             S.WalkStart = nil
+            S.SkipSpotWait = false
+            S.SkipSpotWaitNext = false
             ResetWalk()
         end
 

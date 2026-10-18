@@ -438,7 +438,9 @@ teleport) to a boss, fight it, and reset back to spawn before the next one.
   it for a boss with a wide one.
 - **Wait At Spot (s)** — seconds stood at the stop before the fight starts,
   **0 by default**. Raise it for a boss that spawns a moment after the walk
-  arrives; at 0 the first swing is on the frame the stop is reached.
+  arrives; at 0 the first swing is on the frame the stop is reached. It is
+  **not held on the run back from a death**: the stop is walked again right
+  after the respawn and the fight starts on arrival, whatever this box says.
 - **Engage Radius** — how far from the stop a boss is picked up.
 - **Reset After Kill** (on for a new stop) — once the boss is down, reset the
   character so the next stop is travelled to from spawn. Off, the next stop
@@ -523,9 +525,13 @@ the route started on the stop are still walked.
    reloading the place config mid-walk can no longer send the walk straight at
    the stop. A stop with no points at all shows `WALKING  NO PATH POINTS`.
 3. Fights as soon as the stop is reached, unless the stop sets **Wait At Spot
-   (s)** — 0 by default, so normally there is no wait. The nearest living mob
-   inside **Engage Radius** that matches **Boss Names** (anything when empty)
-   is the target. The sword is asked for from 60
+   (s)** — 0 by default, so normally there is no wait. That wait is skipped on
+   a visit that continues a stop the character **died** at: the walk back
+   starts again from the stop's first path point once the character respawns,
+   and the fight starts the moment it is there — the boss that killed it is
+   already standing in the spot, so there is no spawn to wait for. The nearest
+   living mob inside **Engage Radius** that matches **Boss Names** (anything
+   when empty) is the target. The sword is asked for from 60
    studs out on the last leg, and again every frame of the fight until the
    tool's weld says it is really in the hand (the cached equipped flag is not
    trusted: it survives a respawn that sheathed the sword). The frame the equip

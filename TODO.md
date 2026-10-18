@@ -649,6 +649,15 @@ were added.
 > - A stop with no points is said out loud — `STOP n/m  WALKING  NO PATH POINTS` — so a stop whose points never arrived is told apart from one that never had any. It still walks straight at the stop, as it always did.
 > - Harness: 159 checks (was 149). New ones: a config rebuilt without the points mid-visit keeps the walk on the points it started with (and only walks at the stop once they run out), a stop saved with no points walks straight at it and reports it, and points that arrive after the walk began are walked. Mutations caught: reading the live stop's points every frame (5 failures), hiding the no-points status (1).
 
+### [x] Boss Route: the run back from a death held Wait At Spot
+
+> **Done (v3.56):** `Features/BossNavigator.lua`, Boss Route only
+> - A death restarts the same stop, and the visit that walked back held the stop's **Wait At Spot** like any other arrival: the character stood at the spot counting down 3, 5, 10 s — whatever the box said — before the first swing, with the boss that had just killed it standing right there. The wait exists for a boss that has **not spawned yet**; after a death there is nothing to wait for.
+> - The recovery that restarts the stop marks the next visit (`S.SkipSpotWaitNext`), `BeginStop` takes that mark into the visit's own flag, and the arrival skips the wait when the flag is set. The walk is unchanged: the stop's path is walked again from its first point, then the fight starts on the frame the character is at the stop.
+> - The skip belongs to **that visit only**: the flag is not cleared by the walk and not remembered, so a later, fresh arrival at the same stop still holds the wait the stop asks for (a boss that respawns slowly is still waited for on every ordinary visit).
+> - The hold before a reset (`Reset (s)`, `CLEARING … LOSE n EXP`) is untouched: that one is the EXP the reset would take, not a wait for a spawn.
+> - Harness: 168 checks (was 159). New ones: a character killed on the way to a `Wait = 3` stop respawns, walks the stop again and is in the fight on the frame it arrives — no `WAIT` countdown, swings on that frame — while a fresh arrival at the same stop still holds the wait. Mutations caught: the return holds the wait (3 failures), the skip sticks to later visits (4), the death restart never marks the visit (3).
+
 ## To Fix
 
 ### [x] Waypoints Looped & Paired Farmzone/Waypoint/Targets: walking back to waypoints that are not paired
