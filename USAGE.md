@@ -511,10 +511,13 @@ final point can be the doorway and the stop the boss.
    stopping at 90% from level 900 up; the route works out what that reset would
    take from `PlayerStats.Level` and `PlayerStats.EXP`, as a share of one
    level's EXP bar. If that share is under **2% of the bar** the reset costs
-   nothing worth waiting for and happens as soon as the 2 s kill grace is over
-   (`CLEARING  2s`). Otherwise the character holds at the corpse for the row's
-   **Reset (s)** — **10 s** for a stop that has not set one — and
-   `CLEARING  7s  LOSE 95 EXP` counts it down. Then the character is reset
+   nothing worth waiting for and happens **at once** — one scan tick after the
+   kill, with `RESET NOW` on the status line. Otherwise the character holds at
+   the corpse for the row's **Reset (s)** — **10 s** for a stop that has not set
+   one — and `CLEARING  7s  LOSE 95 EXP` counts it down. The game has the final
+   say: if a reset ends with `PlayerStats.EXP` exactly where it started, that
+   **level** is remembered and every later reset there skips the hold, whatever
+   the prediction said. Then the character is reset
    (health set to 0, the same reset Party System uses). That is the **only**
    reset: the character never resets while the boss is still standing, and
    there is no fight timeout to reset on. A corpse left in the stop's radius
@@ -525,7 +528,8 @@ final point can be the doorway and the stop the boss.
    second pause after the reset. With **Wait Exp** on it first holds until the
    game's `PlayerStats.EXP` has actually dropped (or reached the cutoff the
    level's keep-percentage predicts), and never longer than **10 s**; a reset
-   that cost nothing is not waited for at all. A reset the game ignores (health
+   that cost nothing (or a level already known to lose nothing) is not waited
+   for at all. A reset the game ignores (health
    restored, the request dropped) is asked again after 3 s, up to twice, and
    the status says `RESET PENDING` / `RESET RETRY n` in the meantime.
 7. Then the next stop begins — teleporting to its own waypoint first. Reaching

@@ -97,6 +97,9 @@ return {
         local FREE_RESET_LOSS_SHARE = 0.02
         --// The hold a stop that has no Reset (s) of its own gets.
         local DEFAULT_RESET_HOLD = 10
+        --// A reset that costs nothing is not waited for: one scan tick after
+        --// the kill is enough to know nothing else of the stop is standing.
+        local FREE_RESET_GRACE = 0.2
         --// Still alive this long after the reset fired means the game dropped
         --// it; ask again rather than standing at the corpse.
         local RESET_RETRY_TIME = 3
@@ -387,10 +390,23 @@ return {
             return Loss, Bar, Bar > 0 and (Loss / Bar) or 0, Level
         end
 
+        --// Levels where a reset was watched and took no EXP at all. The
+        --// prediction above is only a reading of the level; the game is the
+        --// authority, so once it has shown a level where nothing is lost the
+        --// hold is skipped there without asking again.
+        local NoLossLevels = {}
+
         --// Seconds held at the corpse before the reset. Nothing is held when the
-        --// reset would not cost a real slice of the bar; otherwise the stop's own
-        --// Reset (s), which defaults to ten.
+        --// reset would not cost a real slice of the bar, or when this level has
+        --// already been seen to lose nothing; otherwise the stop's own Reset
+        --// (s), which defaults to ten.
         local function GetResetHold(Stop)
+            local Level = GetLevel()
+
+            if Level and NoLossLevels[Level] then
+                return 0
+            end
+
             local _, _, Share = GetResetCost()
 
             if Share < FREE_RESET_LOSS_SHARE then
@@ -921,7 +937,7 @@ return {
                 --// known; without it, Wait Exp keeps its old meaning.
                 S.FreeReset = Level ~= nil
                     and S.ExpBefore ~= nil
-                    and Share < FREE_RESET_LOSS_SHARE
+                    and (Share < FREE_RESET_LOSS_SHARE or NoLossLevels[Level] == true)
                 --// Only with a known level: without it the "cutoff" would be
                 --// the EXP itself, and any value would count as dropped.
                 S.ExpCutoff = (Level ~= nil and S.ExpBefore ~= nil)
@@ -964,6 +980,18 @@ return {
         --// walks the same stop's path again, from its first point, instead of
         --// pretending the boss was dealt with.
         local function FinishRecovery(Now)
+            --// A route reset that took no EXP is remembered for its level: the
+            --// prediction said there was something to lose and the game
+            --// disagreed, so the next reset there is not held either. A death
+            --// (SkipExpCheck) and a restart are not evidence either way.
+            if not S.SkipExpCheck and not S.RestartStop and S.ResetLevel then
+                local Exp = GetExp()
+
+                if S.ExpBefore ~= nil and Exp ~= nil and Exp >= S.ExpBefore then
+                    NoLossLevels[S.ResetLevel] = true
+                end
+            end
+
             if S.RestartStop then
                 S.RestartStop = false
                 BeginStop(Now)
@@ -1907,22 +1935,28 @@ return {
                 --// the ten seconds only ever show up when there is something
                 --// to lose.
                 local Hold = Stop.ResetAfterKill and GetResetHold(Stop) or 0
-                local Delay = math.max(KILL_GRACE, Hold)
-                local Left = Delay - (Now - S.KillAt)
+                --// A reset with nothing to lose is not held at all: one scan
+                --// tick after the kill, not the two-second grace the held
+                --// path uses to see whether a second mob of the stop is still
+                --// standing up.
+                local Grace = Hold > 0 and KILL_GRACE or FREE_RESET_GRACE
+                local Left = math.max(Grace, Hold) - (Now - S.KillAt)
 
                 if Left > 0.05 then
-                    local Loss = GetResetCost()
-                    local Extra = Hold > 0
-                        and string.format("  LOSE %d EXP", math.floor(Loss + 0.5))
-                        or ""
+                    if Hold > 0 then
+                        local Loss = GetResetCost()
 
-                    SetStatus(string.format(
-                        "STOP %d/%d  CLEARING  %ds%s",
-                        S.Index,
-                        #GetStops(),
-                        math.ceil(Left),
-                        Extra
-                    ))
+                        SetStatus(string.format(
+                            "STOP %d/%d  CLEARING  %ds  LOSE %d EXP",
+                            S.Index,
+                            #GetStops(),
+                            math.ceil(Left),
+                            math.floor(Loss + 0.5)
+                        ))
+                    else
+                        SetStatus(string.format("STOP %d/%d  RESET NOW", S.Index, #GetStops()))
+                    end
+
                     return
                 end
 
@@ -2059,6 +2093,9 @@ return {
         --// A profile load brings another place's stops with it.
         AICFeature.ResetBossRoute = function()
             EndDodge()
+            --// Another place's levels: what was learned here does not carry
+            --// over.
+            table.clear(NoLossLevels)
             S.HpAt = nil
             S.HpBase = nil
             S.Index = 1

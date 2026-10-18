@@ -563,6 +563,14 @@ were added.
 > - A stale dodge end was fixed on the way: a dodge that started already out on the ring never borrowed a speed, and the end-of-ceiling branch skipped `EndDodge` when no speed existed, leaving a dead `DodgeMaxUntil` behind.
 > - Harness: 116 checks. New ones assert the point is on the 26-stud ring, that the character holds and stands still once out, and that the sprint is put away. Mutations: measuring the point from the character fails the ring check; never holding fails three.
 
+### [x] Boss Route: a reset with nothing to lose was still not instant
+
+> **Done (v3.45):** `Features/BossNavigator.lua`, Boss Route only
+> - A free reset still sat through the **2 s kill grace** (`Delay = max(KILL_GRACE, Hold)`), so "instant" was two seconds of `CLEARING`. The free path now uses a **0.2 s** grace — one scan tick, enough to see a second mob of the stop — and the status says `RESET NOW` instead of counting down.
+> - The prediction can only read the level, so the game now has the final say: when a route reset ends with `PlayerStats.EXP` unchanged, that **level** is recorded in `NoLossLevels`, and every later reset there skips the hold and the `Wait Exp` wait regardless of the predicted share. Cleared when the profile/place changes.
+> - A stop's own **Reset (s) = 0** now also means "reset at the tick", not "hold two seconds".
+> - Harness: 118 checks. New ones assert a free reset respawns within a second of the kill, and that a level seen losing nothing is not held again. Mutations: a fixed grace fails three checks, ignoring the learned level fails two.
+
 ## To Fix
 
 ### [x] Waypoints Looped & Paired Farmzone/Waypoint/Targets: walking back to waypoints that are not paired
