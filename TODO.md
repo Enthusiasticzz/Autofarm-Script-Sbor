@@ -641,6 +641,14 @@ were added.
 > - **The Boss Route fought with no heal at all.** Its step runs before Auto Farm's health decision, so the fight and the whole route never drank. `AICFeature.TryHeal` is exposed for it and the stop's fight drinks below **Auto Heal at HP%** (dodging still owns its frame).
 > - Harness: 149 checks. New ones: a boss fight at full health does not drink and one below the threshold does, a run-on EXP total is placed in the next level's bar and held (`LOSE 129`), and the free/held reset cases now publish progress inside the level's own bar (100 / 2,300,000 at level 900, 150,000 / 500,000 at level 500).
 
+### [x] Boss Route: the walk sometimes headed straight at the stop instead of the Path points
+
+> **Done (v3.55):** `Features/BossNavigator.lua`, Boss Route only
+> - The walk read the points off the **live stop every frame** (`Stop.Path`), and the route holds only its stop index against a config the rest of the script replaces while it runs: `AICProfile.ApplyProfileData` swaps the place config on a profile apply, and `Farmzone`/`Deadzone`/`Minezone`/`BossNavigator` swap it for a freshly normalized one on their own edits. A stop table that arrives without its points turns the rest of the visit into a walk at `Stop.Position`, straight across whatever lies between — the only way the walk can leave the points mid-visit. Only the walk itself moved: `CurrentStop()` is re-read every frame, so the points belong to the visit, not to the frame.
+> - A visit now takes its own copy of the points when the stop begins (`S.Path`, `table.clone`) and walks those, so a config landing mid-walk cannot change where it goes. A stop that began with none takes the live points the moment they exist, which is the window a profile apply lands in.
+> - A stop with no points is said out loud — `STOP n/m  WALKING  NO PATH POINTS` — so a stop whose points never arrived is told apart from one that never had any. It still walks straight at the stop, as it always did.
+> - Harness: 159 checks (was 149). New ones: a config rebuilt without the points mid-visit keeps the walk on the points it started with (and only walks at the stop once they run out), a stop saved with no points walks straight at it and reports it, and points that arrive after the walk began are walked. Mutations caught: reading the live stop's points every frame (5 failures), hiding the no-points status (1).
+
 ## To Fix
 
 ### [x] Waypoints Looped & Paired Farmzone/Waypoint/Targets: walking back to waypoints that are not paired

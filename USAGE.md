@@ -499,8 +499,18 @@ solves or guesses a way round anything.
 
 Points are per stop, and the list always follows **Edit Boss Stop**. A stop with
 no points walks straight at it, which is what the route did before Path to Boss
-existed. The last leg is the stop itself (**Move Stop Here** sets it), so the
-final point can be the doorway and the stop the boss.
+existed — and it says so, `WALKING  NO PATH POINTS` on the status, so a stop
+whose points never arrived can be told apart from one that never had any. The
+last leg is the stop itself (**Move Stop Here** sets it), so the final point can
+be the doorway and the stop the boss.
+
+A visit walks the points the stop had when it began, pinned for that visit. A
+place config that lands mid-visit (a profile apply, another feature normalizing
+the config) replaces the stop table, and reading the points back off it each
+frame was the one way the walk could leave the points part-way and head at
+`Stop.Position` instead. A stop that began with no points takes whatever the
+config holds as soon as it arrives, so points saved — or loaded — a moment after
+the route started on the stop are still walked.
 
 #### What a stop does
 
@@ -509,6 +519,9 @@ final point can be the doorway and the stop the boss.
    waypoint (when one is set) and waits 2 s to land.
 2. Walks its **Path to Boss** points in order, then the stop itself. A point
    counts as reached within 4 studs (`Waypoint Reach Distance` for the stop).
+   The points are the visit's own copy, taken when the stop began: replacing or
+   reloading the place config mid-walk can no longer send the walk straight at
+   the stop. A stop with no points at all shows `WALKING  NO PATH POINTS`.
 3. Fights as soon as the stop is reached, unless the stop sets **Wait At Spot
    (s)** — 0 by default, so normally there is no wait. The nearest living mob
    inside **Engage Radius** that matches **Boss Names** (anything when empty)

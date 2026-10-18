@@ -191,6 +191,14 @@ return {
                 Index = 1,
                 --// Next point of the stop's saved Path to walk (1 = first).
                 PathIndex = 1,
+                --// The points this visit walks, copied off the stop when the
+                --// stop begins. Read from here rather than off the live stop
+                --// every frame: a place config that arrives mid visit (a
+                --// profile apply, another feature's NormalizePlaceConfig)
+                --// replaces the stop table, and a walk that re-read it there
+                --// could come back with no points and head straight at the
+                --// stop across whatever lay in between.
+                Path = nil,
                 WalkFrom = nil,
                 WalkSampleAt = nil,
                 PhaseStart = 0,
@@ -922,6 +930,7 @@ return {
             S.KillAt = nil
             S.Teleported = false
             S.PathIndex = 1
+            S.Path = Stop.Path and table.clone(Stop.Path) or {}
             S.InteractAt = nil
             S.TeleportFrom = nil
             S.Teleports = 0
@@ -1947,7 +1956,15 @@ return {
                 end
             end
 
-            local Path = Stop.Path or {}
+            --// The visit's own points. A stop that began without any takes
+            --// whatever the live config holds: points saved (or a config that
+            --// loaded) after the walk started are still walked, which is the
+            --// window a profile apply lands in.
+            if not S.Path or #S.Path == 0 then
+                S.Path = Stop.Path and table.clone(Stop.Path) or {}
+            end
+
+            local Path = S.Path
             local Point = Path[S.PathIndex]
             local Destination = Point or Stop.Position
             local Reach = Point
@@ -2050,6 +2067,15 @@ return {
                     #GetStops(),
                     S.PathIndex,
                     #Path
+                ))
+            elseif #Path == 0 then
+                --// Nothing to follow: the walk goes straight at the stop,
+                --// across whatever lies between. Said on the status, which is
+                --// the line that is always visible.
+                SetStatus(string.format(
+                    "STOP %d/%d  WALKING  NO PATH POINTS",
+                    S.Index,
+                    #GetStops()
                 ))
             else
                 SetStatus(string.format("STOP %d/%d  WALKING", S.Index, #GetStops()))
