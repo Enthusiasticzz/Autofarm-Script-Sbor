@@ -17,7 +17,8 @@
 -- reset, so the loss is registered before walking off. A stop with it off
 -- moves on after Wait After Reset instead. Dying, rather than being reset by
 -- the route, is never taken as the stop being done: once the character is back
--- the same stop's Path is walked again from its first point.
+-- the same stop is run again, teleporting to its waypoint and walking its Path
+-- from the first point. The sword is asked for before the fight, not at it.
 --
 -- The route loops unless Loop Route is off; then it plays once and switches
 -- itself off. Travel is the stop's own saved Path points, walked in order and
@@ -92,6 +93,10 @@ return {
         --// How far from the boss the character stops to swing. The combat range
         --// says when the attack input may be pressed, not where a swing lands.
         local FIGHT_STANDOFF = 6
+        --// Distance from the stop at which the sword is asked for, so it is
+        --// already out when the fight starts instead of being fumbled for
+        --// while the boss is hitting the character.
+        local WEAPON_READY_DISTANCE = 60
         --// How far from the character a mob name is offered in the picker.
         local NAME_SCAN_RADIUS = 300
         --// The status line is rewritten at most this often.
@@ -108,9 +113,6 @@ return {
                 Index = 1,
                 --// Next point of the stop's saved Path to walk (1 = first).
                 PathIndex = 1,
-                --// When the weapon draw was last asked for, so a stop cannot
-                --// toggle the equip input every frame (nil = not asked yet).
-                DrawAt = nil,
                 WalkFrom = nil,
                 WalkSampleAt = nil,
                 PhaseStart = 0,
@@ -129,6 +131,10 @@ return {
                 RecoveredAt = nil,
                 --// When the game's Interact input was last pressed on the way.
                 InteractAt = nil,
+                --// Where the character stood when the waypoint teleport was
+                --// fired, and how many times it has been retried for this stop.
+                TeleportFrom = nil,
+                Teleports = 0,
                 --// This recovery is a death, not a planned reset: walk the same
                 --// stop's path again instead of moving on to the next stop.
                 RestartStop = false,
@@ -601,8 +607,9 @@ return {
             S.KillAt = nil
             S.Teleported = false
             S.PathIndex = 1
-            S.DrawAt = nil
             S.InteractAt = nil
+            S.TeleportFrom = nil
+            S.Teleports = 0
             S.RestartStop = false
             S.RecoveredAt = nil
             S.BestDistance = nil
@@ -834,14 +841,27 @@ return {
             return nil
         end
 
-        --// Walks into swinging distance and fights. The weapon is drawn once
-        --// per stop: the shared draw helper toggles the equip input, and asking
-        --// it every frame drew and sheathed the sword over and over, which is
-        --// why the first swing took seconds and later swings came and went.
-        --// The attack goes through AttackTarget, not PerformCombatActions: that
-        --// one also demands the mob be on Auto Farm's Enemy Priority list, so
-        --// the boss stop's own target was found, drawn for, and then never
-        --// swung at.
+        --// Asks for the sword. The cached Equipped flag is not trusted: it
+        --// survives a reset or a respawn that sheathed the sword, so checking
+        --// it meant this helper was never called and the boss was fought
+        --// unarmed until an attack happened to equip the sword. The helper
+        --// itself reads the weld and rate-limits with the game's equip
+        --// cooldown, so asking every frame cannot toggle the sword.
+        --// True when the equip input was just sent: the game needs a frame to
+        --// swap the weld, and closing in with the sword still on the back is
+        --// how the character got hit before it could swing.
+        local function RequireWeapon(Now)
+            if not AICFeature.EnsureWeaponDrawn then
+                return false
+            end
+
+            return AICFeature.EnsureWeaponDrawn(Now) == true
+        end
+
+        --// Walks into swinging distance and fights. The attack goes through
+        --// AttackTarget, not PerformCombatActions: that one also demands the
+        --// mob be on Auto Farm's Enemy Priority list, so the boss stop's own
+        --// target was found, drawn for, and then never swung at.
         local function Fight(Target, Now)
             local _, Humanoid, RootPart = Runtime:GetCharacter()
             local TargetRoot = Target:FindFirstChild("HumanoidRootPart")
@@ -850,15 +870,9 @@ return {
                 return
             end
 
-            local Equipped = AICFeature.S and AICFeature.S.Equipped
-
-            --// The first fight frame asks at once; a later ask is only a
-            --// retry (no sword yet, still sheathed), never a toggle.
-            if AICFeature.EnsureWeaponDrawn and not Equipped
-                and (S.DrawAt == nil or Now - S.DrawAt >= 2)
-            then
-                S.DrawAt = Now
-                AICFeature.EnsureWeaponDrawn(Now)
+            if RequireWeapon(Now) then
+                Humanoid:Move(Vector3.zero)
+                return
             end
 
             local Offset = TargetRoot.Position - RootPart.Position
@@ -949,6 +963,7 @@ return {
             --// give the character a moment to land.
             if not S.Teleported and (Stop.Waypoint or 0) > 0 then
                 S.Teleported = true
+                S.TeleportFrom = RootPart.Position
 
                 if TeleportToWaypoint(Stop.Waypoint) then
                     S.WaitUntil = Now + TELEPORT_WAIT
@@ -962,6 +977,21 @@ return {
                 return
             end
 
+            --// A teleport fired before a just-respawned character had loaded
+            --// can be dropped by the game. If nothing moved and the stop is
+            --// still far away, ask once more rather than walking the whole
+            --// way from spawn.
+            if S.TeleportFrom then
+                local Moved = (RootPart.Position - S.TeleportFrom).Magnitude
+                local ToStop = AICCombatUtils.GetHorizontalDistance(Stop.Position, RootPart.Position)
+                S.TeleportFrom = nil
+
+                if Moved < 4 and ToStop > 60 and (S.Teleports or 0) < 1 then
+                    S.Teleports = (S.Teleports or 0) + 1
+                    S.Teleported = false
+                end
+            end
+
             local Path = Stop.Path or {}
             local Point = Path[S.PathIndex]
             local Destination = Point or Stop.Position
@@ -969,6 +999,12 @@ return {
                 and PATH_REACH
                 or (tonumber(Runtime:GetPlaceConfig().REACH_DISTANCE) or REACH_DISTANCE)
             local Flat = AICCombatUtils.GetHorizontalDistance(Destination, RootPart.Position)
+
+            --// Close to the stop now: get the sword out before the fight, so
+            --// the first swing is not spent equipping it under the boss.
+            if AICCombatUtils.GetHorizontalDistance(Stop.Position, RootPart.Position) <= WEAPON_READY_DISTANCE then
+                RequireWeapon(Now)
+            end
 
             --// On the way: use whatever prompt the character passes, the same
             --// way the Farming waypoint route does. Not on the frame the stop
@@ -1173,10 +1209,18 @@ return {
         end
 
         --// Called while the character is dead or gone, where Auto Farm
-        --// returns before BossStep: keeps a reset waiting for its respawn.
+        --// returns before BossStep: keeps a reset waiting for its respawn, and
+        --// registers a death the route did not cause. Without the second part
+        --// a death was invisible to the route (Auto Farm returns before
+        --// BossStep while dead), so it resumed the half-walked path from the
+        --// spawn on respawn and never teleported back to the stop's waypoint.
         AICFeature.BossRecoverStep = function(Now)
             if not IsEnabled() then
                 return false
+            end
+
+            if S.Phase ~= "Recover" then
+                BeginRecover(Now, "DIED", true, true)
             end
 
             return RecoverStep(Now)

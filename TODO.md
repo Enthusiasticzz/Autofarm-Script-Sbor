@@ -502,6 +502,15 @@ were added.
 > - It does not press on the frame the stop is reached, so a prompt near the boss cannot open instead of the first swing. The timer resets per stop, so the first press comes immediately.
 > - Harness: 54 checks. New ones assert at least two presses while walking a long leg and none during the fight. Mutation: removing the press fails the walk check.
 
+### [x] Boss Route: the sword is fumbled at the boss, and a death resumes a half-walked path
+
+> **Done (v3.38):** `Features/BossNavigator.lua`
+> - **Sword out before the fight.** The route no longer trusts `AICFeature.S.Equipped` before asking the shared draw helper. That cached flag survives a reset or respawn that sheathed the sword, so the helper was never called and the boss was fought bare-handed until an attack happened to equip it. The helper now reads the tool's weld itself and rate-limits with the game's 0.35 s equip cooldown, so it is asked every frame and retried until the sword really is in the hand.
+> - The sword is also asked for from **60 studs** out on the last leg, and the frame the equip input goes out the character stands still instead of closing in with the sword on its back.
+> - **A death the route did not cause was invisible.** Auto Farm returns before `BossStep` while the character is dead, so the `DIED` branch in `Step` never ran: on respawn the route resumed the half-walked path from the spawn (skipping the earlier points) instead of starting over. `BossRecoverStep` now registers the death, and after the respawn wait the stop restarts from path point 1 and teleports to its **Teleport Waypoint #** again. A dropped teleport (fired while the new body was loading) is retried once when nothing moved and the stop is still far.
+> - Harness: 60 checks. New ones cover the stale `Equipped` flag still drawing the sword, a death restarting at point 1 rather than the point it died on, and the stop's waypoint being fired again after the death. Mutations: the old `Equipped` gate fails the stale-flag check; removing the death hook fails three retry checks.
+> - `USAGE.md` documents the draw timing and the death retry.
+
 ## To Fix
 
 ### [x] Waypoints Looped & Paired Farmzone/Waypoint/Targets: walking back to waypoints that are not paired

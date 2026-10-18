@@ -1,6 +1,6 @@
 # AIC usage guide
 
-How to use Automated Industry Complex (AutoFarmV3, `v3.37`) once it is loaded. The
+How to use Automated Industry Complex (AutoFarmV3, `v3.38`) once it is loaded. The
 loadstring and what the loader fetches are in [README.md](README.md); this file is
 about the features and about why the farm sometimes appears to do nothing.
 
@@ -474,9 +474,13 @@ final point can be the doorway and the stop the boss.
    counts as reached within 4 studs (`Waypoint Reach Distance` for the stop).
 3. Fights as soon as the stop is reached — there is no wait at the spot any
    more. The nearest living mob inside **Engage Radius** that matches **Boss
-   Names** (anything when empty) is the target; the weapon is drawn on the first
-   frame of the fight and the same attack and skill inputs as Auto Farm are
-   pressed from then on.
+   Names** (anything when empty) is the target. The sword is asked for from 60
+   studs out on the last leg, and again every frame of the fight until the
+   tool's weld says it is really in the hand (the cached equipped flag is not
+   trusted: it survives a respawn that sheathed the sword). The frame the equip
+   input goes out the character stands still, so it is not running at the boss
+   with the sword still on its back. The same attack and skill inputs as Auto
+   Farm are pressed from then on.
 4. Ends the stop when the target dies and nothing else is left there (a 2 s
    grace), or when there is nothing to fight for 5 s.
 5. If it ends on the kill and **Reset After Kill** is on, the character holds at
@@ -522,9 +526,11 @@ Notes:
   starts empty and adding stops needs a loaded profile (`CREATE / LOAD PROFILE
   FIRST`, `DEFAULT PLACE_CONFIG IS READ-ONLY` on a built-in preset).
 - Dying on the way, or in the fight, is **not** treated as the stop being done:
-  the route waits for the respawn (and **Wait After Reset**), then walks the
-  same stop's **Path to Boss** again from its first point. Only a kill moves the
-  route on.
+  the route waits for the respawn (and **Wait After Reset**), then teleports to
+  that stop's **Teleport Waypoint #** again (if it has one) and walks the same
+  **Path to Boss** from its first point. Only a kill moves the route on. A
+  teleport the game drops while the new body is still loading is retried once,
+  when the character has not moved and the stop is still far away.
 - With **Auto Farm** on, the route runs before the farming waypoint route, so the
   two never fight over the character. Turn Boss Route off to farm normally.
 
