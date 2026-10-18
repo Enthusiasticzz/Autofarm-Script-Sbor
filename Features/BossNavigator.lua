@@ -22,7 +22,9 @@
 -- The route loops unless Loop Route is off; then it plays once and switches
 -- itself off. Travel is the stop's own saved Path points, walked in order and
 -- then the stop itself; nothing is solved or steered, so the way round a
--- building is the one recorded in the Path to Boss section. The fight uses the
+-- building is the one recorded in the Path to Boss section. While walking it
+-- presses the game's Interact input like the Farming waypoint route, so doors,
+-- levers and other proximity prompts on the path are used. The fight uses the
 -- same combat inputs as Auto Farm. Auto Farm hands this module the frame while
 -- it is on, with Auto Farm on or off.
 return {
@@ -57,6 +59,9 @@ return {
         --// How close to the stop counts as standing on it, when the place has
         --// no reach distance of its own.
         local REACH_DISTANCE = 5
+        --// Interact presses while walking, when the place config has no
+        --// interaction interval of its own.
+        local INTERACT_INTERVAL = 0.5
         --// Waited after a waypoint teleport, so the character lands before
         --// the walk to the spot starts.
         local TELEPORT_WAIT = 2
@@ -122,6 +127,8 @@ return {
                 SkipExpCheck = true,
                 ExpDeadline = 0,
                 RecoveredAt = nil,
+                --// When the game's Interact input was last pressed on the way.
+                InteractAt = nil,
                 --// This recovery is a death, not a planned reset: walk the same
                 --// stop's path again instead of moving on to the next stop.
                 RestartStop = false,
@@ -595,6 +602,7 @@ return {
             S.Teleported = false
             S.PathIndex = 1
             S.DrawAt = nil
+            S.InteractAt = nil
             S.RestartStop = false
             S.RecoveredAt = nil
             S.BestDistance = nil
@@ -875,6 +883,41 @@ return {
             AICCombat.AttackTarget(Target, Now)
         end
 
+        --// The Farming waypoint route presses the game's Interact input while
+        --// it walks (Auto Farm does it every INTERACTION_INTERVAL), which is
+        --// how doors, levers and other proximity prompts get used on the way.
+        --// Boss Route owns the frame, so nothing else would press it and the
+        --// character would walk straight past every prompt on the path.
+        local function PressInteract(Now)
+            local GetInput = Runtime.GetInputBindableFunction
+
+            if not GetInput then
+                return
+            end
+
+            local Interval = tonumber(CONFIG.INTERACTION_INTERVAL) or INTERACT_INTERVAL
+
+            if S.InteractAt and Now - S.InteractAt < Interval then
+                return
+            end
+
+            S.InteractAt = Now
+
+            local InputBindableFunction = GetInput(Runtime)
+
+            if not InputBindableFunction then
+                return
+            end
+
+            --// A game without the binding must not break the walk.
+            pcall(function()
+                InputBindableFunction:Invoke(
+                    "InteractButton",
+                    Enum.UserInputState.Begin
+                )
+            end)
+        end
+
         local function TeleportToWaypoint(Number)
             local TeleportEvent = Replicated:FindFirstChild("TeleportEvent", true)
 
@@ -926,6 +969,13 @@ return {
                 and PATH_REACH
                 or (tonumber(Runtime:GetPlaceConfig().REACH_DISTANCE) or REACH_DISTANCE)
             local Flat = AICCombatUtils.GetHorizontalDistance(Destination, RootPart.Position)
+
+            --// On the way: use whatever prompt the character passes, the same
+            --// way the Farming waypoint route does. Not on the frame the stop
+            --// is reached, where the fight begins instead.
+            if Flat > Reach then
+                PressInteract(Now)
+            end
 
             --// Progress, not the walker's opinion: a wrong point or a wall in
             --// the way shows up as no approach at all.

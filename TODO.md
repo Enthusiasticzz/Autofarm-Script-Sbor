@@ -495,6 +495,13 @@ were added.
 > - Harness: 51 checks. New ones cover the corpse pause (no reset at 3 s with a 5 s pause, reset after it), dying without advancing, the retry starting at path point 1 and heading back along the recorded path. Mutations: forcing the reset delay to the 2 s grace fails the pause check; letting a death `Advance` fails three retry checks.
 > - `USAGE.md` documents the **Reset (s)** column and the death retry.
 
+### [x] Boss Route: proximity prompts on the path are ignored
+
+> **Done (v3.37):** `Features/BossNavigator.lua`
+> - While walking a stop's **Path to Boss** the route now presses the game's `InteractButton` every `INTERACTION_INTERVAL` (0.5 s), exactly what Auto Farm does while the Farming waypoint route is running. Doors, levers, chests and any other proximity prompt the character passes get used instead of walked past; the press is `pcall`ed so a game without the binding cannot break the walk.
+> - It does not press on the frame the stop is reached, so a prompt near the boss cannot open instead of the first swing. The timer resets per stop, so the first press comes immediately.
+> - Harness: 54 checks. New ones assert at least two presses while walking a long leg and none during the fight. Mutation: removing the press fails the walk check.
+
 ## To Fix
 
 ### [x] Waypoints Looped & Paired Farmzone/Waypoint/Targets: walking back to waypoints that are not paired

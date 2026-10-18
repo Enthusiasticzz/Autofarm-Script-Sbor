@@ -1,6 +1,6 @@
 # AIC usage guide
 
-How to use Automated Industry Complex (AutoFarmV3, `v3.36`) once it is loaded. The
+How to use Automated Industry Complex (AutoFarmV3, `v3.37`) once it is loaded. The
 loadstring and what the loader fetches are in [README.md](README.md); this file is
 about the features and about why the farm sometimes appears to do nothing.
 
@@ -500,6 +500,12 @@ the points is where the character walks, so the way round a building is the one
 you recorded. Steps, curbs and fences are handled by a jump: the position is
 sampled twice a second and a hop is added when under 0.75 studs were covered,
 plus a jump when something low is in the way.
+
+While it walks it also presses the game's **Interact** input every 0.5 s — the
+same `INTERACTION_INTERVAL` the Farming waypoint route uses — so doors, levers,
+chests and other proximity prompts on the path are used as the character passes
+them instead of being walked past. It stops pressing on the frame the stop is
+reached, so a prompt cannot take the place of the first swing.
 
 A stop is given up when the character has not got **closer** to the next point
 for 20 s (a point saved inside a wall, or on the wrong floor), or when one leg
