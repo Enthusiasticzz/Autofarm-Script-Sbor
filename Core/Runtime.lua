@@ -909,6 +909,12 @@ return {
         AICConfig.MAX_BOSS_RESET = 600
         AICConfig.MAX_BOSS_RADIUS = 500
         AICConfig.MAX_BOSS_WAYPOINT = 999
+        --// How far from the boss the skill dodge settles. Small enough to be a
+        --// step out of a skill rather than a run across the room; a stop can
+        --// set its own in "Dodge Distance".
+        AICConfig.DEFAULT_BOSS_DODGE_DISTANCE = 16
+        AICConfig.MIN_BOSS_DODGE_DISTANCE = 6
+        AICConfig.MAX_BOSS_DODGE_DISTANCE = 80
 
         --// Saved travel points for one boss stop, in the order walked.
         function AICConfig.NormalizeBossPath(List)
@@ -941,6 +947,7 @@ return {
         --//   WaitExp     hold the next stop until EXP actually dropped
         --//   Radius      how far from Position a boss is picked up
         --//   Dodge       sprint out of the boss's skill while it is casting
+        --//   DodgeDistance  how far from the boss that dodge settles
         --//   Prompt      travel by teleporting to PromptPosition first
         --//   PromptPosition  where that interaction prompt stands
         --//   PromptName  its name, for the editor and the status line
@@ -1004,6 +1011,11 @@ return {
                         --// Default on: a boss skill is worth stepping out of
                         --// until the stop says otherwise.
                         Dodge = Stop.Dodge ~= false,
+                        DodgeDistance = math.clamp(
+                            tonumber(Stop.DodgeDistance) or AICConfig.DEFAULT_BOSS_DODGE_DISTANCE,
+                            AICConfig.MIN_BOSS_DODGE_DISTANCE,
+                            AICConfig.MAX_BOSS_DODGE_DISTANCE
+                        ),
                         --// On with nothing saved is allowed: the nearest prompt
                         --// to the stop is found at run time.
                         Prompt = Stop.Prompt == true,

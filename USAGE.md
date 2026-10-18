@@ -429,6 +429,9 @@ teleport) to a boss, fight it, and reset back to spawn before the next one.
 - **Teleport Waypoint #** — one of the game's waypoints to teleport to before
   walking to the stop (0 walks the whole way). Uses the same `TeleportEvent`
   remote as the Teleport tab.
+- **Dodge Distance** — how far from the boss the skill dodge settles, 6–80
+  studs (16 by default). The default is a step out of a short-range skill; raise
+  it for a boss with a wide one.
 - **Engage Radius** — how far from the stop a boss is picked up.
 - **Reset After Kill** (on for a new stop) — once the boss is down, reset the
   character so the next stop is travelled to from spawn. Off, the next stop
@@ -439,9 +442,11 @@ teleport) to a boss, fight it, and reset back to spawn before the next one.
   off.
 - **Teleport To Prompt** (off for a new stop) — travel by the interaction
   prompt (a door, a portal, a boss-room button) instead of a waypoint. The
-  character is put next to the prompt, **Interact** is pressed there, and the
-  stop's Path is walked from the first point. A stop with both set uses the
-  prompt, not the waypoint.
+  character is put next to the prompt, **Interact** is pressed **once** there,
+  and then the input is left alone for **10 s** while the Path is walked: the
+  teleport lands on the prompt itself, and pressing it again would fire the same
+  door or menu a second time. Presses come back on their own after that. A stop
+  with both set uses the prompt, not the waypoint.
 - **Save Prompt Here** — records the nearest interaction to where you stand as
   this stop's prompt and switches **Teleport To Prompt** on: a `ProximityPrompt`
   or a `ClickDetector` within 40 studs, found whether it hangs off a part, an
@@ -540,11 +545,11 @@ damage: the boss's `Skill` sound or its blade/body particles switching on is the
 signal, so the character steps out before the hit lands. A loss of **20% of the
 bar within 0.6 s** is still read as a skill landing and used as the backup when
 the effects were missed. Either way the character stops swinging and runs — the
-normal run speed plus a sprint — out to a ring **26 studs from the boss**,
-picking a direction that has ground and a clear line. It stays on that ring: once
-it is out it stands there facing the boss (the sprint put away) instead of
-picking a point further out, so a skill that lasts walks it a step out, not
-across the room.
+normal run speed plus a sprint — out to a ring **16 studs from the boss**
+(**Dodge Distance** on the stop, 6–80, sets its own), picking a direction that
+has ground and a clear line. It stays on that ring: once it is out it stands
+there facing the boss (the sprint put away) instead of picking a point further
+out, so a skill that lasts walks it a step out, not across the room.
 
 How long it stays out is read from the boss, not from a timer. The game turns on
 the blade's `Sparkles`/particles and plays a `Skill` sound while the skill is

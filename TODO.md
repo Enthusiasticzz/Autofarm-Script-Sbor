@@ -571,6 +571,13 @@ were added.
 > - A stop's own **Reset (s) = 0** now also means "reset at the tick", not "hold two seconds".
 > - Harness: 118 checks. New ones assert a free reset respawns within a second of the kill, and that a level seen losing nothing is not held again. Mutations: a fixed grace fails three checks, ignoring the learned level fails two.
 
+### [x] Boss Route: the dodge still stood too far out, and Interact kept firing after a prompt teleport
+
+> **Done (v3.46):** `Features/BossNavigator.lua`, `Core/Runtime.lua`, Boss Route only
+> - The dodge ring came in from 26 to **16 studs from the boss** (a step out of a short-range skill rather than a run across the room), and each stop can set its own with a new **Dodge Distance** box (6–80, stored as `DodgeDistance`, defaulted and clamped in `NormalizeBossStops`).
+> - **Interact is now muted for 10 s after a prompt teleport.** The teleport lands on the prompt itself, so the walking presses were firing the same door/menu again on the way out. The landing press is the one that fires it; everything after waits the mute out, and the presses resume on their own. The mute is per stop visit (`InteractMutedUntil`, cleared in `BeginStop`).
+> - Harness: 122 checks. New ones cover a stop with its own **Dodge Distance** (30 studs), and a prompt teleport pressing once, staying quiet for the next five seconds, then pressing again after the mute. Mutations: ignoring the stop's distance fails two, removing the mute fails two.
+
 ## To Fix
 
 ### [x] Waypoints Looped & Paired Farmzone/Waypoint/Targets: walking back to waypoints that are not paired

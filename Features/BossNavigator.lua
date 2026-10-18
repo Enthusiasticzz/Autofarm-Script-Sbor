@@ -114,6 +114,11 @@ return {
         local PROMPT_SCAN_RADIUS = 80
         --// How far from the character "Save Prompt Here" looks.
         local PROMPT_SAVE_RADIUS = 40
+        --// After a prompt teleport the Interact input is left alone for this
+        --// long. The teleport lands on the prompt itself, and pressing it
+        --// again while walking away fires it a second time - a door closing
+        --// behind the character, or a menu over the fight.
+        local PROMPT_INTERACT_MUTE = 10
         --// Walking to a stop this long means it cannot be reached.
         local WALK_TIMEOUT = 120
         --// No progress toward the next point for this long (a wrong point, a
@@ -152,7 +157,8 @@ return {
         --// enough to be out of a skill, close enough that it is a step out and
         --// not a run across the room. It is held, not added to, so a skill
         --// that stays up does not walk the character further every second.
-        local DODGE_DISTANCE = 26
+        --// A stop can set its own ("Dodge Distance"); this is the default.
+        local DODGE_DISTANCE = 16
         local DODGE_HOLD_SLACK = 2
         local DODGE_SPEED_BONUS = 12
         --// The boss's emitters and sounds are listed again this often. Once a
@@ -218,6 +224,9 @@ return {
                 --// visit, and when Interact was last pressed after landing.
                 PromptUsed = false,
                 PromptInteractAt = nil,
+                --// No Interact press before this: quiet for
+                --// PROMPT_INTERACT_MUTE after a prompt teleport.
+                InteractMutedUntil = nil,
                 --// Where the stop's prompt was found this visit (false = none).
                 PromptFallback = nil,
                 --// Health watching for a skill: the baseline percent and when
@@ -706,6 +715,12 @@ return {
             if UIRef.BossDodgeToggle then
                 UIRef.BossDodgeToggle:Set(Stop.Dodge ~= false, false)
             end
+            if UIRef.BossDodgeDistanceBox then
+                UIRef.BossDodgeDistanceBox:Set(
+                    tostring(Stop.DodgeDistance or AICConfig.DEFAULT_BOSS_DODGE_DISTANCE),
+                    false
+                )
+            end
             if UIRef.BossPromptToggle then
                 UIRef.BossPromptToggle:Set(Stop.Prompt == true, false)
             end
@@ -859,6 +874,7 @@ return {
             S.Teleports = 0
             S.PromptUsed = false
             S.PromptInteractAt = nil
+            S.InteractMutedUntil = nil
             S.PromptFallback = nil
             S.ResetHumanoid = nil
             S.ResetFiredAt = nil
@@ -1315,7 +1331,9 @@ return {
         --// either side, then behind, skipping directions with a hole or a wall.
         --// Measured from the boss rather than from the character, so every
         --// pick lands on the same ring instead of one ring further out.
-        local function PickDodgePoint(RootPart, TargetRoot)
+        local function PickDodgePoint(RootPart, TargetRoot, Distance)
+            Distance = tonumber(Distance) or DODGE_DISTANCE
+
             local Away = Vector3.new(
                 RootPart.Position.X - TargetRoot.Position.X,
                 0,
@@ -1332,9 +1350,9 @@ return {
 
             local function OnRing(Direction)
                 return Vector3.new(
-                    TargetRoot.Position.X + Direction.X * DODGE_DISTANCE,
+                    TargetRoot.Position.X + Direction.X * Distance,
                     Height,
-                    TargetRoot.Position.Z + Direction.Z * DODGE_DISTANCE
+                    TargetRoot.Position.Z + Direction.Z * Distance
                 )
             end
 
@@ -1373,7 +1391,7 @@ return {
         --// keeps its particles up for two seconds is dodged for two seconds;
         --// one that flashes past still gets the full minimum. DODGE_MAX_TIME
         --// is the ceiling, for an effect that never switches off.
-        local function DodgeStep(Target, Humanoid, RootPart, Now)
+        local function DodgeStep(Target, Humanoid, RootPart, Now, Stop)
             --// Ended (or never armed). The state is cleared even when no speed
             --// was borrowed - a dodge that started already out on the ring
             --// never takes one - or the stale max keeps looking like a dodge.
@@ -1408,9 +1426,10 @@ return {
             --// Kept on one ring around the boss. Out there already, it stands
             --// its ground: the old code picked a point further away every time
             --// it arrived, so a long skill walked it across the map.
+            local Distance = tonumber(Stop and Stop.DodgeDistance) or DODGE_DISTANCE
             local FromBoss = AICCombatUtils.GetHorizontalDistance(TargetRoot.Position, RootPart.Position)
 
-            if FromBoss < DODGE_DISTANCE - DODGE_HOLD_SLACK then
+            if FromBoss < Distance - DODGE_HOLD_SLACK then
                 local Stale = not S.DodgeTarget
                     or AICCombatUtils.GetHorizontalDistance(S.DodgeTarget, TargetRoot.Position) > 6
 
@@ -1418,7 +1437,7 @@ return {
                     --// The speed to put back is the first one seen, never the
                     --// sprint a later frame is already running at.
                     S.DodgeFromSpeed = S.DodgeFromSpeed or tonumber(Humanoid.WalkSpeed) or 0
-                    S.DodgeTarget = PickDodgePoint(RootPart, TargetRoot)
+                    S.DodgeTarget = PickDodgePoint(RootPart, TargetRoot, Distance)
                 end
 
                 --// Run, not walk: the normal run speed plus a sprint.
@@ -1525,7 +1544,7 @@ return {
 
             --// A dodge running owns the frame, and it holds until the boss's
             --// effects have gone out again (see DodgeStep).
-            if DodgeStep(Target, Humanoid, RootPart, Now) then
+            if DodgeStep(Target, Humanoid, RootPart, Now, Stop) then
                 if Opened then
                     Say("Boss Route", "Dodging a skill at stop #" .. tostring(S.Index), 2)
                 end
@@ -1544,7 +1563,7 @@ return {
                     S.DodgeTarget = nil
                 end
 
-                if DodgeStep(Target, Humanoid, RootPart, Now) then
+                if DodgeStep(Target, Humanoid, RootPart, Now, Stop) then
                     Say("Boss Route", "Dodging a skill at stop #" .. tostring(S.Index), 2)
                     return
                 end
@@ -1585,6 +1604,13 @@ return {
             end
 
             local Interval = tonumber(CONFIG.INTERACTION_INTERVAL) or INTERACT_INTERVAL
+
+            --// Muted after a prompt teleport (see PROMPT_INTERACT_MUTE). The
+            --// landing press is the one that fires the prompt, so it is
+            --// allowed through; everything after it waits the mute out.
+            if not Force and S.InteractMutedUntil and Now < S.InteractMutedUntil then
+                return
+            end
 
             if not Force and S.InteractAt and Now - S.InteractAt < Interval then
                 return
@@ -1793,6 +1819,7 @@ return {
             --// actually fires before the walk to the stop starts.
             if S.PromptUsed and not S.PromptInteractAt then
                 S.PromptInteractAt = Now
+                S.InteractMutedUntil = Now + PROMPT_INTERACT_MUTE
                 PressInteract(Now, true)
             end
 
@@ -2149,6 +2176,7 @@ return {
                 ResetWait = AICConfig.DEFAULT_BOSS_RESET_WAIT,
                 WaitExp = false,
                 Dodge = true,
+                DodgeDistance = AICConfig.DEFAULT_BOSS_DODGE_DISTANCE,
                 Prompt = false,
                 PromptPosition = nil,
                 PromptName = "",
@@ -2326,6 +2354,21 @@ return {
             end
 
             Stop.Waypoint = math.clamp(math.floor(Number), 0, AICConfig.MAX_BOSS_WAYPOINT)
+            return true
+        end)
+
+        UIRef.BossDodgeDistanceBox = AddStopBox("Dodge Distance", function(Stop, Value)
+            local Number = tonumber(Value)
+
+            if not Number or Number <= 0 then
+                return false
+            end
+
+            Stop.DodgeDistance = math.clamp(
+                math.floor(Number),
+                AICConfig.MIN_BOSS_DODGE_DISTANCE,
+                AICConfig.MAX_BOSS_DODGE_DISTANCE
+            )
             return true
         end)
 
