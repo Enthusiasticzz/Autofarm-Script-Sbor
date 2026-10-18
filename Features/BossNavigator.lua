@@ -194,6 +194,11 @@ return {
                 --// Something matching the stop was engaged on this visit, which
                 --// is what a reset after the kill is owed for.
                 FoughtThisVisit = false,
+                --// The mob this stop was last fighting. A scan can lose a live
+                --// boss (out of the engage radius, a model swap, a root that
+                --// is gone for a moment) and that is not a kill; the health
+                --// of this one is the only thing that can end the fight.
+                LastTarget = nil,
                 KillAt = nil,
                 --// EXP before the reset, and when to stop waiting for it.
                 ExpBefore = nil,
@@ -840,6 +845,7 @@ return {
         local function StopRoute(StatusText)
             S.Phase = "Idle"
             S.SeenTarget = false
+            S.LastTarget = nil
             S.KillAt = nil
             S.WaitUntil = nil
             S.WalkStart = nil
@@ -866,6 +872,7 @@ return {
             S.FightStart = nil
             S.SeenTarget = false
             S.FoughtThisVisit = false
+            S.LastTarget = nil
             S.KillAt = nil
             S.Teleported = false
             S.PathIndex = 1
@@ -899,6 +906,7 @@ return {
         local function Advance(Now)
             local Stops = GetStops()
             S.SeenTarget = false
+            S.LastTarget = nil
             S.KillAt = nil
             S.FightStart = nil
             S.WalkStart = nil
@@ -1159,6 +1167,39 @@ return {
             local MobRoot = Mob:FindFirstChild("HumanoidRootPart")
 
             return MobHumanoid ~= nil and MobRoot ~= nil and MobHumanoid.Health > 0
+        end
+
+        --// Whether the game still says this mob is alive. Deliberately looser
+        --// than IsStopTargetAlive: a root that is gone for a moment (a model
+        --// swap, a spawn animation) does not make a living boss a corpse.
+        local function IsMobAlive(Mob)
+            if not Mob then
+                return false
+            end
+
+            local MobHumanoid = Mob:FindFirstChildOfClass("Humanoid")
+
+            return MobHumanoid ~= nil and (tonumber(MobHumanoid.Health) or 0) > 0
+        end
+
+        --// The stop still wants this mob: its name is on the list, or the stop
+        --// takes anything. Checked on the fallback target so removing a boss
+        --// name mid-fight is not treated as a kill.
+        local function IsWantedTarget(Mob, Stop)
+            if not Mob then
+                return false
+            end
+
+            if #Stop.Targets == 0 then
+                return true
+            end
+
+            local Name = AICCombat.GetTargetEntityName(Mob)
+
+            --// A name that cannot be read right now (a model swapped for a
+            --// phase) is not proof the boss was taken off the list: the mob
+            --// that was already being fought is kept in that case.
+            return Name == nil or table.find(Stop.Targets, Name) ~= nil
         end
 
         local function FindTarget(Stop, Now)
@@ -1900,6 +1941,7 @@ return {
                     S.Phase = "Fight"
                     S.FightStart = Now
                     S.SeenTarget = false
+                    S.LastTarget = nil
                     S.KillAt = nil
                     ScanAt = 0
                     ScanDone = false
@@ -1932,9 +1974,21 @@ return {
 
             local Target = FindTarget(Stop, Now)
 
+            --// The scan is a snapshot of the room, not the game's health: a
+            --// boss that steps out of the engage radius, has its model swapped
+            --// for a phase, or loses its root for a frame disappears from it
+            --// while still alive. Treating that as a kill reset the character
+            --// in the middle of the fight (the free path fires a fifth of a
+            --// second after one missed scan). The mob already being fought is
+            --// kept instead, so only a dead or destroyed boss ends the fight.
+            if not Target and IsMobAlive(S.LastTarget) and IsWantedTarget(S.LastTarget, Stop) then
+                Target = S.LastTarget
+            end
+
             if Target then
                 S.SeenTarget = true
                 S.FoughtThisVisit = true
+                S.LastTarget = Target
                 S.KillAt = nil
                 AICCombat.S.ClosestTarget = Target
 
@@ -1954,6 +2008,19 @@ return {
             --// same stop still standing up, then the stop's own Reset After
             --// pause is held before the character is reset.
             if S.SeenTarget then
+                --// A boss that is still alive is never a kill, even when no
+                --// scan finds it. The name was taken off this stop's list:
+                --// the route simply moves on, with no reset and no EXP lost.
+                if IsMobAlive(S.LastTarget) then
+                    if not IsWantedTarget(S.LastTarget, Stop) then
+                        Advance(Now)
+                    else
+                        SetStatus(string.format("STOP %d/%d  FIGHT  %s", S.Index, #GetStops(), Stop.Label))
+                    end
+
+                    return
+                end
+
                 S.KillAt = S.KillAt or Now
 
                 --// The pause belongs to the reset; with Reset After Kill off
@@ -2128,6 +2195,7 @@ return {
             S.Index = 1
             S.Phase = "Idle"
             S.SeenTarget = false
+            S.LastTarget = nil
             S.KillAt = nil
             S.WaitUntil = nil
             S.WalkStart = nil

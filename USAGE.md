@@ -510,7 +510,10 @@ final point can be the doorway and the stop the boss.
    with the sword still on its back. The same attack and skill inputs as Auto
    Farm are pressed from then on.
 4. Ends the stop when the target dies and nothing else is left there (a 2 s
-   grace), or when there is nothing to fight for 5 s.
+   grace), or when there is nothing to fight for 5 s. The fight is only over
+   when the game says the boss is dead: a scan that loses a living boss (out
+   of **Engage Radius**, a model swap, a root gone for a frame) keeps the mob
+   already being fought, so it can no longer reset mid-fight.
 5. If it ends on the kill and **Reset After Kill** is on, the reset is decided
    from the level first. A reset keeps **10% of the EXP for every 100 levels**,
    stopping at 90% from level 900 up; the route works out what that reset would

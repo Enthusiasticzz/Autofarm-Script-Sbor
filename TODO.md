@@ -578,6 +578,14 @@ were added.
 > - **Interact is now muted for 10 s after a prompt teleport.** The teleport lands on the prompt itself, so the walking presses were firing the same door/menu again on the way out. The landing press is the one that fires it; everything after waits the mute out, and the presses resume on their own. The mute is per stop visit (`InteractMutedUntil`, cleared in `BeginStop`).
 > - Harness: 122 checks. New ones cover a stop with its own **Dodge Distance** (30 studs), and a prompt teleport pressing once, staying quiet for the next five seconds, then pressing again after the mute. Mutations: ignoring the stop's distance fails two, removing the mute fails two.
 
+### [x] Boss Route: resetting in the middle of a fight and reporting BOSS DOWN
+
+> **Done (v3.47):** `Features/BossNavigator.lua`, Boss Route only
+> - The kill was inferred from the target **scan**, not from the boss: `FindTarget` only returns a living mob inside **Engage Radius** with a readable name, so one missed scan read as a kill. A live boss that stepped out of the radius, had its model swapped for a phase, or lost its root for a frame therefore hit the `SeenTarget` branch, and with the new free path the character was reset **0.2 s later** with `Reset BOSS DOWN` — mid-fight.
+> - `S.LastTarget` now keeps the mob the stop is already fighting. If the scan loses it while its **health is above zero** the same target is fought on, so only a dead or destroyed boss ends the fight. It is cleared per stop visit (begin, advance, route reset, leaving the fight).
+> - The kill branch checks that too: a boss that is still alive never arms `KillAt`, even when nothing sees it. If its name was taken off the stop's **Boss Names** mid-fight the route simply moves on, with no reset and no EXP lost. An unreadable name (a phase swap) is not taken as a removal.
+> - Harness: 130 checks (was 122). New ones fight through a live boss leaving the engage radius for a full second (no reset, still attacking), bring it back (same stop, same fight), kill it (reset still immediate), and drop a name mid-fight (advance, no reset). Mutations: treating the missed scan as a kill fails three checks, dropping the fallback target fails two.
+
 ## To Fix
 
 ### [x] Waypoints Looped & Paired Farmzone/Waypoint/Targets: walking back to waypoints that are not paired
