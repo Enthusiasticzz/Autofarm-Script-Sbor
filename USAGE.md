@@ -407,9 +407,10 @@ teleport) to a boss, fight it, and reset back to spawn before the next one.
   Farm on or off; while it is on it owns movement and combat, and the safety
   checks above it (party hold, retreat, Auto Block, server age) still run first.
 - **STATUS:  …** — what the route is doing: `STOP 2/4  PATH 3/8`,
-  `STOP 2/4  WALKING`, `… FIGHT`, `… CLEARING  7s  LOSE 95 EXP`, `… BOSS DOWN`,
+  `STOP 2/4  WALKING`, `… FIGHT`, `… CLEARING  7s  LOSE 95 EXP`,
+  `… CLEARING  7s  LOSE 95 EXP  RUNNING`, `… BOSS DOWN`,
   `… TELEPORT WP3`, `… TELEPORT <prompt>`, `… RESET PENDING`, `… RESET RETRY 1`,
-  `… WAITING FOR EXP LOSS  KEEP 90%`, `ROUTE FINISHED`, `OFF`.
+  `ROUTE FINISHED`, `OFF`.
 - **Add Boss Stop Here** — saves a stop at your current position, with an empty
   **Path to Boss**. A new stop starts with **Reset After Kill on**, a 10 s
   **Reset (s)**, **Dodge Skills on**, **Teleport To Prompt off** and a 120-stud
@@ -419,9 +420,8 @@ teleport) to a boss, fight it, and reset back to spawn before the next one.
   has, its first boss name and where it is. Drag a row (or use ▲▼) to reorder
   the  route. Its `Reset (s)` box is the pause held at the corpse before the
   character resets (0–600), used **only when the EXP sits above the part of
-  the bar a reset keeps** — see *What a stop does*; its `Wait Exp` tick is
-  whether the next stop waits for that EXP loss; ✕ removes the row. There is no
-  fight timer: the row can never reset while the boss lives.
+  the bar a reset keeps** — see *What a stop does*; ✕ removes the row. There
+  is no fight timer: the row can never reset while the boss lives.
 - **Clear Boss Route** — removes every stop.
 - **Edit Boss Stop** — picks which stop the boxes below change, and which stop
   **Path to Boss** and **Boss Names** edit.
@@ -445,13 +445,13 @@ teleport) to a boss, fight it, and reset back to spawn before the next one.
   off.
 - **Teleport To Prompt** (off for a new stop) — travel by the interaction
   prompt (a door, a portal, a boss-room button) instead of a waypoint. The
-  character is put next to the prompt, **Interact** is pressed **once** there,
-  and that is the **only** press of the visit: the teleport lands on the prompt
-  itself, so pressing it again while the Path is walked would re-fire the same
-  door or menu (a door that teleports the character turned that into an endless
-  loop of presses). The switch is thrown **before the teleport**, not on
-  landing, so no press can slip out while it moves. A stop with both set uses
-  the prompt, not the waypoint.
+  character is put next to the prompt and then walks the rest of the Path;
+  **nothing is pressed**, not on landing and not during the walk: the teleport
+  is the travel, and a press at the prompt it landed on re-fires that same door
+  or menu (a door that teleports the character turned that into an endless loop
+  of presses). The suppression is set **before the teleport**, not on landing,
+  so no press can slip out while it moves, and it lasts the whole visit. A stop
+  with both set uses the prompt, not the waypoint.
 - **Save Prompt Here** — records the nearest interaction to where you stand as
   this stop's prompt and switches **Teleport To Prompt** on: a `ProximityPrompt`
   or a `ClickDetector` within 40 studs, found whether it hangs off a part, an
@@ -500,9 +500,9 @@ final point can be the doorway and the stop the boss.
 
 #### What a stop does
 
-1. Teleports to its prompt (when **Teleport To Prompt** is on), presses
-   **Interact** on landing and waits 0.6 s; otherwise teleports to its waypoint
-   (when one is set) and waits 2 s to land.
+1. Teleports to its prompt (when **Teleport To Prompt** is on) and waits 0.6 s
+   for the landing; nothing is pressed there. Otherwise it teleports to its
+   waypoint (when one is set) and waits 2 s to land.
 2. Walks its **Path to Boss** points in order, then the stop itself. A point
    counts as reached within 4 studs (`Waypoint Reach Distance` for the stop).
 3. Fights as soon as the stop is reached, unless the stop sets **Wait At Spot
@@ -533,6 +533,12 @@ final point can be the doorway and the stop the boss.
    tick after the kill, with `RESET NOW` on the status line. Above it the
    character holds at the corpse for the row's **Reset (s)** — **10 s** for a
    stop that has not set one — and `CLEARING  7s  LOSE 50 EXP` counts it down.
+   During that hold a living mob within **40 studs** is run from: the character
+   sprints to a ring 45 studs on the far side of it (further when the stop's
+   **Dodge Distance** is larger), and the status adds `RUNNING`. Standing at
+   the corpse while a mob hits it is what killed the character before the
+   reset it was waiting for. The borrowed sprint speed is put back when the
+   hold ends.
    The protection is a property of the bar, not of the level, so a level where
    a reset was free is still held once the EXP climbs past it. Then the
    character is reset (health set to 0, the same reset Party System uses). That
@@ -542,13 +548,10 @@ final point can be the doorway and the stop the boss.
    standing, so a boss that dies between two scans still resets the stop
    instead of sending the route to the next waypoint.
 6. Once the character is back it goes straight on to the next leg — there is no
-   second pause after the reset. With **Wait Exp** on it first holds until the
-   game's `PlayerStats.EXP` has actually dropped (or reached the cutoff the
-   level's keep-percentage predicts), and never longer than **10 s**; a reset
-   that cost nothing (or a level already known to lose nothing) is not waited
-   for at all. A reset the game ignores (health
-   restored, the request dropped) is asked again after 3 s, up to twice, and
-   the status says `RESET PENDING` / `RESET RETRY n` in the meantime.
+   second pause after the reset, and nothing waits for the EXP drop either: the
+   wait that matters is the one before the reset. A reset the game ignores
+   (health restored, the request dropped) is asked again after 3 s, up to twice,
+   and the status says `RESET PENDING` / `RESET RETRY n` in the meantime.
 7. Then the next stop begins — teleporting to its own waypoint first. Reaching
    the end loops, or finishes when **Loop Route** is off.
 
@@ -587,10 +590,10 @@ same `INTERACTION_INTERVAL` the Farming waypoint route uses — so doors, levers
 chests and other proximity prompts on the path are used as the character passes
 them instead of being walked past. It stops pressing on the frame the stop is
 reached, so a prompt cannot take the place of the first swing. A visit that
-**teleported** — by prompt or by waypoint — does not press on the walk at all:
-the switch goes off before the teleport request, because a waypoint or prompt
-can sit on the landing spot and the walk can pass it again. A prompt stop still
-presses **once** on landing, since that is what fires its saved prompt. The
+**teleported** — by prompt or by waypoint — does not press at all for the whole
+visit: the switch goes off before the teleport request, because a waypoint or
+prompt can sit on the landing spot and the walk can pass it again, and a press
+on the prompt the character landed on re-fires that same door or menu. The
 shared mute also covers Auto Farm's presses and the **Teleport** tab's
 door/waypoint warps for **10 s**.
 

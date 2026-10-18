@@ -52,7 +52,6 @@ return {
             ["Refresh Nearby Bosses"] = "Rebuilds the Add Boss Name list from the mobs around you",
             ["Move Stop Here"] = "Moves the selected boss stop to the character's position",
             ["Remove Stop"] = "Removes the selected boss stop",
-            ["Wait Exp"] = "Holds the next stop until the EXP loss is registered",
             ["Loop Route"] = "Starts again at the first boss stop after the last one",
 
             --// Debug Visualizer

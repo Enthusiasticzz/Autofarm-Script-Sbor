@@ -944,7 +944,6 @@ return {
         --//   Waypoint    game waypoint number teleported to first, 0 walks
         --//   ResetAfterKill  reset once the boss is down, then the next stop
         --//   ResetWait   seconds held at the corpse before that reset
-        --//   WaitExp     hold the next stop until EXP actually dropped
         --//   Wait        seconds stood at the spot before the fight, 0 none
         --//   Radius      how far from Position a boss is picked up
         --//   Dodge       sprint out of the boss's skill while it is casting
@@ -1008,7 +1007,6 @@ return {
                             0,
                             AICConfig.MAX_BOSS_RESET
                         ),
-                        WaitExp = Stop.WaitExp == true,
                         --// Default on: a boss skill is worth stepping out of
                         --// until the stop says otherwise.
                         Dodge = Stop.Dodge ~= false,

@@ -21,16 +21,18 @@
 -- once.
 -- There is no timer reset: the character never resets while the boss is still
 -- standing.
--- Wait Exp holds the next stop until the game's EXP actually dropped after the
--- reset, so the loss is registered before walking off. A stop with it off
--- moves straight on instead. Dying, rather than being reset by
--- the route, is never taken as the stop being done: once the character is back
+-- Once the character is back from a reset the route moves on at once: the
+-- pause that matters is the one before the reset. Dying, rather than being
+-- reset by the route, is never taken as the stop being done: once the character
+-- is back
 -- the same stop is run again, teleporting to its waypoint and walking its Path
 -- from the first point. The sword is asked for before the fight, not at it.
 --
 -- A stop travels either by the game's own waypoint number, or by teleporting
 -- straight to the interaction prompt it saved (the door or portal in front of
--- the boss), pressing Interact there and walking the rest of the Path.
+-- the boss) and walking the rest of the Path. A prompt visit is quiet: no
+-- Interact press goes out for it, because the teleport is the travel and a
+-- press at the prompt would re-fire the same door or menu.
 -- A stop can turn the skill dodge off, for a boss whose particles never stop.
 --
 -- The route loops unless Loop Route is off; then it plays once and switches
@@ -90,8 +92,6 @@ return {
         local KILL_GRACE = 2
         --// A reset whose character never comes back gives up after this.
         local RESPAWN_TIMEOUT = 20
-        --// Longest wait for the EXP drop after a reset, when Wait Exp is on.
-        local EXP_LOSS_TIMEOUT = 10
         --// EXP kept after a reset: the first ten percent of the level's EXP
         --// bar for every hundred levels, and it stops climbing at 90% once the
         --// level reaches 900. Only the EXP above that protected part of the bar
@@ -111,6 +111,11 @@ return {
         local RESET_RETRIES = 2
         --// A character this close to where the reset fired has not respawned.
         local RESET_STAY_DISTANCE = 30
+        --// A living mob this close while the reset hold runs is run from: the
+        --// character does not stand at the corpse waiting for the timer to end.
+        local HOLD_FLEE_DISTANCE = 40
+        --// How far from that mob the hold runs to.
+        local HOLD_FLEE_RING = 45
         --// Waited after a prompt teleport, for the landing and the prompt's
         --// own range check, before Interact is pressed.
         local PROMPT_WAIT = 0.6
@@ -207,14 +212,9 @@ return {
                 --// of this one is the only thing that can end the fight.
                 LastTarget = nil,
                 KillAt = nil,
-                --// EXP before the reset, and when to stop waiting for it.
-                ExpBefore = nil,
-                --// The EXP the reset should leave behind, from the level's keep
-                --// percentage, and whether the reset was free (nothing lost).
-                ExpCutoff = nil,
-                FreeReset = false,
-                SkipExpCheck = true,
-                ExpDeadline = 0,
+                --// The walk speed the hold borrowed to run from a mob, so it can
+                --// be put back when the hold ends.
+                FleeFromSpeed = nil,
                 RecoveredAt = nil,
                 --// When the game's Interact input was last pressed on the way.
                 InteractAt = nil,
@@ -231,14 +231,9 @@ return {
                 --// from. A character back at spawn is a respawn, one still
                 --// standing where it was reset is a reset the game dropped.
                 ResetPosition = nil,
-                ResetLevel = nil,
-                --// The EXP and the cost read before the reset was fired.
-                ResetExpBefore = nil,
-                ResetLoss = nil,
                 --// Whether the stop's interaction prompt was already taken this
-                --// visit, and when Interact was last pressed after landing.
+                --// visit.
                 PromptUsed = false,
-                PromptInteractAt = nil,
                 --// No Interact press before this: quiet for
                 --// PROMPT_INTERACT_MUTE after a prompt teleport.
                 --// The prompt teleport's landing press is the visit's only
@@ -565,16 +560,6 @@ return {
             end
         end
 
-        local function GetWaitExpChecks()
-            local Checks = {}
-
-            for Index, Stop in ipairs(GetStops()) do
-                Checks[Index] = Stop.WaitExp == true
-            end
-
-            return Checks
-        end
-
         local function GetResetWaits()
             local Waits = {}
 
@@ -590,7 +575,7 @@ return {
                 return
             end
 
-            UIRef.BossListComponent:SetPriority(BuildLabels(), GetResetWaits(), GetWaitExpChecks())
+            UIRef.BossListComponent:SetPriority(BuildLabels(), GetResetWaits())
         end
 
         --// Names of the boss picked in "Edit Boss Stop": a list plus a
@@ -854,6 +839,21 @@ return {
             --// stays on start a fresh dodge every frame at the ceiling.
         end
 
+        --// Puts the walk speed back after a hold that ran from a mob. Safe
+        --// without a character (dead, loading).
+        local function StopFlee(Humanoid)
+            if not Humanoid then
+                local _, Current = Runtime:GetCharacter()
+                Humanoid = Current
+            end
+
+            if S.FleeFromSpeed and Humanoid and (tonumber(Humanoid.Health) or 0) > 0 then
+                Humanoid.WalkSpeed = S.FleeFromSpeed
+            end
+
+            S.FleeFromSpeed = nil
+        end
+
         local function StopRoute(StatusText)
             S.Phase = "Idle"
             S.SeenTarget = false
@@ -862,6 +862,7 @@ return {
             S.WaitUntil = nil
             S.WalkStart = nil
             EndDodge()
+            StopFlee()
             AICCombat.S.ClosestTarget = nil
             ResetWalk()
             SetStatus(StatusText or "IDLE")
@@ -892,7 +893,6 @@ return {
             S.TeleportFrom = nil
             S.Teleports = 0
             S.PromptUsed = false
-            S.PromptInteractAt = nil
             S.SpotWaitUntil = nil
             S.InteractSuppressed = false
             S.PromptFallback = nil
@@ -901,8 +901,7 @@ return {
             S.ResetRetries = 0
             S.RestartStop = false
             S.RecoveredAt = nil
-            S.ExpCutoff = nil
-            S.FreeReset = false
+            StopFlee()
             S.HpAt = nil
             S.HpBase = nil
             S.SkillWas = false
@@ -910,7 +909,6 @@ return {
             S.BestDistance = nil
             S.LastProgressAt = Now
             S.Resets = 0
-            S.SkipExpCheck = true
             AICCombat.S.ClosestTarget = nil
             ResetWalk()
             SetStatus(string.format("STOP %d/%d  %s", S.Index, #Stops, Stop.Label))
@@ -951,50 +949,13 @@ return {
 
         --// Restart: the character died rather than being reset here, so the
         --// same stop is walked again from its first path point once it is back.
-        local function BeginRecover(Now, Reason, SkipExpCheck, Restart)
+        local function BeginRecover(Now, Reason, Restart)
             EndDodge()
+            StopFlee()
             S.Phase = "Recover"
             S.PhaseStart = Now
             S.RecoveredAt = nil
             S.RestartStop = Restart == true
-            S.SkipExpCheck = SkipExpCheck == true
-            S.ExpBefore = nil
-            S.ExpCutoff = nil
-            S.FreeReset = false
-
-            if S.SkipExpCheck then
-                --// A death is not a reset this decided: nothing to read.
-                S.ResetExpBefore = nil
-                S.ResetLoss = nil
-            end
-
-            if not S.SkipExpCheck then
-                local Level = GetLevel()
-                --// Read before the body was killed when this recovery follows a
-                --// reset: a game that takes the EXP on the death frame would
-                --// otherwise have the cost read from what is left.
-                local Loss = S.ResetLoss or GetResetCost()
-
-                S.ExpBefore = S.ResetExpBefore or GetExp()
-                S.ResetExpBefore = nil
-                S.ResetLoss = nil
-                --// A reset that keeps the whole bar cannot be waited for:
-                --// there is no drop to see, so waiting would only cost the
-                --// route ten seconds. Only said when the level is known;
-                --// without it, Wait Exp keeps its old meaning.
-                S.FreeReset = Level ~= nil
-                    and S.ExpBefore ~= nil
-                    and Loss <= 0
-                --// Where the reset should leave the EXP: the current value
-                --// less what the level's protected part says it would take.
-                --// nil when there is nothing to lose, so the cutoff can never
-                --// read an unchanged EXP as a drop.
-                S.ExpCutoff = (Level ~= nil and S.ExpBefore ~= nil and Loss > 0)
-                    and math.floor(S.ExpBefore - Loss + 0.5)
-                    or nil
-            end
-
-            S.ExpDeadline = Now + EXP_LOSS_TIMEOUT
             AICCombat.S.ClosestTarget = nil
             ResetWalk()
             SetStatus(string.format("STOP %d/%d  %s", S.Index, #GetStops(), Reason))
@@ -1004,10 +965,6 @@ return {
             local _, Humanoid, RootPart = Runtime:GetCharacter()
 
             S.Resets += 1
-            --// What the reset is about to cost, read while the character is
-            --// still alive so the death frame cannot change the answer.
-            S.ResetExpBefore = GetExp()
-            S.ResetLoss = GetResetCost()
 
             if Humanoid and Humanoid.Health > 0 then
                 Humanoid:Move(Vector3.zero)
@@ -1023,9 +980,8 @@ return {
             S.ResetFiredAt = Now
             S.ResetRetries = 0
             S.ResetPosition = RootPart and RootPart.Position or nil
-            S.ResetLevel = GetLevel()
 
-            BeginRecover(Now, "RESET " .. Reason, false)
+            BeginRecover(Now, "RESET " .. Reason)
             Say("Boss Route", string.format("Reset %s at stop #%d", Reason, S.Index), 3)
         end
 
@@ -1121,40 +1077,12 @@ return {
                 --// The body is back, so there is nothing left to retry.
                 S.ResetHumanoid = nil
                 S.ResetFiredAt = nil
-                --// The EXP window runs from the respawn too, so a slow death
-                --// cannot use up the whole wait before the character is back.
-                S.ExpDeadline = Now + EXP_LOSS_TIMEOUT
             end
 
-            --// Back on the character and straight on: the pause that matters
-            --// is the one before the reset (Reset After). The old second wait
-            --// after the respawn only delayed the next stop, so it is gone;
-            --// Wait Exp is the only thing that can hold the route here, and it
-            --// holds only when the reset took EXP.
-            local Stop = CurrentStop()
-
-            if Stop and Stop.WaitExp and not S.SkipExpCheck and not S.FreeReset then
-                local Exp = GetExp()
-                local Dropped = S.ExpBefore ~= nil and Exp ~= nil and (
-                    Exp < S.ExpBefore
-                    or (S.ExpCutoff ~= nil and Exp <= S.ExpCutoff)
-                )
-
-                if not Dropped then
-                    if Now < S.ExpDeadline then
-                        SetStatus(string.format(
-                            "STOP %d/%d  WAITING FOR EXP LOSS  KEEP %d%%",
-                            S.Index,
-                            #GetStops(),
-                            math.floor(GetKeepPercent(S.ResetLevel or GetLevel()) + 0.5)
-                        ))
-                        return true
-                    end
-
-                    SetStatus("NO EXP LOSS SEEN")
-                end
-            end
-
+            --// Back on the character and straight on. The pause that matters
+            --// is the one before the reset (Reset After); waiting after the
+            --// respawn only delayed the next stop, which is why there is no
+            --// second pause here.
             FinishRecovery(Now)
             return true
         end
@@ -1439,6 +1367,66 @@ return {
             return Fallback or OnRing(Away)
         end
 
+        --// Nearest living mob within Distance of Position, and the part to
+        --// run away from. The mob folder is read directly: this only runs
+        --// while the reset hold is counting down.
+        local function GetNearestMob(Position, Distance)
+            local MobFolder = workspace:FindFirstChild("Mobs")
+            local BestRoot, BestDistance = nil, Distance
+
+            for _, Mob in ipairs(MobFolder and MobFolder:GetChildren() or {}) do
+                if Mob:IsA("Model") then
+                    local MobHumanoid = Mob:FindFirstChildOfClass("Humanoid")
+                    local MobRoot = Mob:FindFirstChild("HumanoidRootPart")
+
+                    if MobHumanoid and MobRoot and MobHumanoid.Health > 0 then
+                        local Flat = AICCombatUtils.GetHorizontalDistance(Position, MobRoot.Position)
+
+                        if Flat <= BestDistance then
+                            BestRoot, BestDistance = MobRoot, Flat
+                        end
+                    end
+                end
+            end
+
+            return BestRoot
+        end
+
+        --// While the reset hold runs, a living mob near the corpse is run
+        --// from at the dodge's sprint, to the far side of a ring around it.
+        --// Standing still for ten seconds next to a mob is what got the
+        --// character killed again before the reset it was waiting for.
+        local function FleeStep(Humanoid, RootPart, Stop)
+            local MobRoot = GetNearestMob(RootPart.Position, HOLD_FLEE_DISTANCE)
+
+            if not MobRoot then
+                StopFlee(Humanoid)
+                return false
+            end
+
+            --// The speed to put back is the first one seen, never the sprint.
+            S.FleeFromSpeed = S.FleeFromSpeed or tonumber(Humanoid.WalkSpeed) or 0
+
+            local Speed = tonumber(Humanoid.WalkSpeed) or 0
+            local RunSpeed = (tonumber(CONFIG.MAXIMUM_WALKSPEED) or Speed) + DODGE_SPEED_BONUS
+
+            if Speed < RunSpeed then
+                Humanoid.WalkSpeed = RunSpeed
+            end
+
+            local Distance = HOLD_FLEE_RING
+
+            if Stop and tonumber(Stop.DodgeDistance) then
+                Distance = math.max(Distance, tonumber(Stop.DodgeDistance))
+            end
+
+            local Point = PickDodgePoint(RootPart, MobRoot, Distance)
+            AICCombatUtils.DoJumpIfObstacle(Point)
+            Humanoid:MoveTo(Point)
+
+            return true
+        end
+
         --// Runs away from the boss at sprint speed. True while the dodge is
         --// still running; false on the frame it ends (and whenever there is no
         --// dodge), so the fight can carry on.
@@ -1654,7 +1642,7 @@ return {
         --// how doors, levers and other proximity prompts get used on the way.
         --// Boss Route owns the frame, so nothing else would press it and the
         --// character would walk straight past every prompt on the path.
-        local function PressInteract(Now, Force)
+        local function PressInteract(Now)
             local GetInput = Runtime.GetInputBindableFunction
 
             if not GetInput then
@@ -1663,17 +1651,17 @@ return {
 
             local Interval = tonumber(CONFIG.INTERACTION_INTERVAL) or INTERACT_INTERVAL
 
-            --// Off for the rest of a visit that travelled by prompt. The
-            --// landing press is the one that fires the prompt, and pressing
-            --// it again while walking away re-fires the same door (some
-            --// doors teleport the character, which made that an endless
-            --// loop of x presses). A ten-second runtime mute is set with it,
-            --// so a hand-off to Auto Farm stays quiet too.
-            if not Force and (S.InteractSuppressed or Runtime.IsInteractMuted and Runtime:IsInteractMuted()) then
+            --// Off for the rest of a visit that travelled by prompt: the
+            --// teleport itself is the travel, and a press at the prompt it
+            --// landed on fires the same door or menu again (some doors
+            --// teleport the character, which made that an endless loop of x
+            --// presses). A ten-second runtime mute is set with it, so a
+            --// hand-off to Auto Farm stays quiet too.
+            if S.InteractSuppressed or Runtime.IsInteractMuted and Runtime:IsInteractMuted() then
                 return
             end
 
-            if not Force and S.InteractAt and Now - S.InteractAt < Interval then
+            if S.InteractAt and Now - S.InteractAt < Interval then
                 return
             end
 
@@ -1831,9 +1819,10 @@ return {
             end
 
             --// The stop saved an interaction prompt (a door or portal in front
-            --// of the boss): land on it once, press it, then walk the rest.
-            --// A stop that has both uses the prompt first, because it is the
-            --// point of having saved one.
+            --// of the boss): land on it once, then walk the rest. A stop that
+            --// has both uses the prompt first, because it is the point of
+            --// having saved one. Nothing is pressed on it: the teleport is the
+            --// travel, and a press re-fires the prompt it landed on.
             if not S.PromptUsed then
                 local PromptPosition = GetStopPromptPosition(Stop)
 
@@ -1842,13 +1831,13 @@ return {
                     --// The prompt is this visit's travel, so a waypoint the
                     --// stop also names is not taken on top of it.
                     S.Teleported = true
-                    S.PromptInteractAt = nil
                     S.TeleportFrom = RootPart.Position
                     --// Off before the teleport, not on landing: waiting to
                     --// mute afterwards left a frame or two where a press
-                    --// could still go out. Only the landing press below is
-                    --// let through (Force), because that is what fires the
-                    --// prompt the stop saved.
+                    --// could still go out. It stays off for the visit, and
+                    --// nothing is pressed on the prompt either: the teleport
+                    --// is the travel, and a press would re-fire the door or
+                    --// menu standing where the character lands.
                     S.InteractSuppressed = true
 
                     if Runtime.MuteInteract then
@@ -1892,13 +1881,6 @@ return {
             if S.WaitUntil and Now < S.WaitUntil then
                 Humanoid:Move(Vector3.zero)
                 return
-            end
-
-            --// Landed on the prompt: press it once, so the door or portal
-            --// actually fires before the walk to the stop starts.
-            if S.PromptUsed and not S.PromptInteractAt then
-                S.PromptInteractAt = Now
-                PressInteract(Now, true)
             end
 
             --// A teleport fired before a just-respawned character had loaded
@@ -2099,13 +2081,15 @@ return {
                 if Left > 0.05 then
                     if Hold > 0 then
                         local Loss = GetResetCost()
+                        local Fleeing = FleeStep(Humanoid, RootPart, Stop)
 
                         SetStatus(string.format(
-                            "STOP %d/%d  CLEARING  %ds  LOSE %d EXP",
+                            "STOP %d/%d  CLEARING  %ds  LOSE %d EXP%s",
                             S.Index,
                             #GetStops(),
                             math.ceil(Left),
-                            math.floor(Loss + 0.5)
+                            math.floor(Loss + 0.5),
+                            Fleeing and "  RUNNING" or ""
                         ))
                     else
                         SetStatus(string.format("STOP %d/%d  RESET NOW", S.Index, #GetStops()))
@@ -2116,6 +2100,8 @@ return {
 
                 --// The fight is done. The only reset is this one: after the
                 --// kill, never while the boss is still standing.
+                StopFlee(Humanoid)
+
                 if Stop.ResetAfterKill then
                     BeginReset(Now, "BOSS DOWN")
                 else
@@ -2187,7 +2173,7 @@ return {
             --// this same stop's path again rather than skipping it.
             if not Humanoid or not RootPart or Humanoid.Health <= 0 then
                 if S.Phase ~= "Recover" then
-                    BeginRecover(Now, "DIED", true, true)
+                    BeginRecover(Now, "DIED", true)
                 end
 
                 return true
@@ -2238,7 +2224,7 @@ return {
             end
 
             if S.Phase ~= "Recover" then
-                BeginRecover(Now, "DIED", true, true)
+                BeginRecover(Now, "DIED", true)
             end
 
             return RecoverStep(Now)
@@ -2299,7 +2285,6 @@ return {
                 Waypoint = 0,
                 ResetAfterKill = true,
                 ResetWait = AICConfig.DEFAULT_BOSS_RESET_WAIT,
-                WaitExp = false,
                 Dodge = true,
                 DodgeDistance = AICConfig.DEFAULT_BOSS_DODGE_DISTANCE,
                 Prompt = false,
@@ -2335,9 +2320,6 @@ return {
             Default = AICConfig.DEFAULT_BOSS_RESET_WAIT,
             Min = 0,
             Max = AICConfig.MAX_BOSS_RESET,
-            --// Hold the next stop until the EXP loss is registered.
-            Checks = true,
-            CheckLabel = "Wait Exp",
         })
 
         UIRef.BossListComponent.OnValueChanged = function(Index, Value)
@@ -2358,24 +2340,6 @@ return {
             SetStatus(string.format("STOP #%d RESETS %ss AFTER THE KILL", Index, tostring(Value)))
         end
 
-
-        UIRef.BossListComponent.OnCheckChanged = function(Index, Checked)
-            local Stop = GetStops()[Index]
-
-            if not Stop then
-                return
-            end
-
-            if not AICProfile.S.ActiveProfileName then
-                SetStatus("DEFAULT PLACE_CONFIG IS READ-ONLY")
-                AICUI.RefreshBossRouteList()
-                return
-            end
-
-            Stop.WaitExp = Checked == true
-            AICProfile.QueueProfileSave()
-            SetStatus(string.format("STOP #%d %s", Index, Checked and "WAITS FOR EXP LOSS" or "NO EXP WAIT"))
-        end
 
         --// Stops move in place, so their timers, teleport and names travel with
         --// them. The labels are rebuilt afterwards: they carry the number.
