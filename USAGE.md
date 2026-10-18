@@ -1,6 +1,6 @@
 # AIC usage guide
 
-How to use Automated Industry Complex (AutoFarmV3, `v3.39`) once it is loaded. The
+How to use Automated Industry Complex (AutoFarmV3, `v3.40`) once it is loaded. The
 loadstring and what the loader fetches are in [README.md](README.md); this file is
 about the features and about why the farm sometimes appears to do nothing.
 
@@ -493,6 +493,14 @@ final point can be the doorway and the stop the boss.
    that applies the loss differently cannot stall the route).
 7. Then the next stop begins — teleporting to its own waypoint first. Reaching
    the end loops, or finishes when **Loop Route** is off.
+
+**Skill dodge (Boss Route only).** While fighting, health is sampled every
+frame. Losing **20% of the bar within 0.6 s** is read as a boss skill landing:
+the character stops swinging, runs — the normal run speed plus a sprint — about
+36 studs away from the boss for 1.3 s, picking a direction that has ground and
+a clear line, then goes back in. Slow damage is not a skill and never triggers
+it. This lives in the Bosses tab only: the Farming tab's own retreat behaves
+exactly as before.
 
 #### Walking to a stop
 

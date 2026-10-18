@@ -26,8 +26,9 @@
 -- building is the one recorded in the Path to Boss section. While walking it
 -- presses the game's Interact input like the Farming waypoint route, so doors,
 -- levers and other proximity prompts on the path are used. The fight uses the
--- same combat inputs as Auto Farm. Auto Farm hands this module the frame while
--- it is on, with Auto Farm on or off.
+-- same combat inputs as Auto Farm, and a big health drop in a moment (a boss
+-- skill) makes the character sprint out of range before going back in. Auto
+-- Farm hands this module the frame while it is on, with Auto Farm on or off.
 return {
     Name = "BossNavigator",
     IsFeature = true,
@@ -97,6 +98,16 @@ return {
         --// already out when the fight starts instead of being fumbled for
         --// while the boss is hitting the character.
         local WEAPON_READY_DISTANCE = 60
+        --// A boss skill lands as a big chunk of health in a moment. The drop is
+        --// measured as a fraction of max health inside this window, so it works
+        --// at any level and a slow grind of small hits is not a skill.
+        local BURST_WINDOW = 0.6
+        local BURST_DROP_PERCENT = 0.2
+        --// How long the dodge lasts, how far it goes, and the sprint on top of
+        --// the normal run speed while it does.
+        local DODGE_TIME = 1.3
+        local DODGE_DISTANCE = 36
+        local DODGE_SPEED_BONUS = 12
         --// How far from the character a mob name is offered in the picker.
         local NAME_SCAN_RADIUS = 300
         --// The status line is rewritten at most this often.
@@ -135,6 +146,15 @@ return {
                 --// fired, and how many times it has been retried for this stop.
                 TeleportFrom = nil,
                 Teleports = 0,
+                --// Health watching for a skill: the baseline percent and when
+                --// the current window started.
+                HpAt = nil,
+                HpBase = nil,
+                --// While a dodge runs: when it ends, where it runs to, and the
+                --// normal speed to put back afterwards.
+                DodgeUntil = 0,
+                DodgeTarget = nil,
+                DodgeFromSpeed = nil,
                 --// This recovery is a death, not a planned reset: walk the same
                 --// stop's path again instead of moving on to the next stop.
                 RestartStop = false,
@@ -576,12 +596,31 @@ return {
         --// The run
         ------------------------------------------------------------------------
 
+        --// Puts the speed the dodge borrowed back and forgets the dodge. Safe
+        --// without a character (dead, loading): the next body has its own
+        --// speed and only the state needs clearing.
+        local function EndDodge(Humanoid)
+            if not Humanoid then
+                local _, Current = Runtime:GetCharacter()
+                Humanoid = Current
+            end
+
+            if S.DodgeFromSpeed and Humanoid and (tonumber(Humanoid.Health) or 0) > 0 then
+                Humanoid.WalkSpeed = S.DodgeFromSpeed
+            end
+
+            S.DodgeFromSpeed = nil
+            S.DodgeUntil = 0
+            S.DodgeTarget = nil
+        end
+
         local function StopRoute(StatusText)
             S.Phase = "Idle"
             S.SeenTarget = false
             S.KillAt = nil
             S.WaitUntil = nil
             S.WalkStart = nil
+            EndDodge()
             AICCombat.S.ClosestTarget = nil
             ResetWalk()
             SetStatus(StatusText or "IDLE")
@@ -611,6 +650,9 @@ return {
             S.Teleports = 0
             S.RestartStop = false
             S.RecoveredAt = nil
+            S.HpAt = nil
+            S.HpBase = nil
+            EndDodge()
             S.BestDistance = nil
             S.LastProgressAt = Now
             S.Resets = 0
@@ -655,6 +697,7 @@ return {
         --// Restart: the character died rather than being reset here, so the
         --// same stop is walked again from its first path point once it is back.
         local function BeginRecover(Now, Reason, SkipExpCheck, Restart)
+            EndDodge()
             S.Phase = "Recover"
             S.PhaseStart = Now
             S.RecoveredAt = nil
@@ -850,6 +893,114 @@ return {
             return AICFeature.EnsureWeaponDrawn(Now) == true
         end
 
+        --// A point to run to from TargetRoot: straight away first, then to
+        --// either side, then behind, skipping directions with a hole or a wall.
+        local function PickDodgePoint(RootPart, TargetRoot)
+            local Away = Vector3.new(
+                RootPart.Position.X - TargetRoot.Position.X,
+                0,
+                RootPart.Position.Z - TargetRoot.Position.Z
+            )
+
+            if Away.Magnitude < 0.01 then
+                Away = Vector3.xAxis
+            else
+                Away = Away.Unit
+            end
+
+            local Fallback = nil
+
+            for _, Degrees in ipairs({ 0, 45, -45, 90, -90, 135, -135, 180 }) do
+                local Angle = math.rad(Degrees)
+                local Cos, Sin = math.cos(Angle), math.sin(Angle)
+                local Direction = Vector3.new(
+                    Away.X * Cos - Away.Z * Sin,
+                    0,
+                    Away.X * Sin + Away.Z * Cos
+                )
+                local Candidate = RootPart.Position + Direction * DODGE_DISTANCE
+                local Hole = AICCombatUtils.IsHoleAhead(Candidate)
+
+                if not Hole and AICCombatUtils.IsPathClear(Candidate) then
+                    return Candidate
+                end
+
+                if not Hole and not Fallback then
+                    Fallback = Candidate
+                end
+            end
+
+            return Fallback or (RootPart.Position + Away * DODGE_DISTANCE)
+        end
+
+        --// Runs away from the boss for a moment at sprint speed. True while the
+        --// dodge is still running; false on the frame it ends (and whenever
+        --// there is no dodge), so the fight can carry on.
+        local function DodgeStep(Target, Humanoid, RootPart, Now)
+            if (S.DodgeUntil or 0) <= Now then
+                if S.DodgeFromSpeed then
+                    EndDodge(Humanoid)
+                end
+
+                return false
+            end
+
+            if not S.DodgeTarget then
+                local TargetRoot = Target and Target:FindFirstChild("HumanoidRootPart")
+
+                if not TargetRoot then
+                    EndDodge(Humanoid)
+                    return false
+                end
+
+                S.DodgeFromSpeed = tonumber(Humanoid.WalkSpeed) or 0
+                S.DodgeTarget = PickDodgePoint(RootPart, TargetRoot)
+            end
+
+            --// Run, not walk: the normal run speed plus a sprint.
+            local Speed = tonumber(Humanoid.WalkSpeed) or 0
+            local RunSpeed = (tonumber(CONFIG.MAXIMUM_WALKSPEED) or Speed) + DODGE_SPEED_BONUS
+
+            if Speed < RunSpeed then
+                Humanoid.WalkSpeed = RunSpeed
+            end
+
+            AICCombatUtils.DoJumpIfObstacle(S.DodgeTarget)
+            Humanoid:MoveTo(S.DodgeTarget)
+            SetStatus(string.format("STOP %d/%d  DODGE", S.Index, #GetStops()))
+
+            return true
+        end
+
+        --// True when health fell by a burst inside the window: a boss skill.
+        local function IsHealthBurst(Humanoid, Now)
+            local MaxHealth = tonumber(Humanoid.MaxHealth) or 0
+
+            if MaxHealth <= 0 then
+                return false
+            end
+
+            local Percent = math.clamp((tonumber(Humanoid.Health) or 0) / MaxHealth, 0, 1)
+
+            if not S.HpAt or Now - S.HpAt > BURST_WINDOW then
+                S.HpAt = Now
+                S.HpBase = Percent
+                return false
+            end
+
+            if Percent > (S.HpBase or 0) then
+                S.HpBase = Percent
+            end
+
+            if (S.HpBase or 0) - Percent >= BURST_DROP_PERCENT then
+                S.HpAt = Now
+                S.HpBase = Percent
+                return true
+            end
+
+            return false
+        end
+
         --// Walks into swinging distance and fights. The attack goes through
         --// AttackTarget, not PerformCombatActions: that one also demands the
         --// mob be on Auto Farm's Enemy Priority list, so the boss stop's own
@@ -865,6 +1016,22 @@ return {
             if RequireWeapon(Now) then
                 Humanoid:Move(Vector3.zero)
                 return
+            end
+
+            --// A dodge already running owns the frame.
+            if DodgeStep(Target, Humanoid, RootPart, Now) then
+                return
+            end
+
+            --// A skill just landed: run out of it instead of trading hits.
+            if IsHealthBurst(Humanoid, Now) then
+                S.DodgeUntil = Now + DODGE_TIME
+                S.DodgeTarget = nil
+
+                if DodgeStep(Target, Humanoid, RootPart, Now) then
+                    Say("Boss Route", "Dodging a skill at stop #" .. tostring(S.Index), 2)
+                    return
+                end
             end
 
             local Offset = TargetRoot.Position - RootPart.Position
@@ -1085,6 +1252,7 @@ return {
 
             AICCombat.S.ClosestTarget = nil
             Humanoid:Move(Vector3.zero)
+            EndDodge(Humanoid)
 
             --// The boss went down: a grace period covers a second mob of the
             --// same stop still standing up, then the stop's own Reset After
@@ -1220,6 +1388,9 @@ return {
 
         --// A profile load brings another place's stops with it.
         AICFeature.ResetBossRoute = function()
+            EndDodge()
+            S.HpAt = nil
+            S.HpBase = nil
             S.Index = 1
             S.Phase = "Idle"
             S.SeenTarget = false

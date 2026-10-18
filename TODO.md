@@ -519,6 +519,14 @@ were added.
 > - Old saves that carry `RespawnWait` simply ignore it; `Core/Runtime.lua` no longer stores it.
 > - Harness: 57 checks. The new one uses a stop with `ResetWait 10` and `RespawnWait 10` and asserts the next stop starts within a second of the respawn. Mutation: restoring the post-reset wait fails that check.
 
+### [x] Boss Route: dodge a boss skill instead of eating it
+
+> **Done (v3.40):** `Features/BossNavigator.lua`, Boss Route only
+> - Health is sampled every frame while fighting the stop's target. A loss of **20% of max health inside 0.6 s** counts as a skill; a slow grind of small hits does not, and the reset (health set to 0) is never sampled because the dodge only watches the Fight phase.
+> - The dodge stops swinging and runs: the normal `MAXIMUM_WALKSPEED` plus a 12-speed sprint, 36 studs away, for 1.3 s. The direction is straight away from the boss first, then ±45°, ±90°, ±135° and behind, skipping headings with a hole (`IsHoleAhead`) or a blocked line (`IsPathClear`). The character's own speed is restored when the dodge ends, the target dies, the stop changes or the route is switched off.
+> - Nothing outside `Features/BossNavigator.lua` changed, so Auto Farm's own retreat and combat are untouched.
+> - Harness: 66 checks. New ones cover a 45% drop starting a dodge, the sprint speed, running away from the boss, no attacks during it, the report, the speed restored afterwards, and a 5% drop not triggering. Mutation: disabling the trigger fails five of them.
+
 ## To Fix
 
 ### [x] Waypoints Looped & Paired Farmzone/Waypoint/Targets: walking back to waypoints that are not paired
