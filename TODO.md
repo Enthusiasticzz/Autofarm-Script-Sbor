@@ -485,6 +485,16 @@ were added.
 > - `Core/Runtime.lua` drops `Wait`/`ResetAfter` from a stop and normalises `Path` (64 points at most); older saves without a `Path` still load, and the legacy 10 s reset default is simply dropped with the timer.
 > - Harness: 37 checks, including walking two saved points in order and then the stop, no reset while the boss stands, reset only after the kill, the refresh button staying under the rebuilt name picker, and the attack still issued with the mock `IsCombatTargetValid` forced false (the priority bug). A second 8-check harness runs the real `AttackTarget`/`PerformCombatActions` block: the boss swing ignores Enemy Priority, the attack interval holds, and Auto Farm's wrapper still refuses an unlisted mob. Mutations confirmed: restoring `PerformCombatActions` at the stop fails the attack check, and dropping the saved Path fails four walk checks. `USAGE.md` rewrites the Bosses tab around **Path to Boss**.
 
+### [x] Boss Route: the reset wait is ignored, and a death skips to the next stop
+
+> **Done (v3.36):** `Features/BossNavigator.lua`
+> - **Reset After (s) is honoured again.** The per-row value box is back, and the stop now holds at the corpse for that many seconds after the kill is confirmed before it resets (`CLEARING  7s` counts it down). 0 means just the 2 s kill grace, so nothing resets while the boss is still standing.
+> - **Old numbers carry over.** A stop saved before v3.36 kept its fight timeout in `ResetAfter`; that value becomes the new pause, so a wait that was already set is not silently dropped. `Core/Runtime.lua` normalises `ResetWait` (0–600) and restores `MAX_BOSS_RESET`.
+> - **Death repeats the path, not the next stop.** Dying on the way or in the fight used to `Advance`, so the route walked off to the following boss as if this one had been dealt with. The recovery now records that it was a death (`RestartStop`), and once the character is back it runs the same stop again from the first **Path to Boss** point (teleport waypoint included). Only a kill moves the route on.
+> - **The EXP window and the respawn wait** both start when the character is actually back, not when health was set to 0, so the death animation cannot eat them.
+> - Harness: 51 checks. New ones cover the corpse pause (no reset at 3 s with a 5 s pause, reset after it), dying without advancing, the retry starting at path point 1 and heading back along the recorded path. Mutations: forcing the reset delay to the 2 s grace fails the pause check; letting a death `Advance` fails three retry checks.
+> - `USAGE.md` documents the **Reset (s)** column and the death retry.
+
 ## To Fix
 
 ### [x] Waypoints Looped & Paired Farmzone/Waypoint/Targets: walking back to waypoints that are not paired

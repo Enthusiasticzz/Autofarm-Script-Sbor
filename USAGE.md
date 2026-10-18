@@ -1,6 +1,6 @@
 # AIC usage guide
 
-How to use Automated Industry Complex (AutoFarmV3, `v3.35`) once it is loaded. The
+How to use Automated Industry Complex (AutoFarmV3, `v3.36`) once it is loaded. The
 loadstring and what the loader fetches are in [README.md](README.md); this file is
 about the features and about why the farm sometimes appears to do nothing.
 
@@ -410,14 +410,15 @@ teleport) to a boss, fight it, and reset back to spawn before the next one.
   `STOP 2/4  WALKING`, `… FIGHT`, `… CLEARING`, `… RESPAWNED`, `… WAITING FOR
   EXP LOSS`, `ROUTE FINISHED`, `OFF`.
 - **Add Boss Stop Here** — saves a stop at your current position, with an empty
-  **Path to Boss**. A new stop starts with **Wait After Reset 4 s**, **Reset
-  After Kill on** and a 120-stud engage radius.
+  **Path to Boss**. A new stop starts with **Reset After 0 s**, **Wait After
+  Reset 4 s**, **Reset After Kill on** and a 120-stud engage radius.
 - **Boss Route** (list) — one row per stop, `#1  Boss 1  > WP3  P6  Goblin
   (x, y, z)`: the stop's name, its teleport waypoint, how many path points it
   has, its first boss name and where it is. Drag a row (or use ▲▼) to reorder
-  the route. The `Wait Exp` tick is whether the next stop waits for the EXP
-  loss; ✕ removes the row. There is no fight timer and no reset column any
-  more.
+  the route. Its `Reset (s)` box is the pause held at the corpse after the kill
+  before the character resets (0–600, 0 = just the 2 s kill grace); its
+  `Wait Exp` tick is whether the next stop waits for the EXP loss; ✕ removes the
+  row. There is no fight timer: the row can never reset while the boss lives.
 - **Clear Boss Route** — removes every stop.
 - **Edit Boss Stop** — picks which stop the boxes below change, and which stop
   **Path to Boss** and **Boss Names** edit.
@@ -478,10 +479,12 @@ final point can be the doorway and the stop the boss.
    pressed from then on.
 4. Ends the stop when the target dies and nothing else is left there (a 2 s
    grace), or when there is nothing to fight for 5 s.
-5. If it ends on the kill and **Reset After Kill** is on, the character is reset
-   (health set to 0, the same reset Party System uses). That is the **only**
-   reset: the character never resets while the boss is still standing, and
-   there is no fight timeout to reset on.
+5. If it ends on the kill and **Reset After Kill** is on, the character holds at
+   the corpse for the row's **Reset (s)** (at least the 2 s grace) and is then
+   reset (health set to 0, the same reset Party System uses). That is the
+   **only** reset: the character never resets while the boss is still standing,
+   and there is no fight timeout to reset on. `CLEARING  7s` counts the pause
+   down in the status line.
 6. Once the character is back it waits **Wait After Reset**, and with **Wait
    Exp** on it also holds until `PlayerStats.EXP` is lower than before the reset
    (15 s at most, so a game that applies the loss differently cannot stall the
@@ -512,8 +515,10 @@ Notes:
 - The route is saved per profile on the place config, so a profile without one
   starts empty and adding stops needs a loaded profile (`CREATE / LOAD PROFILE
   FIRST`, `DEFAULT PLACE_CONFIG IS READ-ONLY` on a built-in preset).
-- Dying on the way, or in the fight, is treated as a reset: the route waits for
-  the respawn and continues with the next stop.
+- Dying on the way, or in the fight, is **not** treated as the stop being done:
+  the route waits for the respawn (and **Wait After Reset**), then walks the
+  same stop's **Path to Boss** again from its first point. Only a kill moves the
+  route on.
 - With **Auto Farm** on, the route runs before the farming waypoint route, so the
   two never fight over the character. Turn Boss Route off to farm normally.
 

@@ -4,17 +4,20 @@
 -- is separate from the waypoint route Auto Farm walks and from the waypoints
 -- in Profile Settings: editing one never moves the other. A stop is a spot to
 -- stand on. Coming to a stop the character walks there, or teleports to one of
--- the game's waypoints first when the stop names one, then waits Wait seconds
--- and fights whatever matches its Boss Names inside its radius.
+-- the game's waypoints first when the stop names one, then fights whatever
+-- matches its Boss Names inside its radius. There is no wait at the spot.
 --
 -- A fight ends when the target dies and nothing else is in the radius, or
 -- when nothing is there to fight at all. With Reset After Kill on (the default
--- for a new stop) the character is then reset, so the next stop is travelled
--- to from spawn. There is no timer reset: the character never resets while
--- the boss is still standing.
+-- for a new stop) the character then holds at the corpse for the stop's Reset
+-- After seconds and is reset, so the next stop is travelled to from spawn.
+-- There is no timer reset: the character never resets while the boss is still
+-- standing.
 -- Wait Exp holds the next stop until the game's EXP actually dropped after the
 -- reset, so the loss is registered before walking off. A stop with it off
--- moves on after Wait After Reset instead.
+-- moves on after Wait After Reset instead. Dying, rather than being reset by
+-- the route, is never taken as the stop being done: once the character is back
+-- the same stop's Path is walked again from its first point.
 --
 -- The route loops unless Loop Route is off; then it plays once and switches
 -- itself off. Travel is the stop's own saved Path points, walked in order and
@@ -119,6 +122,9 @@ return {
                 SkipExpCheck = true,
                 ExpDeadline = 0,
                 RecoveredAt = nil,
+                --// This recovery is a death, not a planned reset: walk the same
+                --// stop's path again instead of moving on to the next stop.
+                RestartStop = false,
                 --// Closest the character has been to the stop this visit, and
                 --// when it was last closer than before. A stop the character
                 --// stops approaching is the only unreachable stop.
@@ -326,12 +332,22 @@ return {
             return Checks
         end
 
+        local function GetResetWaits()
+            local Waits = {}
+
+            for Index, Stop in ipairs(GetStops()) do
+                Waits[Index] = tonumber(Stop.ResetWait) or 0
+            end
+
+            return Waits
+        end
+
         function AICUI.RefreshBossRouteList()
             if not UIRef.BossListComponent then
                 return
             end
 
-            UIRef.BossListComponent:SetPriority(BuildLabels(), nil, GetWaitExpChecks())
+            UIRef.BossListComponent:SetPriority(BuildLabels(), GetResetWaits(), GetWaitExpChecks())
         end
 
         --// Names of the boss picked in "Edit Boss Stop": a list plus a
@@ -579,6 +595,8 @@ return {
             S.Teleported = false
             S.PathIndex = 1
             S.DrawAt = nil
+            S.RestartStop = false
+            S.RecoveredAt = nil
             S.BestDistance = nil
             S.LastProgressAt = Now
             S.Resets = 0
@@ -620,10 +638,13 @@ return {
             BeginStop(Now)
         end
 
-        local function BeginRecover(Now, Reason, SkipExpCheck)
+        --// Restart: the character died rather than being reset here, so the
+        --// same stop is walked again from its first path point once it is back.
+        local function BeginRecover(Now, Reason, SkipExpCheck, Restart)
             S.Phase = "Recover"
             S.PhaseStart = Now
             S.RecoveredAt = nil
+            S.RestartStop = Restart == true
             S.SkipExpCheck = SkipExpCheck == true
             S.ExpBefore = nil
 
@@ -653,8 +674,22 @@ return {
             Say("Boss Route", string.format("Reset %s at stop #%d", Reason, S.Index), 3)
         end
 
-        --// Waits for the character after a reset or a death, then for Respawn
-        --// Wait (and the EXP drop, when the stop asks for it).
+        --// The recovery is done. A planned reset moves the route on; a death
+        --// walks the same stop's path again, from its first point, instead of
+        --// pretending the boss was dealt with.
+        local function FinishRecovery(Now)
+            if S.RestartStop then
+                S.RestartStop = false
+                BeginStop(Now)
+            else
+                Advance(Now)
+            end
+        end
+
+        --// Waits for the character after a reset or a death, then for Wait
+        --// After Reset (and the EXP drop, when the stop asks for it). The wait
+        --// is measured from the frame the character is back, so the death
+        --// animation is never mistaken for part of it.
         local function RecoverStep(Now)
             if S.Phase ~= "Recover" then
                 return false
@@ -663,13 +698,17 @@ return {
             local _, Humanoid = Runtime:GetCharacter()
 
             if not Humanoid or Humanoid.Health <= 0 then
-                if S.RecoveredAt then
-                    S.RecoveredAt = nil
-                end
+                S.RecoveredAt = nil
 
                 if Now - S.PhaseStart >= RESPAWN_TIMEOUT then
-                    Say("Boss Route", "No respawn, moving to the next stop", 4)
-                    Advance(Now)
+                    Say(
+                        "Boss Route",
+                        S.RestartStop
+                            and "No respawn; retrying the stop"
+                            or "No respawn, moving to the next stop",
+                        4
+                    )
+                    FinishRecovery(Now)
                 end
 
                 return true
@@ -677,6 +716,9 @@ return {
 
             if not S.RecoveredAt then
                 S.RecoveredAt = Now
+                --// The EXP window runs from the respawn too, so a slow death
+                --// cannot use up the whole wait before the character is back.
+                S.ExpDeadline = Now + EXP_LOSS_TIMEOUT
             end
 
             local Stop = CurrentStop()
@@ -706,7 +748,7 @@ return {
                 end
             end
 
-            Advance(Now)
+            FinishRecovery(Now)
             return true
         end
 
@@ -967,19 +1009,34 @@ return {
             Humanoid:Move(Vector3.zero)
 
             --// The boss went down: a grace period covers a second mob of the
-            --// same stop still standing up.
+            --// same stop still standing up, then the stop's own Reset After
+            --// pause is held before the character is reset.
             if S.SeenTarget then
                 S.KillAt = S.KillAt or Now
-                SetStatus(string.format("STOP %d/%d  CLEARING", S.Index, #GetStops()))
 
-                if Now - S.KillAt >= KILL_GRACE then
-                    --// The fight is done. The only reset is this one: after
-                    --// the kill, never while the boss is still standing.
-                    if Stop.ResetAfterKill then
-                        BeginReset(Now, "BOSS DOWN")
-                    else
-                        Advance(Now)
-                    end
+                --// The pause belongs to the reset; with Reset After Kill off
+                --// there is nothing to wait for and the route moves on after
+                --// the grace.
+                local ResetWait = Stop.ResetAfterKill and (tonumber(Stop.ResetWait) or 0) or 0
+                local Delay = math.max(KILL_GRACE, ResetWait)
+                local Left = Delay - (Now - S.KillAt)
+
+                if Left > 0.05 then
+                    SetStatus(string.format(
+                        "STOP %d/%d  CLEARING  %ds",
+                        S.Index,
+                        #GetStops(),
+                        math.ceil(Left)
+                    ))
+                    return
+                end
+
+                --// The fight is done. The only reset is this one: after the
+                --// kill, never while the boss is still standing.
+                if Stop.ResetAfterKill then
+                    BeginReset(Now, "BOSS DOWN")
+                else
+                    Advance(Now)
                 end
 
                 return
@@ -1022,10 +1079,11 @@ return {
             local _, Humanoid, RootPart = Runtime:GetCharacter()
 
             --// Died on the way or in the fight without being reset by us: the
-            --// loss is already taken, so wait for the respawn only.
+            --// loss is already taken, so wait for the respawn only, then walk
+            --// this same stop's path again rather than skipping it.
             if not Humanoid or not RootPart or Humanoid.Health <= 0 then
                 if S.Phase ~= "Recover" then
-                    BeginRecover(Now, "DIED", true)
+                    BeginRecover(Now, "DIED", true, true)
                 end
 
                 return true
@@ -1124,6 +1182,7 @@ return {
                 Targets = {},
                 Waypoint = 0,
                 ResetAfterKill = true,
+                ResetWait = 0,
                 RespawnWait = AICConfig.DEFAULT_BOSS_RESPAWN_WAIT,
                 WaitExp = false,
                 Radius = AICConfig.DEFAULT_BOSS_RADIUS,
@@ -1145,13 +1204,36 @@ return {
             S.Phase = "Idle"
             Commit("BOSS ROUTE CLEARED")
             Say("Boss Route", "Cleared every boss stop")
-        end)
-
-        UIRef.BossListComponent = UIRef.BossSection:AddPriority("Boss Route", BuildLabels(), {
+        end)        UIRef.BossListComponent = UIRef.BossSection:AddPriority("Boss Route", BuildLabels(), {
+            --// Seconds held at the corpse after the kill, before the reset.
+            Values = true,
+            ValueLabel = "Reset (s)",
+            Default = 0,
+            Min = 0,
+            Max = AICConfig.MAX_BOSS_RESET,
             --// Hold the next stop until the EXP loss is registered.
             Checks = true,
             CheckLabel = "Wait Exp",
         })
+
+        UIRef.BossListComponent.OnValueChanged = function(Index, Value)
+            local Stop = GetStops()[Index]
+
+            if not Stop then
+                return
+            end
+
+            if not AICProfile.S.ActiveProfileName then
+                SetStatus("DEFAULT PLACE_CONFIG IS READ-ONLY")
+                AICUI.RefreshBossRouteList()
+                return
+            end
+
+            Stop.ResetWait = Value
+            AICProfile.QueueProfileSave()
+            SetStatus(string.format("STOP #%d RESETS %ss AFTER THE KILL", Index, tostring(Value)))
+        end
+
 
         UIRef.BossListComponent.OnCheckChanged = function(Index, Checked)
             local Stop = GetStops()[Index]

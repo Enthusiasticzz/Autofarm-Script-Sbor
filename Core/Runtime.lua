@@ -903,7 +903,9 @@ return {
         --// stop only ever resets after the kill.
         AICConfig.DEFAULT_BOSS_RESPAWN_WAIT = 4
         AICConfig.DEFAULT_BOSS_RADIUS = 120
+        AICConfig.DEFAULT_BOSS_RESET_WAIT = 0
         AICConfig.MAX_BOSS_PATH = 64
+        AICConfig.MAX_BOSS_RESET = 600
         AICConfig.MAX_BOSS_RESPAWN_WAIT = 120
         AICConfig.MAX_BOSS_RADIUS = 500
         AICConfig.MAX_BOSS_WAYPOINT = 999
@@ -935,6 +937,7 @@ return {
         --//   Path        points walked in order on the way to Position
         --//   Waypoint    game waypoint number teleported to first, 0 walks
         --//   ResetAfterKill  reset once the boss is down, then the next stop
+        --//   ResetWait   seconds held at the corpse before that reset
         --//   RespawnWait seconds after respawning before the next stop
         --//   WaitExp     hold the next stop until EXP actually dropped
         --//   Radius      how far from Position a boss is picked up
@@ -969,6 +972,15 @@ return {
                             math.floor(tonumber(Stop.Waypoint) or 0), 0, AICConfig.MAX_BOSS_WAYPOINT
                         ),
                         ResetAfterKill = Legacy or Stop.ResetAfterKill == true,
+                        --// Saves made before v3.36 kept the fight timeout in
+                        --// ResetAfter; that number is the pause at the corpse
+                        --// now, so a wait the user had set keeps working.
+                        ResetWait = math.clamp(
+                            tonumber(Stop.ResetWait) or tonumber(Stop.ResetAfter)
+                                or AICConfig.DEFAULT_BOSS_RESET_WAIT,
+                            0,
+                            AICConfig.MAX_BOSS_RESET
+                        ),
                         RespawnWait = math.clamp(
                             tonumber(Stop.RespawnWait) or AICConfig.DEFAULT_BOSS_RESPAWN_WAIT,
                             0,
