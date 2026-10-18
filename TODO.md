@@ -632,6 +632,15 @@ were added.
 > - At level 900 the bar is **5,406** EXP and the kept part **4,865**, so 5,300 loses 435. 100 into the bar loses nothing and resets at once, which is the reported case.
 > - Harness: 142 checks. The free/reset tests now publish a running total (`neededExp(899) + n`) like the game does, so the regression is covered: reading the total as progress fails six checks. A bar that starts at the level's own requirement instead of the previous one fails nine. All earlier mutations still caught.
 
+### [x] Boss Route: every reset was instant, and the heal sometimes never came
+
+> **Done (v3.54):** `Features/BossNavigator.lua`, `Features/AutoFarming.lua`, `Core/Runtime.lua`, Boss Route + Auto Farm
+> - **The bar was the wrong size.** v3.53 read a level's bar as the difference between the previous level's requirement and its own (~5,406 at level 900) and compared the progress inside the real bar with 90% of that. The HUD prints `EXP <value>/<neededExp(Level)>` and the value starts again at 0 on every level, so the bar *is* the level's own requirement: **2,438,097** at level 900. The kept part is the first 2,194,287, and everything below it loses nothing.
+> - `GetBarProgress` now takes the bar as `neededExp(Level)` and the progress as the EXP inside it; a run-on total between this level's requirement and the next is still placed. 100,000 of the level-900 bar → `RESET NOW`; 2,300,000 → `CLEARING 10s LOSE 105713 EXP`. At level 500 the bar is 754,497 and the first 50% is kept; at level 400, 483,597 and 40%.
+> - **The heal was sat on.** `CONSUME_INTERVAL` was 10 s of script time regardless of the game's potion cooldown (now 2 s - a spam guard, not a cooldown). A mob already in reach also blocked the drink, so the heal was skipped exactly while the health was being taken; only the softer Auto Heal now waits for the fight, an emergency below **Retreat At HP%** drinks anyway.
+> - **The Boss Route fought with no heal at all.** Its step runs before Auto Farm's health decision, so the fight and the whole route never drank. `AICFeature.TryHeal` is exposed for it and the stop's fight drinks below **Auto Heal at HP%** (dodging still owns its frame).
+> - Harness: 149 checks. New ones: a boss fight at full health does not drink and one below the threshold does, a run-on EXP total is placed in the next level's bar and held (`LOSE 129`), and the free/held reset cases now publish progress inside the level's own bar (100 / 2,300,000 at level 900, 150,000 / 500,000 at level 500).
+
 ## To Fix
 
 ### [x] Waypoints Looped & Paired Farmzone/Waypoint/Targets: walking back to waypoints that are not paired

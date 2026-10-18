@@ -308,6 +308,28 @@ return {
             return false
         end
 
+        --// Drinks from anywhere, for code that never reaches the retreat
+        --// above: the Boss Route fights its stops before Auto Farm's health
+        --// decision runs, so a stop was fought with no heal at all. True when
+        --// the frame was spent sheathing, so the caller gives it up.
+        AICFeature.TryHeal = function(now)
+            local Character = Runtime:GetCharacter()
+            local Sword = Character and Character:FindFirstChild("Sword")
+            local MainWeld = Sword and Sword:FindFirstChild("MainWeld", true)
+            local InputBindableFunction = Runtime:GetInputBindableFunction()
+
+            if not Character or not MainWeld or not InputBindableFunction then
+                return false
+            end
+
+            return TryConsumePotion(
+                now,
+                Player:FindFirstChild("PlayerStats"),
+                InputBindableFunction,
+                MainWeld
+            )
+        end
+
         function Feature:Update(dt)
             -- Keep walkspeed / position UI in sync every frame (was RenderUpdate)
             Feature:RenderUpdate(dt)
@@ -569,10 +591,12 @@ return {
 
                 --// Never stop to drink mid-dodge. Getting out of the skill first
                 --// is worth more than the heal, and sheathing costs an animation.
-                local WantsConsume = (EmergencyHealth or ShouldHeal)
+                --// A mob in reach used to block the drink as well, which is
+                --// exactly when the health was being taken: only the softer
+                --// heal waits for the fight now, an emergency drink does not.
+                local WantsConsume = (EmergencyHealth or (ShouldHeal and not FightBackThreat))
                     and not EnemyUsingSkill
                     and not InDuel
-                    and not FightBackThreat
 
                 if WantsConsume then
                     TryConsumePotion(now, PlayerStats, InputBindableFunction, MainWeld)

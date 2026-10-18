@@ -275,7 +275,11 @@ return {
             COMBAT_POSITION_ARRIVAL = 2,
             APPROACH_ARRIVAL_DISTANCE = 3,
             SAFE_ENEMY_RANGE_ARRIVAL = 2,
-            CONSUME_INTERVAL = 10,
+            --// Seconds between potion attempts, not the game's potion
+            --// cooldown: at ten the heal was skipped for up to ten seconds
+            --// after the game had already made the potion usable again. A
+            --// failed drink costs nothing, so this only stops a spam loop.
+            CONSUME_INTERVAL = 2,
             MINIMUM_WALKSPEED = 28,
             MAXIMUM_WALKSPEED = 38,
             HIGH_LEVEL_THRESHOLD = 300,

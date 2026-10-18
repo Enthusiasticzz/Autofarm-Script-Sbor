@@ -361,15 +361,20 @@ return {
             return math.min(Level * KEEP_PERCENT_PER_LEVEL, KEEP_PERCENT_MAX)
         end
 
-        --// The EXP a level starts at and the size of its bar, from the same
-        --// curve the HUD prints (AICUI.neededExp). The game publishes a
-        --// running total: the HUD prints `EXP <value>/<neededExp(Level)>`, and
-        --// a level runs from the previous level's requirement up to its own.
-        --// Reading the bar as `Needed(Level)..Needed(Level + 1)` instead put
-        --// the whole running total into the bar at level 900 - 2.4M against a
-        --// ~5,400 bar - so every reset looked like it would lose everything
-        --// and was held even at the bottom of the bar. Cached per level: that
-        --// curve is a loop, and this is read every frame of a hold.
+        --// The size of a level's EXP bar, from the same curve the HUD prints
+        --// (AICUI.neededExp). The label reads `EXP <value>/<Needed(Level)>`,
+        --// and the value starts again at 0 on every level, so the bar is the
+        --// level's own requirement: 2,438,097 at level 900.
+        --//
+        --// The old build took the difference between two levels instead -
+        --// about 5,400 at level 900 - and compared the progress inside the
+        --// real bar with 90% of that. At 100,000 of 2,438,097 the overflow
+        --// looked like 95,000, so every reset was held; then, once the
+        --// running-total band was tried instead, the progress could not be
+        --// placed at all and every reset was free. The bar itself was the
+        --// missing piece, not the placement.
+        --// Cached per level: that curve is a loop, and this is read every
+        --// frame of a hold.
         local LevelBars = {}
 
         local function GetLevelBar(Level)
@@ -380,7 +385,7 @@ return {
             local Cached = LevelBars[Level]
 
             if Cached then
-                return Cached.Floor, Cached.Bar
+                return Cached.Ceiling, Cached.Bar
             end
 
             local Needed = type(AICUI.neededExp) == "function" and AICUI.neededExp
@@ -389,32 +394,34 @@ return {
                 return nil, 0
             end
 
-            local Floor = Level > 1 and Needed(Level - 1) or 0
-            local Bar = math.max(1, Needed(Level) - Floor)
+            local Bar = math.max(1, Needed(Level))
+            --// Where the next level starts, for a game that publishes a
+            --// running total instead of the progress inside the bar.
+            local Ceiling = math.max(Bar + 1, Needed(Level + 1))
 
-            LevelBars[Level] = { Floor = Floor, Bar = Bar }
+            LevelBars[Level] = { Ceiling = Ceiling, Bar = Bar }
 
-            return Floor, Bar
+            return Ceiling, Bar
         end
 
-        --// How far into its bar the character's EXP is. Two shapes are
-        --// handled: a running total, which sits between the previous level's
-        --// requirement and this level's (the game's own HUD shape), and a
-        --// bar-only value that already runs from 0 to the bar. nil when
-        --// neither fits, so the route never holds on a number it cannot place.
+        --// How far into its bar the character's EXP is, 0..bar. The bar runs
+        --// from 0 to the level's requirement (the shape the HUD draws); a
+        --// running total would sit between this level's requirement and the
+        --// next, so that is read too. nil when neither fits, so the route
+        --// never holds on a number it cannot place.
         local function GetBarProgress(Exp, Level)
-            local Floor, Bar = GetLevelBar(Level)
+            local Ceiling, Bar = GetLevelBar(Level)
 
             if not Bar or Bar <= 0 then
                 return nil, Bar
             end
 
-            if Exp > Bar and Floor and Exp >= Floor and Exp <= Floor + Bar then
-                return Exp - Floor, Bar
-            end
-
             if Exp >= 0 and Exp <= Bar then
                 return Exp, Bar
+            end
+
+            if Ceiling and Ceiling > Bar and Exp <= Ceiling then
+                return Exp - Bar, Ceiling - Bar
             end
 
             return nil, Bar
@@ -423,11 +430,11 @@ return {
         --// What a reset would cost where the character is standing: the EXP it
         --// would take, the size of one level's EXP bar, and that loss as a share
         --// of the bar. The game protects the first part of the bar - 90% at
-        --// level 900 and up - so only the progress above it is lost. The bar's
-        --// size comes from the level's own curve (~5,406 at level 900): 5,300
-        --// comes back as ~4,865, and 3,000 comes back as 3,000. That is why the
+        --// level 900 and up - so only the progress above it is lost. The bar at
+        --// level 900 is the level's own requirement, 2,438,097: 100,000 into it
+        --// loses nothing, 2,300,000 comes back as ~105,700. That is why the
         --// loss is read from where in the bar the character is, not from the
-        --// running total or the level alone.
+        --// level alone.
         local function GetResetCost()
             local Level = GetLevel()
             local Exp = GetExp()
@@ -1639,6 +1646,22 @@ return {
                     Say("Boss Route", "Dodging a skill at stop #" .. tostring(S.Index), 2)
                     return
                 end
+            end
+
+            --// A stop is fought before Auto Farm's own health decision runs,
+            --// so this was the one place a potion was never drunk: the dodge
+            --// and the walk take the frame, and the boss fights ran to the
+            --// death with the health the stop started with.
+            local HealPercent = math.clamp(tonumber(CONFIG.AUTO_HEAL_HEALTH_PERCENT) or 65, 30, 80)
+            local MaxHealth = tonumber(Humanoid.MaxHealth) or 0
+
+            if MaxHealth > 0
+                and (tonumber(Humanoid.Health) or 0) <= MaxHealth * (HealPercent / 100)
+                and AICFeature.TryHeal
+                and AICFeature.TryHeal(Now)
+            then
+                Humanoid:Move(Vector3.zero)
+                return
             end
 
             local Offset = TargetRoot.Position - RootPart.Position

@@ -50,7 +50,11 @@ that matches usually ends the frame:
    **Retreat At HP%** makes it retreat until health recovers (or, on the route, keeps
    walking). **Execute Charge at HP%** overrides retreat to finish a low-health
    target. Retreating skips everything below.
-9. Drink a potion when **Auto Heal at HP%** is met (and not mid-dodge).
+9. Drink a potion when **Auto Heal at HP%** is met (and not mid-dodge). A mob
+   already in reach no longer blocks the drink while health is also below
+   **Retreat At HP%**: standing in the fight that is taking the health was
+   exactly when the heal was skipped. The Boss Route fights its stops before
+   this step ever runs, so its fight drinks for itself, on the same threshold.
 10. **Auto Block:** an un-whitelisted player past **Block Delay (s)** is blocked, then
     the server is left once the block settles. With a Party Leader set, Party handles
     intruders instead.
@@ -164,7 +168,7 @@ The Core section ends with three sliders that belong to the combat loop:
 
 - **Execute Charge at HP%** (default 0, range 0–90) — below this much health a target is finished off instead of retreated from. 0 disables it, and an incoming enemy skill still overrides it.
 - **Retreat At HP%** (40, 0–80) — retreat below this share of health. 0 means never retreat, not even on the frame health reaches 0.
-- **Auto Heal at HP%** (65, 30–80) — drinks the last used potion at or below this share.
+- **Auto Heal at HP%** (65, 30–80) — drinks the last used potion at or below this share, in the farm loop and in a Boss Route fight. The wait between attempts is **2 s** (a spam guard); the game's own potion cooldown decides whether the drink lands, so a potion that is ready is not sat on.
 
 #### Combat
 
@@ -523,16 +527,17 @@ final point can be the doorway and the stop the boss.
 5. If it ends on the kill and **Reset After Kill** is on, where the character
    is in its EXP bar decides the reset. A reset keeps the **first 10% of the
    bar for every 100 levels**, stopping at **90% from level 900 up** — the part
-   of the bar the game protects. The bar's size is the level's own, from the
-   game's EXP curve (about 5,406 EXP at level 900), so the kept part there is
-   about 4,865: 5,300 into the bar comes back as 4,865 (435 lost), and 3,000
-   comes back as 3,000. `PlayerStats.EXP` is a **running total**, not the bar's
-   own value, so the route first places it inside the level (the previous
-   level's requirement to this one's) and only then measures the protection —
-   being early in the bar is free even though the total is in the millions.
-   The numbers grow with the level rather than being fixed. An EXP inside the
-   protected part loses nothing, so the reset happens **at once** — one scan
-   tick after the kill, with `RESET NOW` on the status line. Above it the
+   of the bar the game protects. The bar is the level's own requirement, the
+   number the HUD prints: `EXP <value>/<neededExp(Level)>`, **2,438,097** at
+   level 900, with the value starting again at 0 on every level. The kept part
+   there is therefore the first **2,194,287** EXP: 100,000 into the bar comes
+   back as 100,000 (nothing lost), 2,300,000 comes back as 2,194,287 (about
+   105,700 lost), and the numbers grow with the level rather than being fixed.
+   A game publishing a **running total** instead is read too: a value between
+   this level's requirement and the next is treated as progress in the next
+   level's bar. An EXP inside the protected part loses nothing, so the reset
+   happens **at once** — one scan tick after the kill, with `RESET NOW` on the
+   status line. Above it the
    character holds at the corpse for the row's **Reset (s)** — **10 s** for a
    stop that has not set one — and `CLEARING  7s  LOSE 50 EXP` counts it down.
    During that hold a living mob within **40 studs** is run from: the character
