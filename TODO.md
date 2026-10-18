@@ -547,6 +547,14 @@ were added.
 > - **Dodge Skills** is back as a per-stop toggle (on by default, `Dodge = Stop.Dodge ~= false` in the place config). Off, the burst and the effect watch are both inert and the walk speed is never touched.
 > - Harness: 107 checks (was 78). New ones cover the free reset firing at the grace, the risky reset holding the ten-second default, an explicit **Reset (s)** being honoured, the prompt teleport/press/nearest fallback, the dodge starting from the cast with full health, the toggle off, a dead boss resetting the stop, and a dropped reset being retried. Mutations caught: always holding (9 failures), no prompt (5), burst-only dodge (3), ignored toggle (3), no dead-boss check (3), no retry (3), level ignored (3).
 
+### [x] Boss Route: Save Prompt Here did nothing when no prompt was found
+
+> **Done (v3.43):** `Features/BossNavigator.lua`, Boss Route only
+> - The button only reported a miss on the status line, which lives at the top of the tab, so from the bottom of the editor a click looked like nothing happened. Every branch now also posts a toast (`NotifyAction`), including `Add a boss stop first` and `Character not ready`.
+> - A miss no longer leaves the stop untouched: with nothing within 40 studs it saves the spot the character is standing on as `HERE` and switches prompt travel on. That is where the game's prompt is, and it works for a game whose interaction is not a `ProximityPrompt` at all.
+> - Detection widened: `ClickDetector` counts as an interaction as well, prompts the game has switched off are skipped, and the prompt's position is found by walking up to its part — so one hanging off an `Attachment` or a `Model`/`Folder` is no longer invisible. The miss message names the nearest distance (`nearest 73`), which says immediately whether the prompt is simply out of range.
+> - Harness: 112 checks. New ones press the button with a nearby prompt (saved name and position) and with none (falls back to the character, and the toast is posted).
+
 ## To Fix
 
 ### [x] Waypoints Looped & Paired Farmzone/Waypoint/Targets: walking back to waypoints that are not paired

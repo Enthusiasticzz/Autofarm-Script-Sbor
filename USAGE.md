@@ -442,11 +442,17 @@ teleport) to a boss, fight it, and reset back to spawn before the next one.
   character is put next to the prompt, **Interact** is pressed there, and the
   stop's Path is walked from the first point. A stop with both set uses the
   prompt, not the waypoint.
-- **Save Prompt Here** — records the nearest `ProximityPrompt` (within 40
-  studs) to where you stand as this stop's prompt, and switches **Teleport To
-  Prompt** on. The label under the toggle shows what is saved; with nothing
-  saved the nearest prompt to the stop itself is used, so the button is
-  optional.
+- **Save Prompt Here** — records the nearest interaction to where you stand as
+  this stop's prompt and switches **Teleport To Prompt** on: a `ProximityPrompt`
+  or a `ClickDetector` within 40 studs, found whether it hangs off a part, an
+  `Attachment` or a model. With nothing that close it saves the spot you are
+  standing on instead (`HERE`), because that is where the game's prompt is
+  anyway — that also covers a game whose interaction is not a `ProximityPrompt`.
+  Every press answers on screen: a toast (`Prompt saved: …`, or
+  `No prompt within 40 studs (nearest 73); saved where you stand`) and the
+  label under the toggle, which always shows the saved name and position. With
+  nothing saved the nearest prompt to the stop itself is used at run time, so
+  the button is optional.
 - **Add Boss Name** — a dropdown, nothing typed: the mobs **around the player**
   (within 300 studs) nearest first, then every other mob the game has loaded.
   Pick one to add it to the selected stop. This is the same picker pattern as

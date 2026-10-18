@@ -1542,36 +1542,68 @@ return {
             end)
         end
 
-        --// Where an interaction prompt stands: the part it is parented to, or
-        --// the first part above it. That is the spot the character has to be
-        --// near for the prompt to show, so it is also the teleport target.
+        --// Where an interaction prompt stands: the part it belongs to. A
+        --// prompt may hang off a part directly, off an Attachment, or off a
+        --// Model/Folder inside the room, so the ancestors are walked rather
+        --// than only the immediate parent. That spot is what the character has
+        --// to be near for the prompt to show, so it is the teleport target.
         local function GetPromptPosition(Prompt)
-            local Parent = Prompt and Prompt.Parent
+            local Node = Prompt and Prompt.Parent
 
-            if not Parent then
-                return nil
+            for _ = 1, 6 do
+                if not Node then
+                    return nil
+                end
+
+                if Node:IsA("BasePart") then
+                    return Node.Position
+                end
+
+                if Node:IsA("Attachment") then
+                    return Node.WorldPosition
+                end
+
+                if Node:IsA("Model") then
+                    local Primary = Node.PrimaryPart or Node:FindFirstChildWhichIsA("BasePart")
+
+                    if Primary then
+                        return Primary.Position
+                    end
+                end
+
+                Node = Node.Parent
             end
 
-            if Parent:IsA("BasePart") then
-                return Parent.Position
-            end
-
-            local Part = Parent:FindFirstChildWhichIsA("BasePart")
-
-            return Part and Part.Position or nil
+            return nil
         end
 
-        --// Nearest interaction prompt to a point, inside Radius. Used to save
-        --// one for a stop, and to fall back to one when the stop has none.
+        --// A prompt, or a click detector: either way its part is where the
+        --// game expects the character to stand, which is all a teleport target
+        --// needs. A prompt the game has switched off is skipped.
+        local function IsPromptLike(Object)
+            if Object:IsA("ProximityPrompt") then
+                return Object.Enabled ~= false
+            end
+
+            return Object:IsA("ClickDetector")
+        end
+
+        --// Nearest interaction object to a point: the best inside Radius, plus
+        --// how far the nearest one anywhere was, so a miss can say why.
         local function FindNearestPrompt(Position, Radius)
             local Best, BestDistance = nil, Radius
+            local Nearest = math.huge
 
             for _, Descendant in ipairs(workspace:GetDescendants()) do
-                if Descendant:IsA("ProximityPrompt") then
+                if IsPromptLike(Descendant) then
                     local PromptPosition = GetPromptPosition(Descendant)
 
                     if PromptPosition then
                         local Distance = (PromptPosition - Position).Magnitude
+
+                        if Distance < Nearest then
+                            Nearest = Distance
+                        end
 
                         if Distance <= BestDistance then
                             Best, BestDistance = Descendant, Distance
@@ -1580,7 +1612,7 @@ return {
                 end
             end
 
-            return Best, BestDistance
+            return Best, Nearest == math.huge and nil or Nearest
         end
 
         --// Puts the character at a point, no walk. Only ever used for a prompt
@@ -2326,17 +2358,24 @@ return {
             "PROMPT:  NONE SAVED  (NEAREST TO THE STOP IS USED)"
         )
 
+        --// Every branch says something on screen (a toast as well as the
+        --// status line, which sits at the top of the tab and is easy to miss),
+        --// and a miss still saves the spot the player is standing on: that is
+        --// where the game's prompt is, whether or not the game implements it
+        --// as a ProximityPrompt.
         UIRef.BossPromptButton = UIRef.BossSection:AddButton("Save Prompt Here", function()
             local Stop = SelectedStop()
             local _, _, RootPart = Runtime:GetCharacter()
 
             if not Stop then
                 SetStatus("ADD A BOSS STOP FIRST")
+                Say("Boss Route", "Add a boss stop first", 4)
                 return
             end
 
             if not RootPart then
                 SetStatus("CHARACTER NOT READY")
+                Say("Boss Route", "Character not ready", 4)
                 return
             end
 
@@ -2344,24 +2383,30 @@ return {
                 return
             end
 
-            local Prompt = FindNearestPrompt(RootPart.Position, PROMPT_SAVE_RADIUS)
+            local Index = AICProfile.S.SelectedBossStopIndex
+            local Prompt, Nearest = FindNearestPrompt(RootPart.Position, PROMPT_SAVE_RADIUS)
             local Position = GetPromptPosition(Prompt)
 
             if not Position then
-                SetStatus("NO INTERACTION PROMPT NEARBY")
+                Stop.PromptPosition = AICConfig.RoundVector3(RootPart.Position)
+                Stop.PromptName = "HERE"
+                Stop.Prompt = true
+                Commit(string.format("PROMPT: STOOD HERE, SAVED FOR STOP #%d", Index))
+                RefreshEditor()
+                Say("Boss Route", string.format(
+                    "No prompt within %d studs%s; saved where you stand",
+                    PROMPT_SAVE_RADIUS,
+                    Nearest and string.format(" (nearest %.0f)", Nearest) or ""
+                ), 5)
                 return
             end
 
             Stop.PromptPosition = AICConfig.RoundVector3(Position)
             Stop.PromptName = string.sub(tostring(Prompt.Name or ""), 1, 64)
             Stop.Prompt = true
-            Commit(string.format(
-                "PROMPT %s SAVED FOR STOP #%d",
-                Stop.PromptName,
-                AICProfile.S.SelectedBossStopIndex
-            ))
+            Commit(string.format("PROMPT %s SAVED FOR STOP #%d", Stop.PromptName, Index))
             RefreshEditor()
-            Say("Boss Route", "Prompt saved: " .. Stop.PromptName)
+            Say("Boss Route", "Prompt saved: " .. Stop.PromptName, 4)
         end)
 
         --// Boss names come from a list of the mobs around the player, the same
