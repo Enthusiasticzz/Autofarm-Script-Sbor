@@ -36,6 +36,10 @@ return {
             { Name = "DebugVisualizer",   Default = true,  Key = "k" },
             { Name = "PartySystem",       Default = false, Key = "l" },
             { Name = "WaypointLoop",      Default = false, Key = "m" },
+            --// Boss Route (BossNavigator): walks its own list of boss stops,
+            --// fights at each and resets on its own timers. Its stops live on
+            --// the place config (BOSS_ROUTE), not in WAYPOINTS.
+            { Name = "BossRoute",         Default = false, Key = "z" },
             { Name = "SafeBoosterReset",  Default = false, Key = "n" },
             { Name = "AutoBlockConfirm",  Default = false, Key = "o" },
             { Name = "AutoMining",        Default = false, Key = "p" },
@@ -180,6 +184,9 @@ return {
         SaveConfig.Settings = {
             { Key = "REACH_DISTANCE", Scope = "Place", Default = 5 },
             { Key = "AUTOBLOCK", Scope = "Place", Default = false },
+            --// Boss Route loops back to its first stop after the last one;
+            --// off, it plays the route once and switches itself off.
+            { Key = "BOSS_ROUTE_LOOP", Default = true },
 
             --// Retreat below this share of health (0 = never), and drink at or below the
             --// heal share.

@@ -1,6 +1,6 @@
 # AIC usage guide
 
-How to use Automated Industry Complex (AutoFarmV3, `v3.24`) once it is loaded. The
+How to use Automated Industry Complex (AutoFarmV3, `v3.31`) once it is loaded. The
 loadstring and what the loader fetches are in [README.md](README.md); this file is
 about the features and about why the farm sometimes appears to do nothing.
 
@@ -41,7 +41,8 @@ that matches usually ends the frame:
 2. No character, or dead → reset route and target state and stop.
 3. Refresh the status labels every 0.5 s, and revalidate the mob list.
 4. **Party hold** (`PARTY HOLD`) → stand still.
-5. **Auto Farm off** (`AUTO FARM OFF`) → Auto Smithing still runs; nothing else moves.
+5. **Auto Farm off** (`AUTO FARM OFF`) → the Boss Route still runs (it is its own
+   feature), then Auto Smithing; nothing else moves.
 6. **Prerequisite gate** → no `InputBindableFunction`, no `Sword`/`MainWeld`, or no
    `PlayerStats`: stop silently. *(This is the silent one — see Troubleshooting.)*
 7. Deadzone escape → if it is standing in a deadzone, leave and stop.
@@ -54,15 +55,19 @@ that matches usually ends the frame:
     the server is left once the block settles. With a Party Leader set, Party handles
     intruders instead.
 11. Server older than the game's play-time limit → hop.
-12. **The waypoint route.** While `WAYPOINTS: n/m` has not reached the end, the loop
+12. **Boss Route** (`BOSS ROUTE`): while its toggle is on this is where it takes the
+    frame — walking its own stops, fighting at each and resetting on its own timers —
+    and everything below is skipped for that frame. With Auto Farm off it is offered
+    the frame at step 5 instead.
+13. **The waypoint route.** While `WAYPOINTS: n/m` has not reached the end, the loop
     only walks: reach checks, `Wait (s)` holds (`WAYPOINT WAIT`), jump waypoints,
     hole and stuck jumps. **It does not fight and does not mine or craft yet.**
-13. Once the route is done, in this order: **Waypoint Loop** (`WAYPOINT LOOP`), then
+14. Once the route is done, in this order: **Waypoint Loop** (`WAYPOINT LOOP`), then
     **Auto Smithing**, then **Auto Mining** (`MINING / SMITHING`), then **Return To
     Farm Zone** (`RETURN TO FARM ZONE`), then **Gather Mobs** (`GATHER`), then target
     acquisition and combat (`CHASE …`), then **Auto Patrol** (`PATROL`), else
     `IDLE (NO TARGET)` and it stands still.
-14. Finally: jump probes, swim recovery, and the attack itself — or, while the route
+15. Finally: jump probes, swim recovery, and the attack itself — or, while the route
     is unfinished, the `InteractButton` press.
 
 With **Auto Find** on, step 12 is skipped entirely: there is no route, so it goes
@@ -387,6 +392,77 @@ A floating, draggable window opened with **Open Recipe Browser**; everything abo
 - **ADD TO RECIPE PRIORITY** / **REMOVE FROM RECIPE PRIORITY** — adds or removes the picked recipe from the same priority list shown on the Crafting tab.
 - **PRIORITY** tab — the recipe priority list itself, with the note "Recipes are crafted top to bottom until each reaches its Target. Add them from the RECIPE tab."
 - **Open Asset Explorer** (on the Crafting tab) — a separate window for every item: stats, price, recipe, drops and uses. Useful for finding what a material is for or where a drop comes from.
+
+### Bosses tab
+
+A boss route is its own list of stops. It is saved in the profile like waypoints
+and zones, but kept apart from them (place config `BOSS_ROUTE`): the Farming
+waypoint route and the Profile Settings waypoints never move it, and editing a
+boss stop never moves either of those. Use it for the run where you walk (or
+teleport) to a boss, fight it, and reset on a timer instead of dying to it.
+
+#### Boss Route
+
+- **Boss Route** (off by default) — the tab's master switch. It works with Auto
+  Farm on or off; while it is on it owns movement and combat, and the safety
+  checks above it (party hold, retreat, Auto Block, server age) still run first.
+- **STATUS:  …** — what the route is doing: `STOP 2/4  WALKING`, `… WAITING`,
+  `… FIGHT`, `… CLEARING`, `… RESET TIMER`, `… WAITING FOR EXP LOSS`,
+  `ROUTE FINISHED`, `OFF`.
+- **Add Boss Stop Here** — saves a stop at your current position. A new stop
+  starts with a 10 s reset timer, a 4 s respawn wait and a 120-stud engage radius.
+- **Boss Route** (list) — one row per stop, `#1  Boss 1  > WP3  Goblin  (x, y, z)`.
+  Drag a row (or use ▲▼) to reorder the route; each row's `Reset (s)` box is that
+  stop's reset timer (0–600, 0 = never) and its `Wait Exp` tick is whether the
+  next stop waits for the EXP loss. ✕ removes the row.
+- **Clear Boss Route** — removes every stop.
+- **Edit Boss Stop** — picks which stop the boxes below change.
+- **Boss Stop Name** — the name shown in the list.
+- **Teleport Waypoint #** — one of the game's waypoints to teleport to before
+  walking to the stop (0 walks the whole way). Uses the same `TeleportEvent`
+  remote as the Teleport tab.
+- **Wait At Spot (s)** — seconds stood still at the stop before the fight starts
+  (e.g. to let a boss spawn).
+- **Reset Below HP %** — reset the character at or below this share of health;
+  0 never. This is the "reset before it kills me" guard.
+- **Respawn Wait (s)** — seconds after the character is back before the next stop
+  starts.
+- **Engage Radius** — how far from the stop a boss is picked up.
+- **Boss Names** — comma separated boss names (the same entity names the Enemy
+  Priority list uses); empty fights whatever is at the stop.
+- **Move Stop Here** / **Remove Stop** — move the selected stop to the character,
+  or delete it.
+- **Loop Route** (on by default) — after the last stop, start again at the first.
+  Off, the route plays once and switches Boss Route off.
+
+#### What a stop does
+
+1. Teleports to its waypoint (when one is set) and waits 2 s, then walks to the
+   stop with the same walker mining and smithing use. A stop it cannot reach in
+   120 s is skipped.
+2. Waits **Wait At Spot** seconds.
+3. Fights the nearest living mob inside **Engage Radius** that matches **Boss
+   Names** (anything when empty), drawing the weapon first and using the same
+   attack and skill inputs as Auto Farm.
+4. Ends the stop when the target dies and nothing else is left there (a 2 s
+   grace), when `Reset After` seconds of fighting have passed, when health drops
+   to **Reset Below HP %**, or when there is nothing to fight for 5 s.
+5. On a reset the character's health is set to 0 (the same reset Party System
+   uses). Once it is back it waits **Respawn Wait**, and with **Wait Exp** on it
+   also holds until `PlayerStats.EXP` is lower than before the reset (15 s at
+   most, so a game that applies the loss differently cannot stall the route).
+6. Then the next stop begins. Reaching the end loops, or finishes when **Loop
+   Route** is off.
+
+Notes:
+
+- The route is saved per profile on the place config, so a profile without one
+  starts empty and adding stops needs a loaded profile (`CREATE / LOAD PROFILE
+  FIRST`, `DEFAULT PLACE_CONFIG IS READ-ONLY` on a built-in preset).
+- Dying on the way, or being killed instead of reset by the timer, is treated as
+  a reset: the route waits for the respawn and continues with the next stop.
+- With **Auto Farm** on, the route runs before the farming waypoint route, so the
+  two never fight over the character. Turn Boss Route off to farm normally.
 
 ### Party tab
 

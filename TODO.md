@@ -2,7 +2,7 @@
 
 Status: `[ ]` not started · `[x]` done or fixed (written, not yet verified in-game)
 
-All 99 items are complete — nothing here is pending. This file is the record of
+All 100 items are complete — nothing here is pending. This file is the record of
 what was asked for and what shipped, oldest work first: `## To Do` lists requested
 features, `## To Fix` lists reported bugs. Every item names the version it shipped
 in, and the note under it explains what actually changed and which tuning constants
@@ -437,6 +437,20 @@ were added.
 > - **Auto Start Game** and **FPS Boost** moved to a new **Utility** tab (`UIRef.UtilitySection`), and the **Debug Visualizer** master toggle to the **Debug** tab with its other toggles
 > - Each feature now passes its section to `BindFeatureToggle` (4th arg) instead of relying on the default, so a new toggle lands with its own settings rather than in Core; no toggle, default, or save key changed
 > - `USAGE.md` and `AI-WALKTHROUGH.md` document the section-per-area layout and the rule to always pass the matching section
+
+### [x] Boss Route: its own tab and saved boss waypoints, separate from Auto Farm
+
+> **Done (v3.31):** a new **Bosses** tab (`Features/BossNavigator.lua`) for the boss run where you go from a waypoint to a boss, fight it, and reset on a timer instead of dying to it
+> - Its own list, saved on the place config as `BOSS_ROUTE` (`Core/Runtime.lua` `NormalizeBossStops`, so it saves, loads and exports with the profile): the Farming waypoint route and the Profile Settings waypoints are untouched by it and never move it
+> - **Add Boss Stop Here** saves a stop; **Edit Boss Stop** picks one and the boxes below edit it: name, **Teleport Waypoint #** (the game's own `TeleportEvent`, 0 walks), **Wait At Spot (s)**, **Reset Below HP %**, **Respawn Wait (s)**, **Engage Radius** and **Boss Names** (entity names, empty fights anything at the stop) · **Move Stop Here** / **Remove Stop** · drag or ▲▼ reorders the route, and each row carries its own `Reset (s)` box and `Wait Exp` tick
+> - The run walks each stop with `WalkController` (teleporting first when the stop names a waypoint), waits, then fights the nearest matching mob inside the radius with the same weapon/attack/skill inputs Auto Farm uses
+> - A stop ends on the boss dying (2 s grace for a second mob), on **Reset After** seconds of fighting, on health at or below **Reset Below HP %**, or on nothing to fight for 5 s; the reset sets `Humanoid.Health = 0` like Party System does
+> - **Wait Exp** holds the next stop until `PlayerStats.EXP` is lower than before the reset (15 s cap), so the loss is registered before walking off; otherwise **Respawn Wait** is all it waits
+> - **Loop Route** (saved setting `BOSS_ROUTE_LOOP`, default on) loops back to the first stop; off, the route plays once and switches itself off
+> - `Features/AutoFarming.lua` hands it the frame (`AICFeature.BossStep`) before the waypoint route, and again in the Auto Farm off branch, so it runs with Auto Farm on or off; `BossRecoverStep` keeps a reset waiting for its respawn while Auto Farm returns early on a dead character; the safety checks above it (party hold, retreat, Auto Block, server age) still run first
+> - New save key `z` for the toggle, and `BOSS_ROUTE_LOOP` in `SaveConfig.Settings`; `USAGE.md` has a **Bosses tab** section, `UI/Descriptions.lua` describes every new control, and `README.md` lists the module
+> - `.gitignore` now keeps the local `Backup-Copy/` and `Others-code/` folders out of the tree
+> - Not tested in game: the reset timing (10 s by default), the EXP-loss wait and the boss-name matching need a run against a real boss
 
 ## To Fix
 

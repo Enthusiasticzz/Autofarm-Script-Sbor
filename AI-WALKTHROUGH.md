@@ -19,6 +19,7 @@ Every file except `UI/Utils.lua` returns a spec: `{ Name, Dependencies = {...}, 
 - After all modules have started, Init calls the optional `:BuildLateUI()` on every module (controls that must go below all the toggles), then `:Finalize()` (ProfileSettings restores the last profile here, once every control exists), then starts Heartbeat.
 - `Core/Bootstrap.lua` is the composition root. It wires character respawn resets and other cross-module glue.
 - `Features/AutoFarming.lua` `Feature:Update` is the main per-frame decision loop (retreat, Auto Block, waypoint route, then combat/patrol). Once the route is walked it first offers the frame to `AICFeature.SmithingStep` (AutoSmithing, also run with Auto Farm off) and then `AICFeature.MiningStep` (AutoMining); a true return means that job moved and fought this frame, and the farm's own combat is skipped.
+- `AICFeature.BossStep` (BossNavigator) is offered the frame *before* the waypoint route, and again in the Auto Farm off branch, so the Boss Route runs with Auto Farm on or off and the farm keeps its safety checks (party hold, retreat, Auto Block, server age) ahead of it. While the character is dead Auto Farm returns early, so `AICFeature.BossRecoverStep` is called there to keep a boss reset waiting for its respawn.
 
 ## Shared runtime layers
 

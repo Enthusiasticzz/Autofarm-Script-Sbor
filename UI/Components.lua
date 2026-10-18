@@ -553,6 +553,12 @@ return {
             if AICUI.RefreshWaypointPairPickers then
                 AICUI.RefreshWaypointPairPickers()
             end
+
+            --// The Boss Route editor reads the same place config, so a profile
+            --// load refreshes it too (BossNavigator).
+            if AICUI.RefreshBossRoutePickers then
+                AICUI.RefreshBossRoutePickers()
+            end
         end
         function AICUI.RefreshFarmZoneList()
         local PlaceConfig = Runtime:GetPlaceConfig()

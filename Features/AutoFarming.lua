@@ -328,6 +328,13 @@ return {
             --end
 
             if not Humanoid or not RootPart then
+                --// A Boss Route reset waiting for its character still has to
+                --// see the respawn, and this is where the frame returns while
+                --// there is no character at all.
+                if AICFeature.BossRecoverStep then
+                    AICFeature.BossRecoverStep(now)
+                end
+
                 AICFeature.updateCharacter()
                 table.clear(AICCombat.S.ValidMobs)
                 AICCombat.S.ClosestTarget = nil
@@ -335,6 +342,10 @@ return {
             end
 
             if Humanoid.Health <= 0 then
+                if AICFeature.BossRecoverStep then
+                    AICFeature.BossRecoverStep(now)
+                end
+
                 AICDebug.ResetDebugWaypoints()
                 CONFIG.CURRENT_WAYPOINT_TARGET = 1
                 AICFeature.S.WaypointWaitUntil = nil
@@ -388,6 +399,13 @@ return {
 
             if not AICFeature.S.Enabled then
                 SetFarmState("AUTO FARM OFF")
+
+                --// The Boss Route runs on its own, with Auto Farm on or off:
+                --// it walks its stops, fights, and resets on its own timers.
+                if AICFeature.BossStep and AICFeature.BossStep(now) then
+                    SetFarmState("BOSS ROUTE")
+                    return
+                end
 
                 --// Auto Smithing also runs with Auto Farm off: it walks to
                 --// the table and crafts, and nothing else moves.
@@ -644,6 +662,15 @@ return {
             if workspace.DistributedGameTime >= CONFIG.MAX_SERVER_AGE then
                 SetFarmState("SERVER TOO OLD, HOPPING")
                 AICFeature.TeleportToPlace()
+                return
+            end
+
+            --// Boss Route: its own stops and timers, above the waypoint route
+            --// and the combat below. Every safety check above still ran this
+            --// frame, so a Boss Route run keeps Auto Block, the retreat and the
+            --// server-age hop.
+            if AICFeature.BossStep and AICFeature.BossStep(now) then
+                SetFarmState("BOSS ROUTE")
                 return
             end
 

@@ -28,6 +28,7 @@ return {
             ["FPS Boost"] = "Turns off shadows, effects, particles and lights for more FPS",
             ["Party System"] = "Follows the Leader to their server with the tp friend command",
             ["Waypoint Loop"] = "Farms only the zones paired with waypoints, walking between them",
+            ["Boss Route"] = "Walks the saved boss stops, fights at each and resets on its own timers",
             ["Debug Visualizer"] = "Draws zones, waypoints and targets in the world",
             ["Auto Mining"] = "Mines the Ore Priority ores inside mine zones",
             ["Auto Smithing"] = "Crafts the Recipe Priority recipes at a smithing table",
@@ -35,6 +36,22 @@ return {
             ["Join Alerts"] = "Notifies you when someone off the Block Whitelist joins",
             ["Follower Guard"] = "Kicks you out of the game when one player keeps joining yours",
             ["Show Pinned Items"] = "Shows the floating Pinned Items panel",
+
+            --// Boss Route
+            ["Add Boss Stop Here"] = "Saves a boss stop at the character's position",
+            ["Clear Boss Route"] = "Removes every boss stop",
+            ["Edit Boss Stop"] = "Picks which boss stop the boxes below edit",
+            ["Boss Stop Name"] = "The name shown for this boss stop",
+            ["Teleport Waypoint #"] = "Game waypoint to teleport to before walking here (0 walks the whole way)",
+            ["Wait At Spot (s)"] = "Seconds stood still at the stop before the fight starts",
+            ["Reset Below HP %"] = "Resets the character at or below this health; 0 never",
+            ["Respawn Wait (s)"] = "Seconds after respawning before the next stop starts",
+            ["Engage Radius"] = "How far from the stop a boss is picked up",
+            ["Boss Names"] = "Boss names to fight, comma separated; empty fights anything at the stop",
+            ["Move Stop Here"] = "Moves the selected boss stop to the character's position",
+            ["Remove Stop"] = "Removes the selected boss stop",
+            ["Wait Exp"] = "Holds the next stop until the EXP loss is registered",
+            ["Loop Route"] = "Starts again at the first boss stop after the last one",
 
             --// Debug Visualizer
             ["Debug Waypoints"] = "Shows waypoint markers and the route",
@@ -129,7 +146,7 @@ return {
             ["Add Material"] = "Adds a material to keep a reserve of",
 
             --// Status
-            ["Reset Stats"] = "Zeroes stats under 500 points; 500+ won't reset (trips the anticheat)",
+            ["Reset Stats"] = "Zeroes stats under 500 points; 500 won't reset (trips the anticheat)",
             ["Reset Pinned Items Position"] = "Docks the Pinned Items panel back at the right",
 
             --// Profile

@@ -95,6 +95,9 @@ return {
         --// only creates the tabs/sections they attach those controls to.
         UIRef.StatusTab = UI:AddTab("Status")
         UIRef.FarmTab = UI:AddTab("Farming")
+        --// Boss route: its own tab, list and timers, apart from the farming
+        --// waypoints and the profile waypoints (BossNavigator).
+        UIRef.BossTab = UI:AddTab("Bosses")
         UIRef.MineTab = UI:AddTab("Mining")
         UIRef.CraftTab = UI:AddTab("Crafting")
         UIRef.PartyTab = UI:AddTab("Party")
@@ -802,6 +805,10 @@ return {
             Config.DEADZONES = Deadzones
             --// Auto Mining only mines ores inside one of these.
             Config.MINE_ZONES = AICConfig.CloneZoneList(Config.MINE_ZONES)
+            --// Boss Route stops (BossNavigator): a spot to stand on per boss,
+            --// with its own teleport, wait and reset timers. Kept apart from
+            --// WAYPOINTS so neither route moves the other.
+            Config.BOSS_ROUTE = AICConfig.NormalizeBossStops(Config.BOSS_ROUTE)
             --// Where the chosen smithing table stands, or nil for "nearest".
             --// A position, not the table's Id, which may differ per server.
             Config.SMITH_TABLE = Config.SMITH_TABLE ~= nil
@@ -882,6 +889,77 @@ return {
             for _, Name in ipairs(type(List) == "table" and List or {}) do
                 if type(Name) == "string" and Name ~= "" and not table.find(Result, Name) then
                     table.insert(Result, Name)
+                end
+            end
+
+            return Result
+        end
+
+        --// Boss Route limits. The defaults are what a new stop starts with:
+        --// fight for 10 seconds, then reset and move on, unless the boss dies
+        --// first. Respawn Wait gives the new character time to load, and the
+        --// engage radius reaches across a boss room from the standing spot.
+        AICConfig.DEFAULT_BOSS_RESET_AFTER = 10
+        AICConfig.DEFAULT_BOSS_RESPAWN_WAIT = 4
+        AICConfig.DEFAULT_BOSS_RADIUS = 120
+        AICConfig.MAX_BOSS_RESET = 600
+        AICConfig.MAX_BOSS_RESPAWN_WAIT = 120
+        AICConfig.MAX_BOSS_RADIUS = 500
+        AICConfig.MAX_BOSS_WAYPOINT = 999
+
+        --// One stop of the Boss Route (BossNavigator). Position is the spot
+        --// the character stands on; a stop without one is dropped, so a
+        --// half-written save cannot leave an unwalkable row.
+        --//   Label       shown in the list
+        --//   Targets     boss entity names; empty fights anything at the spot
+        --//   Waypoint    game waypoint number teleported to first, 0 walks
+        --//   Wait        seconds stood still before the fight starts
+        --//   ResetAfter  seconds of fighting before resetting, 0 never
+        --//   ResetBelow  reset at or below this % of health, 0 never
+        --//   RespawnWait seconds after respawning before the next stop
+        --//   WaitExp     hold the next stop until EXP actually dropped
+        --//   Radius      how far from Position a boss is picked up
+        function AICConfig.NormalizeBossStops(List)
+            local Result = {}
+
+            for _, Stop in ipairs(type(List) == "table" and List or {}) do
+                local Position = type(Stop) == "table" and Stop.Position or nil
+
+                if typeof(Position) == "Vector3" then
+                    Position = AICConfig.RoundVector3(Position)
+                elseif type(Position) == "table" then
+                    Position = AICConfig.DecodeVector3(Position)
+                else
+                    Position = nil
+                end
+
+                if Position then
+                    local Label = type(Stop.Label) == "string" and Stop.Label:gsub("^%s*(.-)%s*$", "%1") or ""
+
+                    table.insert(Result, {
+                        Label = Label ~= "" and Label or ("Boss " .. tostring(#Result + 1)),
+                        Position = Position,
+                        Targets = AICConfig.CloneTargetList(Stop.Targets),
+                        Waypoint = math.clamp(
+                            math.floor(tonumber(Stop.Waypoint) or 0), 0, AICConfig.MAX_BOSS_WAYPOINT
+                        ),
+                        Wait = math.clamp(tonumber(Stop.Wait) or 0, 0, AICConfig.MAX_WAYPOINT_WAIT),
+                        ResetAfter = math.clamp(
+                            tonumber(Stop.ResetAfter) or 0, 0, AICConfig.MAX_BOSS_RESET
+                        ),
+                        ResetBelow = math.clamp(tonumber(Stop.ResetBelow) or 0, 0, 100),
+                        RespawnWait = math.clamp(
+                            tonumber(Stop.RespawnWait) or AICConfig.DEFAULT_BOSS_RESPAWN_WAIT,
+                            0,
+                            AICConfig.MAX_BOSS_RESPAWN_WAIT
+                        ),
+                        WaitExp = Stop.WaitExp == true,
+                        Radius = math.clamp(
+                            tonumber(Stop.Radius) or AICConfig.DEFAULT_BOSS_RADIUS,
+                            1,
+                            AICConfig.MAX_BOSS_RADIUS
+                        ),
+                    })
                 end
             end
 

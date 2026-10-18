@@ -1,6 +1,10 @@
 # Snapshot archive of the upstream source, not part of the tree.
 *.zip
 
+# Local working copies and reference code, not part of the tree.
+Backup-Copy/
+Others-code/
+
 # OS / editor junk
 .DS_Store
 Thumbs.db

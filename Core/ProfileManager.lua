@@ -882,6 +882,8 @@ return {
             CONFIG.CURRENT_WAYPOINT_TARGET = 1
             AICFeature.S.WaypointWaitUntil = nil
             if AICFeature.ResetWaypointLoop then AICFeature.ResetWaypointLoop() end
+            --// The new profile brings its own Boss Route with it.
+            if AICFeature.ResetBossRoute then AICFeature.ResetBossRoute() end
             AICCombat.ResetTargetReposition()
             AICFeature.S.DeadzoneEscapePosition = nil
             PatrolState.PatrolPosition = nil
