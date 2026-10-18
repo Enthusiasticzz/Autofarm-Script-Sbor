@@ -417,11 +417,11 @@ teleport) to a boss, fight it, and reset back to spawn before the next one.
 - **Boss Route** (list) — one row per stop, `#1  Boss 1  > WP3  P6  Goblin
   (x, y, z)`: the stop's name, its teleport waypoint, how many path points it
   has, its first boss name and where it is. Drag a row (or use ▲▼) to reorder
-  the route. Its `Reset (s)` box is the pause held at the corpse before the
-  character resets (0–600), used **only when the reset would cost EXP** — see
-  *What a stop does*; its `Wait Exp` tick is whether the next stop waits for
-  that EXP loss; ✕ removes the row. There is no fight timer: the row can never
-  reset while the boss lives.
+  the  route. Its `Reset (s)` box is the pause held at the corpse before the
+  character resets (0–600), used **only when the EXP sits above the part of
+  the bar a reset keeps** — see *What a stop does*; its `Wait Exp` tick is
+  whether the next stop waits for that EXP loss; ✕ removes the row. There is no
+  fight timer: the row can never reset while the boss lives.
 - **Clear Boss Route** — removes every stop.
 - **Edit Boss Stop** — picks which stop the boxes below change, and which stop
   **Path to Boss** and **Boss Names** edit.
@@ -520,24 +520,25 @@ final point can be the doorway and the stop the boss.
    when the game says the boss is dead: a scan that loses a living boss (out
    of **Engage Radius**, a model swap, a root gone for a frame) keeps the mob
    already being fought, so it can no longer reset mid-fight.
-5. If it ends on the kill and **Reset After Kill** is on, the reset is decided
-   from the level first. A reset keeps **10% of the EXP for every 100 levels**,
-   stopping at 90% from level 900 up; the route works out what that reset would
-   take from `PlayerStats.Level` and `PlayerStats.EXP`, as a share of one
-   level's EXP bar. If that share is under **2% of the bar** the reset costs
-   nothing worth waiting for and happens **at once** — one scan tick after the
-   kill, with `RESET NOW` on the status line. Otherwise the character holds at
-   the corpse for the row's **Reset (s)** — **10 s** for a stop that has not set
-   one — and `CLEARING  7s  LOSE 95 EXP` counts it down. The game has the final
-   say: if a reset ends with `PlayerStats.EXP` exactly where it started, that
-   **level** is remembered and every later reset there skips the hold, whatever
-   the prediction said. Then the character is reset
-   (health set to 0, the same reset Party System uses). That is the **only**
-   reset: the character never resets while the boss is still standing, and
-   there is no fight timeout to reset on. A corpse left in the stop's radius
-   counts as the kill even when the fight never saw the boss standing, so a
-   boss that dies between two scans still resets the stop instead of sending
-   the route to the next waypoint.
+5. If it ends on the kill and **Reset After Kill** is on, where the character
+   is in its EXP bar decides the reset. A reset keeps the **first 10% of the
+   bar for every 100 levels**, stopping at **90% from level 900 up** — the part
+   of the bar the game protects. Only the EXP **above** that part is lost: on a
+   1000 EXP bar at level 900, an EXP of 950 comes back as 900 (50 lost), and an
+   EXP of 800 comes back as 800. The route reads that from `PlayerStats.Level`
+   and `PlayerStats.EXP` through the same curve as the HUD. An EXP inside the
+   protected part loses nothing, so the reset happens **at once** — one scan
+   tick after the kill, with `RESET NOW` on the status line. Above it the
+   character holds at the corpse for the row's **Reset (s)** — **10 s** for a
+   stop that has not set one — and `CLEARING  7s  LOSE 50 EXP` counts it down.
+   The protection is a property of the bar, not of the level, so a level where
+   a reset was free is still held once the EXP climbs past it. Then the
+   character is reset (health set to 0, the same reset Party System uses). That
+   is the **only** reset: the character never resets while the boss is still
+   standing, and there is no fight timeout to reset on. A corpse left in the
+   stop's radius counts as the kill even when the fight never saw the boss
+   standing, so a boss that dies between two scans still resets the stop
+   instead of sending the route to the next waypoint.
 6. Once the character is back it goes straight on to the next leg — there is no
    second pause after the reset. With **Wait Exp** on it first holds until the
    game's `PlayerStats.EXP` has actually dropped (or reached the cutoff the

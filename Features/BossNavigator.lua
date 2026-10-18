@@ -11,12 +11,14 @@
 -- A fight ends when the target dies and nothing else is in the radius, or
 -- when nothing is there to fight at all. With Reset After Kill on (the default
 -- for a new stop) the character then resets, so the next stop is travelled to
--- from spawn. Whether that reset is worth holding for is decided from the
--- level: a reset keeps 10% of the EXP for every 100 levels (90% from level 900
--- up), and one that would cost a real slice of the level's bar is held for the
--- stop's Reset (s), ten by default. A reset with nothing to lose happens at
--- once. There is no timer reset: the character never resets while the boss is
--- still standing.
+-- from spawn. Whether that reset is worth holding for is decided from the EXP
+-- in the level's bar: a reset keeps the first 10% of the bar for every 100
+-- levels (90% from level 900 up), so on a 1000 EXP bar at level 900 an EXP of
+-- 950 drops to 900 and 50 is lost, while an EXP of 800 is kept whole. A reset
+-- that would drop the character past that protection is held for the stop's
+-- Reset (s), ten by default; one that would keep everything happens at once.
+-- There is no timer reset: the character never resets while the boss is still
+-- standing.
 -- Wait Exp holds the next stop until the game's EXP actually dropped after the
 -- reset, so the loss is registered before walking off. A stop with it off
 -- moves straight on instead. Dying, rather than being reset by
@@ -88,14 +90,14 @@ return {
         local RESPAWN_TIMEOUT = 20
         --// Longest wait for the EXP drop after a reset, when Wait Exp is on.
         local EXP_LOSS_TIMEOUT = 10
-        --// EXP kept after a reset: ten percent for every hundred levels, and it
-        --// stops climbing at 90% once the level reaches 900. What a reset would
-        --// take is read from this before the reset, because the hold at the
-        --// corpse is only worth having when there is something to lose.
+        --// EXP kept after a reset: the first ten percent of the level's EXP
+        --// bar for every hundred levels, and it stops climbing at 90% once the
+        --// level reaches 900. Only the EXP above that protected part of the bar
+        --// is lost, and what a reset would take is read from this before the
+        --// reset, because the hold at the corpse is only worth having when
+        --// there is something to lose.
         local KEEP_PERCENT_PER_LEVEL = 0.1
         local KEEP_PERCENT_MAX = 90
-        --// A loss under this share of one level's EXP bar is not worth a hold.
-        local FREE_RESET_LOSS_SHARE = 0.02
         --// The hold a stop that has no Reset (s) of its own gets.
         local DEFAULT_RESET_HOLD = 10
         --// A reset that costs nothing is not waited for: one scan tick after
@@ -228,6 +230,9 @@ return {
                 --// standing where it was reset is a reset the game dropped.
                 ResetPosition = nil,
                 ResetLevel = nil,
+                --// The EXP and the cost read before the reset was fired.
+                ResetExpBefore = nil,
+                ResetLoss = nil,
                 --// Whether the stop's interaction prompt was already taken this
                 --// visit, and when Interact was last pressed after landing.
                 PromptUsed = false,
@@ -391,8 +396,11 @@ return {
 
         --// What a reset would cost where the character is standing: the EXP it
         --// would take, the size of one level's EXP bar, and that loss as a share
-        --// of the bar, so "2% of a bar" means the same thing here as it does to
-        --// the player.
+        --// of the bar. The game protects the first part of the bar - 90% at
+        --// level 900 and up - so only the progress above it is lost: 950 EXP on
+        --// a 1000 EXP bar comes back as 900, and 800 comes back as 800. That is
+        --// why the loss is read from where in the bar the character is, not
+        --// from the level alone.
         local function GetResetCost()
             local Level = GetLevel()
             local Exp = GetExp()
@@ -403,34 +411,27 @@ return {
 
             local Keep = GetKeepPercent(Level) / 100
             local Floor, Bar = GetLevelBar(Level)
+
+            if not Bar or Bar <= 0 then
+                return 0, 0, 0, Level
+            end
+
             --// The bar's own progress is what is at risk when the game publishes
             --// a running total; a per-level EXP is already that progress.
             local Progress = (Floor and Exp > Floor) and (Exp - Floor) or Exp
-            local Loss = Progress * (1 - Keep)
+            local Protected = Bar * Keep
+            local Loss = math.max(0, Progress - Protected)
 
-            return Loss, Bar, Bar > 0 and (Loss / Bar) or 0, Level
+            return Loss, Bar, Loss / Bar, Level
         end
 
-        --// Levels where a reset was watched and took no EXP at all. The
-        --// prediction above is only a reading of the level; the game is the
-        --// authority, so once it has shown a level where nothing is lost the
-        --// hold is skipped there without asking again.
-        local NoLossLevels = {}
-
         --// Seconds held at the corpse before the reset. Nothing is held when the
-        --// reset would not cost a real slice of the bar, or when this level has
-        --// already been seen to lose nothing; otherwise the stop's own Reset
-        --// (s), which defaults to ten.
+        --// character's EXP sits inside the part of the bar a reset keeps;
+        --// otherwise the stop's own Reset (s), which defaults to ten.
         local function GetResetHold(Stop)
-            local Level = GetLevel()
+            local Loss = GetResetCost()
 
-            if Level and NoLossLevels[Level] then
-                return 0
-            end
-
-            local _, _, Share = GetResetCost()
-
-            if Share < FREE_RESET_LOSS_SHARE then
+            if Loss <= 0 then
                 return 0
             end
 
@@ -958,23 +959,35 @@ return {
             S.ExpCutoff = nil
             S.FreeReset = false
 
+            if S.SkipExpCheck then
+                --// A death is not a reset this decided: nothing to read.
+                S.ResetExpBefore = nil
+                S.ResetLoss = nil
+            end
+
             if not S.SkipExpCheck then
                 local Level = GetLevel()
-                local _, _, Share = GetResetCost()
-                local Keep = GetKeepPercent(Level) / 100
+                --// Read before the body was killed when this recovery follows a
+                --// reset: a game that takes the EXP on the death frame would
+                --// otherwise have the cost read from what is left.
+                local Loss = S.ResetLoss or GetResetCost()
 
-                S.ExpBefore = GetExp()
-                --// A reset that costs no real slice of the bar cannot be
-                --// waited for: there is no drop to see, so waiting would only
-                --// cost the route ten seconds. Only said when the level is
-                --// known; without it, Wait Exp keeps its old meaning.
+                S.ExpBefore = S.ResetExpBefore or GetExp()
+                S.ResetExpBefore = nil
+                S.ResetLoss = nil
+                --// A reset that keeps the whole bar cannot be waited for:
+                --// there is no drop to see, so waiting would only cost the
+                --// route ten seconds. Only said when the level is known;
+                --// without it, Wait Exp keeps its old meaning.
                 S.FreeReset = Level ~= nil
                     and S.ExpBefore ~= nil
-                    and (Share < FREE_RESET_LOSS_SHARE or NoLossLevels[Level] == true)
-                --// Only with a known level: without it the "cutoff" would be
-                --// the EXP itself, and any value would count as dropped.
-                S.ExpCutoff = (Level ~= nil and S.ExpBefore ~= nil)
-                    and math.floor(S.ExpBefore * Keep + 0.5)
+                    and Loss <= 0
+                --// Where the reset should leave the EXP: the current value
+                --// less what the level's protected part says it would take.
+                --// nil when there is nothing to lose, so the cutoff can never
+                --// read an unchanged EXP as a drop.
+                S.ExpCutoff = (Level ~= nil and S.ExpBefore ~= nil and Loss > 0)
+                    and math.floor(S.ExpBefore - Loss + 0.5)
                     or nil
             end
 
@@ -988,6 +1001,10 @@ return {
             local _, Humanoid, RootPart = Runtime:GetCharacter()
 
             S.Resets += 1
+            --// What the reset is about to cost, read while the character is
+            --// still alive so the death frame cannot change the answer.
+            S.ResetExpBefore = GetExp()
+            S.ResetLoss = GetResetCost()
 
             if Humanoid and Humanoid.Health > 0 then
                 Humanoid:Move(Vector3.zero)
@@ -1013,18 +1030,6 @@ return {
         --// walks the same stop's path again, from its first point, instead of
         --// pretending the boss was dealt with.
         local function FinishRecovery(Now)
-            --// A route reset that took no EXP is remembered for its level: the
-            --// prediction said there was something to lose and the game
-            --// disagreed, so the next reset there is not held either. A death
-            --// (SkipExpCheck) and a restart are not evidence either way.
-            if not S.SkipExpCheck and not S.RestartStop and S.ResetLevel then
-                local Exp = GetExp()
-
-                if S.ExpBefore ~= nil and Exp ~= nil and Exp >= S.ExpBefore then
-                    NoLossLevels[S.ResetLevel] = true
-                end
-            end
-
             if S.RestartStop then
                 S.RestartStop = false
                 BeginStop(Now)
@@ -2239,9 +2244,6 @@ return {
         --// A profile load brings another place's stops with it.
         AICFeature.ResetBossRoute = function()
             EndDodge()
-            --// Another place's levels: what was learned here does not carry
-            --// over.
-            table.clear(NoLossLevels)
             S.HpAt = nil
             S.HpBase = nil
             S.Index = 1

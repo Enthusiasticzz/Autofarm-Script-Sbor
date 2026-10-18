@@ -607,6 +607,15 @@ were added.
 > - A **waypoint** teleport now turns the walk's presses off for the whole visit too, not just 10 s: a waypoint can sit on a prompt and the walk after it can pass the same one again. Stops that walk all the way (no teleport) still press every 0.5 s on the path, so doors on a recorded route keep working.
 > - Harness: 138 checks (was 136). New one: a waypoint stop teleports (including the one retry) and never presses Interact during the visit. Mutations: leaving the flag off for a waypoint visit fails one check; a 10-second-only mute fails one; removing the guard fails two.
 
+### [x] Boss Route: reset lost EXP even when the bar's protected part was untouched
+
+> **Done (v3.51):** `Features/BossNavigator.lua`, Boss Route only
+> - The cost of a reset was read as a share of the **whole bar** (`progress × (1 − keep)`), so at level 900 a character at 950/1000 was predicted to lose 95 and the 2%-of-a-bar rule decided the hold from a number that had nothing to do with the game. The game protects the **first part of the bar** (90% at level 900 and up): only the EXP **above** that part is lost, so 950 comes back as 900 (50 lost) and 800 comes back as 800. `GetResetCost` now returns `max(0, progress − keep% × bar)`.
+> - A reset is free only when the EXP is **inside** the protected part; anything above it is held for the stop's **Reset (s)** (10 s by default) and `CLEARING … LOSE 50 EXP` shows the overflow that will be taken, instead of `RESET NOW`.
+> - The level-wide `NoLossLevels` memory is gone. The protection belongs to a position in the bar, not to the level, so a level whose reset was free at 40% must still hold at 95% — remembering the level was why a level 900+ character could keep resetting instantly.
+> - The `Wait Exp` cutoff is now the exact value the reset leaves behind (`EXP before − loss`), so it ends on the game's own drop instead of a rounded share of the old total.
+> - Harness: 140 checks (was 138). New ones assert a reset at level 500 with 1500 of a 3012 bar (inside the 1506 kept) is instant, the same level with 2000 (above it) is held, a level 900 reset at 5300 of a 5412 bar reports `LOSE 429` — the 4870.8 kept, not 10% of 5300 — and holds, and a stop with a 3 s Reset still uses it. Mutations caught: a whole-bar loss fails six checks, no protection fails six, ignoring the level fails three.
+
 ## To Fix
 
 ### [x] Waypoints Looped & Paired Farmzone/Waypoint/Targets: walking back to waypoints that are not paired
