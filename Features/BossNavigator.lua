@@ -231,7 +231,11 @@ return {
                 PromptInteractAt = nil,
                 --// No Interact press before this: quiet for
                 --// PROMPT_INTERACT_MUTE after a prompt teleport.
-                InteractMutedUntil = nil,
+                --// The prompt teleport's landing press is the visit's only
+                --// Interact press: the door or menu the teleport used sits
+                --// where the character lands, and pressing it again on the
+                --// way out re-fires it for as long as the walk lasts.
+                InteractSuppressed = false,
                 --// Where the stop's prompt was found this visit (false = none).
                 PromptFallback = nil,
                 --// Health watching for a skill: the baseline percent and when
@@ -881,7 +885,7 @@ return {
             S.Teleports = 0
             S.PromptUsed = false
             S.PromptInteractAt = nil
-            S.InteractMutedUntil = nil
+            S.InteractSuppressed = false
             S.PromptFallback = nil
             S.ResetHumanoid = nil
             S.ResetFiredAt = nil
@@ -1646,10 +1650,13 @@ return {
 
             local Interval = tonumber(CONFIG.INTERACTION_INTERVAL) or INTERACT_INTERVAL
 
-            --// Muted after a prompt teleport (see PROMPT_INTERACT_MUTE). The
-            --// landing press is the one that fires the prompt, so it is
-            --// allowed through; everything after it waits the mute out.
-            if not Force and S.InteractMutedUntil and Now < S.InteractMutedUntil then
+            --// Off for the rest of a visit that travelled by prompt. The
+            --// landing press is the one that fires the prompt, and pressing
+            --// it again while walking away re-fires the same door (some
+            --// doors teleport the character, which made that an endless
+            --// loop of x presses). A ten-second runtime mute is set with it,
+            --// so a hand-off to Auto Farm stays quiet too.
+            if not Force and (S.InteractSuppressed or Runtime.IsInteractMuted and Runtime:IsInteractMuted()) then
                 return
             end
 
@@ -1845,6 +1852,13 @@ return {
                 S.TeleportFrom = RootPart.Position
 
                 if TeleportToWaypoint(Stop.Waypoint) then
+                    --// The waypoint can sit on a prompt too: stay off Interact
+                    --// for a moment after landing, then the walk may use the
+                    --// prompts it passes again.
+                    if Runtime.MuteInteract then
+                        Runtime:MuteInteract(PROMPT_INTERACT_MUTE)
+                    end
+
                     S.WaitUntil = Now + TELEPORT_WAIT
                     SetStatus(string.format("STOP %d/%d  TELEPORT WP%d", S.Index, #GetStops(), Stop.Waypoint))
                     return
@@ -1860,7 +1874,12 @@ return {
             --// actually fires before the walk to the stop starts.
             if S.PromptUsed and not S.PromptInteractAt then
                 S.PromptInteractAt = Now
-                S.InteractMutedUntil = Now + PROMPT_INTERACT_MUTE
+                S.InteractSuppressed = true
+
+                if Runtime.MuteInteract then
+                    Runtime:MuteInteract(PROMPT_INTERACT_MUTE)
+                end
+
                 PressInteract(Now, true)
             end
 

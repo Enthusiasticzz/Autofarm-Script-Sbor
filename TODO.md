@@ -586,6 +586,13 @@ were added.
 > - The kill branch checks that too: a boss that is still alive never arms `KillAt`, even when nothing sees it. If its name was taken off the stop's **Boss Names** mid-fight the route simply moves on, with no reset and no EXP lost. An unreadable name (a phase swap) is not taken as a removal.
 > - Harness: 130 checks (was 122). New ones fight through a live boss leaving the engage radius for a full second (no reset, still attacking), bring it back (same stop, same fight), kill it (reset still immediate), and drop a name mid-fight (advance, no reset). Mutations: treating the missed scan as a kill fails three checks, dropping the fallback target fails two.
 
+### [x] Boss Route: Interact still pressed after a prompt teleport
+
+> **Done (v3.48):** `Features/BossNavigator.lua`, `Core/Runtime.lua`, `Features/AutoFarming.lua`, `Features/TeleportNavigate.lua`
+> - The v3.46 mute lasted 10 s, so a walk that took longer than that started pressing again — and a door that teleports the character kept it standing at the same prompt, so the presses never stopped. A visit that travelled by prompt now suppresses Interact for the **whole visit**: the landing press is the only one, and the next visit presses its own prompt again.
+> - The mute is **shared** now, not local to Boss Route. `Runtime:MuteInteract(10)` / `Runtime:IsInteractMuted()` is set by a prompt teleport, a **waypoint** teleport and every **Teleport** tab door/waypoint warp; both pressers (Boss Route's walk and Auto Farm's `INTERACTION_INTERVAL` press) ask it, so a teleport from any tab is quiet everywhere.
+> - Harness: 130 checks. The prompt-teleport test now asserts the landing press is the only one for the rest of the visit and that a fresh visit presses again. Mutations: removing the guard fails one check, and a 10-second-only mute fails one.
+
 ## To Fix
 
 ### [x] Waypoints Looped & Paired Farmzone/Waypoint/Targets: walking back to waypoints that are not paired

@@ -997,7 +997,12 @@ return {
                     end
                 end
             else
-                if now - AICFeature.S.LAST_INTERACTION_TIME >= CONFIG.INTERACTION_INTERVAL then
+                --// Also quiet for a moment after a script teleport: landing on
+                --// a prompt and pressing it again re-fires the door (see
+                --// Runtime:MuteInteract).
+                if not Runtime:IsInteractMuted()
+                    and now - AICFeature.S.LAST_INTERACTION_TIME >= CONFIG.INTERACTION_INTERVAL
+                then
                     AICFeature.S.LAST_INTERACTION_TIME = now
 
                     InputBindableFunction:Invoke(

@@ -443,10 +443,10 @@ teleport) to a boss, fight it, and reset back to spawn before the next one.
 - **Teleport To Prompt** (off for a new stop) — travel by the interaction
   prompt (a door, a portal, a boss-room button) instead of a waypoint. The
   character is put next to the prompt, **Interact** is pressed **once** there,
-  and then the input is left alone for **10 s** while the Path is walked: the
-  teleport lands on the prompt itself, and pressing it again would fire the same
-  door or menu a second time. Presses come back on their own after that. A stop
-  with both set uses the prompt, not the waypoint.
+  and that is the **only** press of the visit: the teleport lands on the prompt
+  itself, so pressing it again while the Path is walked would re-fire the same
+  door or menu (a door that teleports the character turned that into an endless
+  loop of presses). A stop with both set uses the prompt, not the waypoint.
 - **Save Prompt Here** — records the nearest interaction to where you stand as
   this stop's prompt and switches **Teleport To Prompt** on: a `ProximityPrompt`
   or a `ClickDetector` within 40 studs, found whether it hangs off a part, an
@@ -577,7 +577,11 @@ While it walks it also presses the game's **Interact** input every 0.5 s — the
 same `INTERACTION_INTERVAL` the Farming waypoint route uses — so doors, levers,
 chests and other proximity prompts on the path are used as the character passes
 them instead of being walked past. It stops pressing on the frame the stop is
-reached, so a prompt cannot take the place of the first swing.
+reached, so a prompt cannot take the place of the first swing. Two exceptions:
+a visit that travelled by **prompt** never presses again after the landing
+press, and a **waypoint** teleport mutes the presses for **10 s** (the landing
+spot may be a prompt too). The mute is shared, so Auto Farm's presses and the
+**Teleport** tab's door/waypoint warps honour it as well.
 
 A stop is given up when the character has not got **closer** to the next point
 for 20 s (a point saved inside a wall, or on the wrong floor), or when one leg

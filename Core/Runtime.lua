@@ -1191,6 +1191,26 @@ return {
             return InputBindableFunction
         end
 
+        --// The game's Interact input is left alone for a moment after a script
+        --// teleport. A prompt teleport lands the character on the prompt
+        --// itself, so pressing on the way out fires the same door again -- and
+        --// a door that teleports the character keeps re-firing for as long as
+        --// the presses go out. Every presser (Auto Farm, Boss Route) asks
+        --// this, so a teleport from any tab mutes them all.
+        local InteractMutedUntil = 0
+
+        function Runtime:MuteInteract(Seconds)
+            local UntilTime = os.clock() + math.max(tonumber(Seconds) or 0, 0)
+
+            if UntilTime > InteractMutedUntil then
+                InteractMutedUntil = UntilTime
+            end
+        end
+
+        function Runtime:IsInteractMuted()
+            return os.clock() < InteractMutedUntil
+        end
+
         function Runtime:GetFaceOrientation()
             return FaceOrientation
         end

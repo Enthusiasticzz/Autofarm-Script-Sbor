@@ -13,6 +13,7 @@ return {
     Start = function(Context)
         local Services = Context.Services
         local Replicated = Services.Replicated
+        local Runtime = Context.Runtime
         local UIRef = Context.UIRef
         local NotifyAction = Context.NotifyAction
 
@@ -25,6 +26,10 @@ return {
         local REFRESH_DEBOUNCE = 0.5
         local NO_DOORS = "No doors found"
         local DEFAULT_WAYPOINT = "#0  Default"
+        --// A teleport lands on a door's own prompt; the farm's Interact presses
+        --// would fire it again on the way out. Ten seconds is long enough to
+        --// walk clear, and every presser honours it (Runtime:MuteInteract).
+        local INTERACT_MUTE = 10
 
         local Module = {
             Name = "TeleportNavigate",
@@ -67,6 +72,11 @@ return {
             end
 
             NotifyAction("TELEPORT", "Teleporting to " .. What)
+
+            if Runtime and Runtime.MuteInteract then
+                Runtime:MuteInteract(INTERACT_MUTE)
+            end
+
             return true
         end
 
