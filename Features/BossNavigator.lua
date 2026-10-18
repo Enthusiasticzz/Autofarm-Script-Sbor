@@ -14,8 +14,8 @@
 -- from spawn. Whether that reset is worth holding for is decided from the EXP
 -- in the level's bar: a reset keeps the first 10% of the bar for every 100
 -- levels (90% from level 900 up). The bar's own size is the level's, from the
--- game's EXP curve (about 5,412 at level 900), so the kept part there is about
--- 4,870: 5,300 comes back as 4,870 and loses 430, while 3,000 is kept whole.
+-- game's EXP curve (about 5,406 at level 900), so the kept part there is about
+-- 4,865: 5,300 comes back as 4,865 and loses 435, while 3,000 is kept whole.
 -- A reset that would drop the character past that protection is held for the
 -- stop's Reset (s), ten by default; one that would keep everything happens at
 -- once.
@@ -361,13 +361,19 @@ return {
             return math.min(Level * KEEP_PERCENT_PER_LEVEL, KEEP_PERCENT_MAX)
         end
 
-        --// The cumulative EXP a level starts at and the size of its bar, from
-        --// the same curve the HUD prints (AICUI.neededExp). Cached per level:
-        --// that curve is a loop, and this is read every frame of a hold.
+        --// The EXP a level starts at and the size of its bar, from the same
+        --// curve the HUD prints (AICUI.neededExp). The game publishes a
+        --// running total: the HUD prints `EXP <value>/<neededExp(Level)>`, and
+        --// a level runs from the previous level's requirement up to its own.
+        --// Reading the bar as `Needed(Level)..Needed(Level + 1)` instead put
+        --// the whole running total into the bar at level 900 - 2.4M against a
+        --// ~5,400 bar - so every reset looked like it would lose everything
+        --// and was held even at the bottom of the bar. Cached per level: that
+        --// curve is a loop, and this is read every frame of a hold.
         local LevelBars = {}
 
         local function GetLevelBar(Level)
-            if not Level then
+            if not Level or Level <= 0 then
                 return nil, 0
             end
 
@@ -383,22 +389,45 @@ return {
                 return nil, 0
             end
 
-            local Floor = Needed(Level)
-            local Bar = math.max(1, Needed(Level + 1) - Floor)
+            local Floor = Level > 1 and Needed(Level - 1) or 0
+            local Bar = math.max(1, Needed(Level) - Floor)
 
             LevelBars[Level] = { Floor = Floor, Bar = Bar }
 
             return Floor, Bar
         end
 
+        --// How far into its bar the character's EXP is. Two shapes are
+        --// handled: a running total, which sits between the previous level's
+        --// requirement and this level's (the game's own HUD shape), and a
+        --// bar-only value that already runs from 0 to the bar. nil when
+        --// neither fits, so the route never holds on a number it cannot place.
+        local function GetBarProgress(Exp, Level)
+            local Floor, Bar = GetLevelBar(Level)
+
+            if not Bar or Bar <= 0 then
+                return nil, Bar
+            end
+
+            if Exp > Bar and Floor and Exp >= Floor and Exp <= Floor + Bar then
+                return Exp - Floor, Bar
+            end
+
+            if Exp >= 0 and Exp <= Bar then
+                return Exp, Bar
+            end
+
+            return nil, Bar
+        end
+
         --// What a reset would cost where the character is standing: the EXP it
         --// would take, the size of one level's EXP bar, and that loss as a share
         --// of the bar. The game protects the first part of the bar - 90% at
         --// level 900 and up - so only the progress above it is lost. The bar's
-        --// size comes from the level's own curve (~5,412 at level 900): 5,300
-        --// comes back as ~4,870, and 3,000 comes back as 3,000. That is why the
+        --// size comes from the level's own curve (~5,406 at level 900): 5,300
+        --// comes back as ~4,865, and 3,000 comes back as 3,000. That is why the
         --// loss is read from where in the bar the character is, not from the
-        --// level alone.
+        --// running total or the level alone.
         local function GetResetCost()
             local Level = GetLevel()
             local Exp = GetExp()
@@ -407,16 +436,13 @@ return {
                 return 0, 0, 0, Level
             end
 
-            local Keep = GetKeepPercent(Level) / 100
-            local Floor, Bar = GetLevelBar(Level)
+            local Progress, Bar = GetBarProgress(Exp, Level)
 
-            if not Bar or Bar <= 0 then
+            if not Progress then
                 return 0, 0, 0, Level
             end
 
-            --// The bar's own progress is what is at risk when the game publishes
-            --// a running total; a per-level EXP is already that progress.
-            local Progress = (Floor and Exp > Floor) and (Exp - Floor) or Exp
+            local Keep = GetKeepPercent(Level) / 100
             local Protected = Bar * Keep
             local Loss = math.max(0, Progress - Protected)
 

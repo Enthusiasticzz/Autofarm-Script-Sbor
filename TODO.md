@@ -624,6 +624,14 @@ were added.
 > - **The reset hold runs from a nearby mob.** While `CLEARING` counts down, a living mob within **40 studs** is run from at the dodge's sprint, to a ring **45 studs** (or the stop's **Dodge Distance** when larger) on its far side, with `RUNNING` on the status. The speed the sprint borrowed is put back when the hold ends; with nothing nearby the character stands still.
 > - Harness: 142 checks (was 140; the two checks for the removed EXP wait were replaced). New ones assert the next stop begins within the kill grace plus respawn with no `WAITING FOR EXP LOSS` message, a prompt teleport presses zero times — on landing, during the walk, and on a later visit — and the hold sprints and moves away from a nearby mob (and does neither with no mob there). Mutations caught: a whole-bar loss (6), no protection (6), ignoring the level (3), a free reset held (9), a prompt visit pressing (5), a waypoint visit pressing (2), standing still during the hold (3).
 
+### [x] Boss Route: the reset held even with barely any EXP in the level
+
+> **Done (v3.53):** `Features/BossNavigator.lua`, Boss Route only
+> - The bar was built as `neededExp(Level) .. neededExp(Level + 1)`, but `PlayerStats.EXP` is a **running total**: at level 900 it holds ~2.43M, which is below `neededExp(900)`, so the old `Exp > Floor` test fell through to `Progress = Exp`. The whole running total was read as bar progress, the predicted loss became millions, and every reset was held even at 100 of a 1,000-point bar.
+> - A level now runs from the **previous level's requirement** to its own (`neededExp(Level − 1) .. neededExp(Level)`), and `GetBarProgress` places the EXP first: a running total when it falls in that band, a bar-only value when it already fits 0..bar, and `nil` (no hold) when neither fits. A big number can no longer be mistaken for a full bar.
+> - At level 900 the bar is **5,406** EXP and the kept part **4,865**, so 5,300 loses 435. 100 into the bar loses nothing and resets at once, which is the reported case.
+> - Harness: 142 checks. The free/reset tests now publish a running total (`neededExp(899) + n`) like the game does, so the regression is covered: reading the total as progress fails six checks. A bar that starts at the level's own requirement instead of the previous one fails nine. All earlier mutations still caught.
+
 ## To Fix
 
 ### [x] Waypoints Looped & Paired Farmzone/Waypoint/Targets: walking back to waypoints that are not paired
