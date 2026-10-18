@@ -13,10 +13,12 @@
 -- for a new stop) the character then resets, so the next stop is travelled to
 -- from spawn. Whether that reset is worth holding for is decided from the EXP
 -- in the level's bar: a reset keeps the first 10% of the bar for every 100
--- levels (90% from level 900 up), so on a 1000 EXP bar at level 900 an EXP of
--- 950 drops to 900 and 50 is lost, while an EXP of 800 is kept whole. A reset
--- that would drop the character past that protection is held for the stop's
--- Reset (s), ten by default; one that would keep everything happens at once.
+-- levels (90% from level 900 up). The bar's own size is the level's, from the
+-- game's EXP curve (about 5,412 at level 900), so the kept part there is about
+-- 4,870: 5,300 comes back as 4,870 and loses 430, while 3,000 is kept whole.
+-- A reset that would drop the character past that protection is held for the
+-- stop's Reset (s), ten by default; one that would keep everything happens at
+-- once.
 -- There is no timer reset: the character never resets while the boss is still
 -- standing.
 -- Wait Exp holds the next stop until the game's EXP actually dropped after the
@@ -397,10 +399,11 @@ return {
         --// What a reset would cost where the character is standing: the EXP it
         --// would take, the size of one level's EXP bar, and that loss as a share
         --// of the bar. The game protects the first part of the bar - 90% at
-        --// level 900 and up - so only the progress above it is lost: 950 EXP on
-        --// a 1000 EXP bar comes back as 900, and 800 comes back as 800. That is
-        --// why the loss is read from where in the bar the character is, not
-        --// from the level alone.
+        --// level 900 and up - so only the progress above it is lost. The bar's
+        --// size comes from the level's own curve (~5,412 at level 900): 5,300
+        --// comes back as ~4,870, and 3,000 comes back as 3,000. That is why the
+        --// loss is read from where in the bar the character is, not from the
+        --// level alone.
         local function GetResetCost()
             local Level = GetLevel()
             local Exp = GetExp()

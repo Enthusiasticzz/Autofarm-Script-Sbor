@@ -523,10 +523,12 @@ final point can be the doorway and the stop the boss.
 5. If it ends on the kill and **Reset After Kill** is on, where the character
    is in its EXP bar decides the reset. A reset keeps the **first 10% of the
    bar for every 100 levels**, stopping at **90% from level 900 up** — the part
-   of the bar the game protects. Only the EXP **above** that part is lost: on a
-   1000 EXP bar at level 900, an EXP of 950 comes back as 900 (50 lost), and an
-   EXP of 800 comes back as 800. The route reads that from `PlayerStats.Level`
-   and `PlayerStats.EXP` through the same curve as the HUD. An EXP inside the
+   of the bar the game protects. The bar's size is the level's own, from the
+   game's EXP curve (about 5,412 EXP at level 900), so the kept part there is
+   about 4,870: an EXP of 5,300 comes back as 4,870 (430 lost), and an EXP of
+   3,000 comes back as 3,000. The route reads that from `PlayerStats.Level` and
+   `PlayerStats.EXP` through the same curve as the HUD, so the numbers grow
+   with the level rather than being fixed. An EXP inside the
    protected part loses nothing, so the reset happens **at once** — one scan
    tick after the kill, with `RESET NOW` on the status line. Above it the
    character holds at the corpse for the row's **Reset (s)** — **10 s** for a
