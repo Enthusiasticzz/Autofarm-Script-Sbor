@@ -432,6 +432,9 @@ teleport) to a boss, fight it, and reset back to spawn before the next one.
 - **Dodge Distance** — how far from the boss the skill dodge settles, 6–80
   studs (16 by default). The default is a step out of a short-range skill; raise
   it for a boss with a wide one.
+- **Wait At Spot (s)** — seconds stood at the stop before the fight starts,
+  **0 by default**. Raise it for a boss that spawns a moment after the walk
+  arrives; at 0 the first swing is on the frame the stop is reached.
 - **Engage Radius** — how far from the stop a boss is picked up.
 - **Reset After Kill** (on for a new stop) — once the boss is down, reset the
   character so the next stop is travelled to from spawn. Off, the next stop
@@ -500,9 +503,10 @@ final point can be the doorway and the stop the boss.
    (when one is set) and waits 2 s to land.
 2. Walks its **Path to Boss** points in order, then the stop itself. A point
    counts as reached within 4 studs (`Waypoint Reach Distance` for the stop).
-3. Fights as soon as the stop is reached — there is no wait at the spot any
-   more. The nearest living mob inside **Engage Radius** that matches **Boss
-   Names** (anything when empty) is the target. The sword is asked for from 60
+3. Fights as soon as the stop is reached, unless the stop sets **Wait At Spot
+   (s)** — 0 by default, so normally there is no wait. The nearest living mob
+   inside **Engage Radius** that matches **Boss Names** (anything when empty)
+   is the target. The sword is asked for from 60
    studs out on the last leg, and again every frame of the fight until the
    tool's weld says it is really in the hand (the cached equipped flag is not
    trusted: it survives a respawn that sheathed the sword). The frame the equip

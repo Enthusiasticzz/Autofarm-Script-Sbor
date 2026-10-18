@@ -593,6 +593,13 @@ were added.
 > - The mute is **shared** now, not local to Boss Route. `Runtime:MuteInteract(10)` / `Runtime:IsInteractMuted()` is set by a prompt teleport, a **waypoint** teleport and every **Teleport** tab door/waypoint warp; both pressers (Boss Route's walk and Auto Farm's `INTERACTION_INTERVAL` press) ask it, so a teleport from any tab is quiet everywhere.
 > - Harness: 130 checks. The prompt-teleport test now asserts the landing press is the only one for the rest of the visit and that a fresh visit presses again. Mutations: removing the guard fails one check, and a 10-second-only mute fails one.
 
+### [x] Boss Route: bring back Wait At Spot
+
+> **Done (v3.49):** `Features/BossNavigator.lua`, `Core/Runtime.lua`, Boss Route only
+> - The **Wait At Spot (s)** box is back in Edit Boss Stop, and a new stop (and a save made before the box existed) starts at **0**, so the fight still begins on the frame the walk arrives. A set wait stands the character still at the spot with `STOP i/n  WAIT 3s  <name>` on the status line, then the fight starts and the forced scan runs as before.
+> - Stored as `Wait` on the stop, clamped **0–600** in `NormalizeBossStops` and in the box; reset per visit (`SpotWaitUntil`) so a stop that loops waits every time it arrives.
+> - Harness: 136 checks (was 130). New ones assert the box exists, a new stop's wait is 0 with the box showing `0`, and a stop set to 2 s neither attacks nor leaves Approach until the wait is over, then fights. Mutations: ignoring the wait fails two checks, a 10 s default fails two.
+
 ## To Fix
 
 ### [x] Waypoints Looped & Paired Farmzone/Waypoint/Targets: walking back to waypoints that are not paired

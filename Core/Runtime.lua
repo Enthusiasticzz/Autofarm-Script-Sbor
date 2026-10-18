@@ -945,6 +945,7 @@ return {
         --//   ResetAfterKill  reset once the boss is down, then the next stop
         --//   ResetWait   seconds held at the corpse before that reset
         --//   WaitExp     hold the next stop until EXP actually dropped
+        --//   Wait        seconds stood at the spot before the fight, 0 none
         --//   Radius      how far from Position a boss is picked up
         --//   Dodge       sprint out of the boss's skill while it is casting
         --//   DodgeDistance  how far from the boss that dodge settles
@@ -1025,6 +1026,14 @@ return {
                             tonumber(Stop.Radius) or AICConfig.DEFAULT_BOSS_RADIUS,
                             1,
                             AICConfig.MAX_BOSS_RADIUS
+                        ),
+                        --// 0 for a new stop and for saves made before the box
+                        --// came back: the fight starts on arrival, as it has
+                        --// since v3.35.
+                        Wait = math.clamp(
+                            tonumber(Stop.Wait) or 0,
+                            0,
+                            AICConfig.MAX_WAYPOINT_WAIT
                         ),
                     })
                 end

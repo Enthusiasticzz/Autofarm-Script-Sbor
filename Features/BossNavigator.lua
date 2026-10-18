@@ -5,7 +5,8 @@
 -- in Profile Settings: editing one never moves the other. A stop is a spot to
 -- stand on. Coming to a stop the character walks there, or teleports to one of
 -- the game's waypoints first when the stop names one, then fights whatever
--- matches its Boss Names inside its radius. There is no wait at the spot.
+-- matches its Boss Names inside its radius. Wait At Spot (0 for a new stop)
+-- can hold the fight at the spot for a boss that spawns a moment late.
 --
 -- A fight ends when the target dies and nothing else is in the radius, or
 -- when nothing is there to fight at all. With Reset After Kill on (the default
@@ -186,6 +187,8 @@ return {
                 PhaseStart = 0,
                 FightStart = nil,
                 WaitUntil = nil,
+                --// End of Wait At Spot, when the stop set one. nil = no wait.
+                SpotWaitUntil = nil,
                 WalkStart = nil,
                 Teleported = false,
                 --// A target was fought at this stop, so its absence now means
@@ -718,6 +721,7 @@ return {
             if UIRef.BossNameBox then UIRef.BossNameBox:Set(Stop.Label, false) end
             if UIRef.BossWaypointBox then UIRef.BossWaypointBox:Set(tostring(Stop.Waypoint or 0), false) end
             if UIRef.BossRadiusBox then UIRef.BossRadiusBox:Set(tostring(Stop.Radius or 0), false) end
+            if UIRef.BossWaitBox then UIRef.BossWaitBox:Set(tostring(Stop.Wait or 0), false) end
             if UIRef.BossResetAfterKillToggle then
                 UIRef.BossResetAfterKillToggle:Set(Stop.ResetAfterKill == true, false)
             end
@@ -885,6 +889,7 @@ return {
             S.Teleports = 0
             S.PromptUsed = false
             S.PromptInteractAt = nil
+            S.SpotWaitUntil = nil
             S.InteractSuppressed = false
             S.PromptFallback = nil
             S.ResetHumanoid = nil
@@ -1952,11 +1957,34 @@ return {
                         #Path
                     ))
                 else
-                    --// On the spot: fight straight away. There is no wait at
-                    --// the stop any more; the boss is picked up from here.
-                    --// The scan is forced, so a boss that dies within the
-                    --// first eighth of a second is still seen and counted as
-                    --// this stop's kill instead of being walked past.
+                    --// Wait At Spot (s), 0 for a new stop: hold the fight long
+                    --// enough for a boss that spawns a moment after the walk
+                    --// arrives. At 0 the fight starts on this frame, which is
+                    --// what most stops want.
+                    local Wait = tonumber(Stop.Wait) or 0
+
+                    if Wait > 0 and not S.SpotWaitUntil then
+                        S.SpotWaitUntil = Now + Wait
+                    end
+
+                    if S.SpotWaitUntil and Now < S.SpotWaitUntil then
+                        Humanoid:Move(Vector3.zero)
+                        SetStatus(string.format(
+                            "STOP %d/%d  WAIT %ds  %s",
+                            S.Index,
+                            #GetStops(),
+                            math.ceil(S.SpotWaitUntil - Now),
+                            Stop.Label
+                        ))
+                        return
+                    end
+
+                    S.SpotWaitUntil = nil
+
+                    --// On the spot: fight straight away. The scan is forced,
+                    --// so a boss that dies within the first eighth of a second
+                    --// is still seen and counted as this stop's kill instead
+                    --// of being walked past.
                     S.Phase = "Fight"
                     S.FightStart = Now
                     S.SeenTarget = false
@@ -2268,6 +2296,7 @@ return {
                 PromptPosition = nil,
                 PromptName = "",
                 Radius = AICConfig.DEFAULT_BOSS_RADIUS,
+                Wait = 0,
             })
 
             AICProfile.S.SelectedBossStopIndex = #GetStops()
@@ -2456,6 +2485,20 @@ return {
                 AICConfig.MIN_BOSS_DODGE_DISTANCE,
                 AICConfig.MAX_BOSS_DODGE_DISTANCE
             )
+            return true
+        end)
+
+        --// Pause at the spot before the fight. 0 (the default) starts it as
+        --// soon as the walk arrives; a few seconds lets a boss that spawns
+        --// just after the character lands appear before the first scan.
+        UIRef.BossWaitBox = AddStopBox("Wait At Spot (s)", function(Stop, Value)
+            local Number = tonumber(Value)
+
+            if not Number or Number < 0 then
+                return false
+            end
+
+            Stop.Wait = math.clamp(Number, 0, AICConfig.MAX_WAYPOINT_WAIT)
             return true
         end)
 
