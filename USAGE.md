@@ -1,6 +1,6 @@
 # AIC usage guide
 
-How to use Automated Industry Complex (AutoFarmV3, `v3.34`) once it is loaded. The
+How to use Automated Industry Complex (AutoFarmV3, `v3.35`) once it is loaded. The
 loadstring and what the loader fetches are in [README.md](README.md); this file is
 about the features and about why the farm sometimes appears to do nothing.
 
@@ -406,25 +406,25 @@ teleport) to a boss, fight it, and reset back to spawn before the next one.
 - **Boss Route** (off by default) — the tab's master switch. It works with Auto
   Farm on or off; while it is on it owns movement and combat, and the safety
   checks above it (party hold, retreat, Auto Block, server age) still run first.
-- **STATUS:  …** — what the route is doing: `STOP 2/4  WALKING`, `… WAITING`,
-  `… FIGHT`, `… CLEARING`, `… RESET TIMER`, `… WAITING FOR EXP LOSS`,
-  `ROUTE FINISHED`, `OFF`.
-- **Add Boss Stop Here** — saves a stop at your current position. A new stop
-  starts with **Reset After 0 s** (fight until the boss is down), **Wait After
-  Reset 4 s**, **Reset After Kill on** and a 120-stud engage radius.
-- **Boss Route** (list) — one row per stop, `#1  Boss 1  > WP3  Goblin  (x, y, z)`.
-  Drag a row (or use ▲▼) to reorder the route; each row's `Reset (s)` box is only
-  a fight timeout — reset if the boss is somehow still standing after that many
-  seconds (0–600, 0 = never) — and its `Wait Exp` tick is whether the next stop
-  waits for the EXP loss. ✕ removes the row.
+- **STATUS:  …** — what the route is doing: `STOP 2/4  PATH 3/8`,
+  `STOP 2/4  WALKING`, `… FIGHT`, `… CLEARING`, `… RESPAWNED`, `… WAITING FOR
+  EXP LOSS`, `ROUTE FINISHED`, `OFF`.
+- **Add Boss Stop Here** — saves a stop at your current position, with an empty
+  **Path to Boss**. A new stop starts with **Wait After Reset 4 s**, **Reset
+  After Kill on** and a 120-stud engage radius.
+- **Boss Route** (list) — one row per stop, `#1  Boss 1  > WP3  P6  Goblin
+  (x, y, z)`: the stop's name, its teleport waypoint, how many path points it
+  has, its first boss name and where it is. Drag a row (or use ▲▼) to reorder
+  the route. The `Wait Exp` tick is whether the next stop waits for the EXP
+  loss; ✕ removes the row. There is no fight timer and no reset column any
+  more.
 - **Clear Boss Route** — removes every stop.
-- **Edit Boss Stop** — picks which stop the boxes below change.
+- **Edit Boss Stop** — picks which stop the boxes below change, and which stop
+  **Path to Boss** and **Boss Names** edit.
 - **Boss Stop Name** — the name shown in the list.
 - **Teleport Waypoint #** — one of the game's waypoints to teleport to before
   walking to the stop (0 walks the whole way). Uses the same `TeleportEvent`
   remote as the Teleport tab.
-- **Wait At Spot (s)** — seconds stood still at the stop before the fight starts
-  (e.g. to let a boss spawn).
 - **Wait After Reset (s)** — seconds after the reset's respawn before the next
   stop starts (time for the character to load and for the EXP loss to apply).
 - **Engage Radius** — how far from the stop a boss is picked up.
@@ -435,85 +435,85 @@ teleport) to a boss, fight it, and reset back to spawn before the next one.
   (within 300 studs) nearest first, then every other mob the game has loaded.
   Pick one to add it to the selected stop. This is the same picker pattern as
   Zone Targets.
+- **Refresh Nearby Bosses** — sits directly under **Add Boss Name**; rebuilds
+  the dropdown after walking somewhere new.
 - **Boss Names** (list) — the names the stop fights, in order; drag to reorder,
   ▲▼ or ✕ to change. Empty fights whatever is at the spot.
-- **Refresh Nearby Bosses** — sits directly under **Add Boss Name**; rebuilds the
-  dropdown after walking somewhere new.
 - **Move Stop Here** / **Remove Stop** — move the selected stop to the character,
   or delete it.
 - **Loop Route** (on by default) — after the last stop, start again at the first.
   Off, the route plays once and switches Boss Route off.
 
+#### Path to Boss
+
+The way to each boss is a list of points you record once, in the order you walk
+them. This is the whole navigation: the route walks point to point and never
+solves or guesses a way round anything.
+
+- **PATH TO <STOP>  (#n)  m POINTS** (readout) — which stop, and how many points
+  the list below has.
+- **Add Path Point Here** — saves the character's current position as the next
+  point of the stop selected in **Edit Boss Stop** above. Walk the route once,
+  pressing it at each corner: around the building, through the door, along the
+  corridor, and at the boss.
+- **Path Points** (list) — `#1  (x, y, z)` per point; drag to reorder, ▲▼ to
+  swap two neighbours, ✕ to delete one.
+- **Clear Path** — empties the selected stop's path, so the route walks straight
+  at the stop from wherever it is (fine for open ground).
+
+Points are per stop, and the list always follows **Edit Boss Stop**. A stop with
+no points walks straight at it, which is what the route did before Path to Boss
+existed. The last leg is the stop itself (**Move Stop Here** sets it), so the
+final point can be the doorway and the stop the boss.
+
 #### What a stop does
 
-1. Teleports to its waypoint (when one is set) and waits 2 s, then walks to the
-   stop along a `PathfindingService` path (see *Walking to a stop* below). A
-   stop with no path after 15 s, or still not reached after 120 s, is skipped
-   with a notice.
-2. Waits **Wait At Spot** seconds.
-3. Fights the nearest living mob inside **Engage Radius** that matches **Boss
-   Names** (anything when empty), drawing the weapon first and using the same
-   attack and skill inputs as Auto Farm. The name does **not** have to be on the
-   Enemy Priority list: a boss stop validates its own target, which it did not
-   do before (Auto Farm's validator also demands Enemy Priority, so a named boss
-   was found and then thrown away — the character stood at the stop with its
-   weapon sheathed).
+1. Teleports to its waypoint (when one is set) and waits 2 s to land.
+2. Walks its **Path to Boss** points in order, then the stop itself. A point
+   counts as reached within 4 studs (`Waypoint Reach Distance` for the stop).
+3. Fights as soon as the stop is reached — there is no wait at the spot any
+   more. The nearest living mob inside **Engage Radius** that matches **Boss
+   Names** (anything when empty) is the target; the weapon is drawn on the first
+   frame of the fight and the same attack and skill inputs as Auto Farm are
+   pressed from then on.
 4. Ends the stop when the target dies and nothing else is left there (a 2 s
-   grace), when the row's `Reset (s)` timeout runs out with the boss still
-   standing (0 = never, the default), or when there is nothing to fight for 5 s.
-5. If it ends on the kill and **Reset After Kill** is on, or on the timeout, the
-   character is reset (health set to 0, the same reset Party System uses).
-   There is no low-health reset: a fight is never abandoned part-way on purpose.
-   Once the character is back it waits **Wait After Reset**, and with **Wait
+   grace), or when there is nothing to fight for 5 s.
+5. If it ends on the kill and **Reset After Kill** is on, the character is reset
+   (health set to 0, the same reset Party System uses). That is the **only**
+   reset: the character never resets while the boss is still standing, and
+   there is no fight timeout to reset on.
+6. Once the character is back it waits **Wait After Reset**, and with **Wait
    Exp** on it also holds until `PlayerStats.EXP` is lower than before the reset
    (15 s at most, so a game that applies the loss differently cannot stall the
    route).
-6. Then the next stop begins — teleporting to its own waypoint first. Reaching
+7. Then the next stop begins — teleporting to its own waypoint first. Reaching
    the end loops, or finishes when **Loop Route** is off.
 
 #### Walking to a stop
 
-Travel to a stop is one `PathfindingService` path, followed waypoint by
-waypoint. It is solved off the frame with the character's own radius and
-height, `AgentCanJump` on and 4-stud spacing, so a slow solve never stutters
-the game. The path is solved again only when the destination has moved, it is
-older than 8 s, or the character has not moved for 1.5 s (which also jumps);
-while a new one is being solved the old one keeps being walked, so a
-recalculation is never a pause or a step in another direction. Path waypoints
-marked Jump are jumped only when something is actually in the way.
+Each leg is a straight `Humanoid:MoveTo` to the next saved point. Nothing
+solves a route: no `PathfindingService`, no steering, no detours. Where you put
+the points is where the character walks, so the way round a building is the one
+you recorded. Steps, curbs and fences are handled by a jump: the position is
+sampled twice a second and a hop is added when under 0.75 studs were covered,
+plus a jump when something low is in the way.
 
-This is deliberately **not** the mining walker (`WalkController`). That walker
-is built to creep around an ore on a short straight line: it probes a body-sized
-box ahead, and when the line is blocked it walks to detour points at 30°–150° to
-either side before retrying. On a long walk to a boss those detours are what
-looked like running backwards and sideways, so the boss route no longer uses
-it.
+A stop is given up when the character has not got **closer** to the next point
+for 20 s (a point saved inside a wall, or on the wrong floor), or when one leg
+takes more than 120 s; the notice says which stop was skipped and the route
+moves on. That is the only time a stop is abandoned — a long walk with many
+points is never a failure, because the 120 s counts per leg.
 
-**When the game has no navmesh** the solver returns no path, and that is where
-the straight line used to run into buildings. The walk is steered instead:
-short body-wide probe rays pick a heading, and when the way to the stop is
-blocked the character walks *along* the wall — using the surface the ray hit,
-keeping about 2.5 studs off it, and staying on the same side until the straight
-line to the stop is clear for 40 studs. That last part matters: a six-stud look
-ahead said "clear" with the building still in the way, which made the character
-turn back into it and saw the same corner over and over. Nothing is walked
-blindly: every heading is checked for a clear body width and for ground to land
-on (no holes, no ledges).
-
-A stop counts as reached within the place's **Waypoint Reach Distance** (5 studs
-by default) of the saved spot. The route gives a stop up when the character has
-not got **closer** to it for 20 s (it measures progress, so a slow detour around
-a building is not a failure), and always after 120 s. A **Teleport Waypoint #**
-near the boss is still the most reliable option: it warps most of the way,
-leaving only the last short leg to walk.
+A **Teleport Waypoint #** near the boss is still the most reliable option: it
+warps most of the way, leaving only the last short leg to walk.
 
 Notes:
 
 - The route is saved per profile on the place config, so a profile without one
   starts empty and adding stops needs a loaded profile (`CREATE / LOAD PROFILE
   FIRST`, `DEFAULT PLACE_CONFIG IS READ-ONLY` on a built-in preset).
-- Dying on the way, or being killed instead of reset by the timer, is treated as
-  a reset: the route waits for the respawn and continues with the next stop.
+- Dying on the way, or in the fight, is treated as a reset: the route waits for
+  the respawn and continues with the next stop.
 - With **Auto Farm** on, the route runs before the farming waypoint route, so the
   two never fight over the character. Turn Boss Route off to farm normally.
 

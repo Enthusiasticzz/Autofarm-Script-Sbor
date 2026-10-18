@@ -409,9 +409,14 @@ return {
             return Distance <= AICCombat.GetCombatAttackRange(TargetMob)
                 and now >= AICCombat.S.COMBAT_NEXT_ATTACK_TIME
         end
-        function AICCombat.PerformCombatActions(TargetMob, now)
+        --// Fights the mob it is given, with no Enemy Priority check. The
+        --// swing and skill logic lives here once for every caller; Auto
+        --// Farm's PerformCombatActions validates first, and a boss stop
+        --// picks its target from its own Boss Names (which are not on the
+        --// Enemy Priority list) so it calls this directly.
+        function AICCombat.AttackTarget(TargetMob, now)
             local Character, Humanoid, RootPart = Runtime:GetCharacter()
-            if not TargetMob or not AICCombat.IsCombatTargetValid(TargetMob) then
+            if not TargetMob or not RootPart then
                 return
             end
         
@@ -457,6 +462,13 @@ return {
                         + PhaseJitter
                 end
             end
+        end
+        function AICCombat.PerformCombatActions(TargetMob, now)
+            if not TargetMob or not AICCombat.IsCombatTargetValid(TargetMob) then
+                return
+            end
+
+            AICCombat.AttackTarget(TargetMob, now)
         end
         --// A swing thrown while retreating. Unlike PerformCombatActions it does
         --// not require a priority target: whatever has closed in gets hit, and

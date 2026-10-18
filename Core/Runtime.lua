@@ -896,28 +896,44 @@ return {
         end
 
         --// Boss Route limits. The defaults are what a new stop starts with:
-        --// fight until the boss is down with no timeout, then reset and move
-        --// on. Wait After Reset gives the new character time to load, and the
-        --// engage radius reaches across a boss room from the standing spot.
-        --// Older builds always wrote a 10 s fight timeout; a stop saved before
-        --// Reset After Kill existed is migrated to the new behaviour.
-        AICConfig.DEFAULT_BOSS_RESET_AFTER = 0
-        AICConfig.LEGACY_BOSS_RESET_AFTER = 10
+        --// fight until the boss is down, then reset and move on. Wait After
+        --// Reset gives the new character time to load, and the engage radius
+        --// reaches across a boss room from the standing spot. A stop's Path is
+        --// the travel points walked before it; there is no fight timer, so a
+        --// stop only ever resets after the kill.
         AICConfig.DEFAULT_BOSS_RESPAWN_WAIT = 4
         AICConfig.DEFAULT_BOSS_RADIUS = 120
-        AICConfig.MAX_BOSS_RESET = 600
+        AICConfig.MAX_BOSS_PATH = 64
         AICConfig.MAX_BOSS_RESPAWN_WAIT = 120
         AICConfig.MAX_BOSS_RADIUS = 500
         AICConfig.MAX_BOSS_WAYPOINT = 999
+
+        --// Saved travel points for one boss stop, in the order walked.
+        function AICConfig.NormalizeBossPath(List)
+            local Result = {}
+
+            for _, Point in ipairs(type(List) == "table" and List or {}) do
+                if #Result >= AICConfig.MAX_BOSS_PATH then
+                    break
+                end
+
+                if typeof(Point) == "Vector3" then
+                    table.insert(Result, AICConfig.RoundVector3(Point))
+                elseif type(Point) == "table" then
+                    table.insert(Result, AICConfig.DecodeVector3(Point))
+                end
+            end
+
+            return Result
+        end
 
         --// One stop of the Boss Route (BossNavigator). Position is the spot
         --// the character stands on; a stop without one is dropped, so a
         --// half-written save cannot leave an unwalkable row.
         --//   Label       shown in the list
         --//   Targets     boss entity names; empty fights anything at the spot
+        --//   Path        points walked in order on the way to Position
         --//   Waypoint    game waypoint number teleported to first, 0 walks
-        --//   Wait        seconds stood still before the fight starts
-        --//   ResetAfter  seconds of fighting before resetting, 0 never
         --//   ResetAfterKill  reset once the boss is down, then the next stop
         --//   RespawnWait seconds after respawning before the next stop
         --//   WaitExp     hold the next stop until EXP actually dropped
@@ -943,21 +959,15 @@ return {
                     --// a kill. Treat them as the new default, fight until the
                     --// boss is down and then reset.
                     local Legacy = Stop.ResetAfterKill == nil
-                    local ResetAfter = tonumber(Stop.ResetAfter) or 0
-
-                    if Legacy and ResetAfter == AICConfig.LEGACY_BOSS_RESET_AFTER then
-                        ResetAfter = 0
-                    end
 
                     table.insert(Result, {
                         Label = Label ~= "" and Label or ("Boss " .. tostring(#Result + 1)),
                         Position = Position,
+                        Path = AICConfig.NormalizeBossPath(Stop.Path),
                         Targets = AICConfig.CloneTargetList(Stop.Targets),
                         Waypoint = math.clamp(
                             math.floor(tonumber(Stop.Waypoint) or 0), 0, AICConfig.MAX_BOSS_WAYPOINT
                         ),
-                        Wait = math.clamp(tonumber(Stop.Wait) or 0, 0, AICConfig.MAX_WAYPOINT_WAIT),
-                        ResetAfter = math.clamp(ResetAfter, 0, AICConfig.MAX_BOSS_RESET),
                         ResetAfterKill = Legacy or Stop.ResetAfterKill == true,
                         RespawnWait = math.clamp(
                             tonumber(Stop.RespawnWait) or AICConfig.DEFAULT_BOSS_RESPAWN_WAIT,

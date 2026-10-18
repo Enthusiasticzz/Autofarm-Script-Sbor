@@ -10,21 +10,18 @@
 -- A fight ends when the target dies and nothing else is in the radius, or
 -- when nothing is there to fight at all. With Reset After Kill on (the default
 -- for a new stop) the character is then reset, so the next stop is travelled
--- to from spawn. Reset After is only a timeout for a fight that drags on
--- (0 = never, fight until the boss is down).
+-- to from spawn. There is no timer reset: the character never resets while
+-- the boss is still standing.
 -- Wait Exp holds the next stop until the game's EXP actually dropped after the
 -- reset, so the loss is registered before walking off. A stop with it off
 -- moves on after Wait After Reset instead.
 --
 -- The route loops unless Loop Route is off; then it plays once and switches
--- itself off. Travel is a PathfindingService path followed waypoint by
--- waypoint. The path sidesteps obstacles; the mining walker's detour probes
--- did not, which made the character pace backwards and sideways. Where the
--- game has no navmesh the solver fails, and driving at the stop in a straight
--- line ran into buildings; that case now uses a probe-ray heading that walks
--- round walls instead. The fight uses the same combat inputs as Auto Farm.
--- Auto Farm hands this module the frame while it is on, with Auto Farm on or
--- off.
+-- itself off. Travel is the stop's own saved Path points, walked in order and
+-- then the stop itself; nothing is solved or steered, so the way round a
+-- building is the one recorded in the Path to Boss section. The fight uses the
+-- same combat inputs as Auto Farm. Auto Farm hands this module the frame while
+-- it is on, with Auto Farm on or off.
 return {
     Name = "BossNavigator",
     IsFeature = true,
@@ -34,7 +31,6 @@ return {
         "ProfileManager",
         "Components",
         "CombatUtils",
-        "Navigation",
         "Combat",
     },
 
@@ -42,7 +38,6 @@ return {
         local Runtime = Context.Runtime
         local Player = Context.Player
         local Replicated = Context.Services.Replicated
-        local PathfindingService = Context.Services.PathfindingService
         local Players = Context.Services.Players
         local AICCombatUtils = Context.AICCombatUtils
         local CONFIG = Context.CONFIG
@@ -75,47 +70,20 @@ return {
         local EXP_LOSS_TIMEOUT = 15
         --// Walking to a stop this long means it cannot be reached.
         local WALK_TIMEOUT = 120
-        --// No progress toward the stop for this long (no navmesh, a sealed
-        --// room, a wall the steering keeps sliding along): skip it instead of
-        --// standing there until WALK_TIMEOUT.
+        --// No progress toward the next point for this long (a wrong point, a
+        --// wall in the way): skip the stop instead of standing there for
+        --// WALK_TIMEOUT.
         local NO_PROGRESS_TIMEOUT = 20
-        --// Path following. A path is solved off the frame and its waypoints are
-        --// walked in order; it is solved again only when the destination has
-        --// moved, the path is old, or the character is stuck, so the character
-        --// never paces around deciding where to go.
-        local PATH_SPACING = 4
-        local PATH_MAX_AGE = 8
-        local PATH_DEST_TOLERANCE = 4
-        local PATH_WAYPOINT_REACH = 3
-        local PATH_RETRY = 2
-        local PATH_STUCK_SECONDS = 1.5
-        --// A stuck check samples the position this often, and counts as stuck
-        --// when less than this many studs were covered in that window.
+        --// How close a saved path point has to be to count as reached. The stop
+        --// itself uses the place's Waypoint Reach Distance.
+        local PATH_REACH = 4
+        --// The walk samples the position this often and hops when less than
+        --// this many studs were covered in that window (a step, a fence).
         local STUCK_SAMPLE = 0.5
         local STUCK_DISTANCE = 0.75
-        --// Steering, for games where PathfindingService has no navmesh. The
-        --// heading is picked from rays fanned around the goal direction and
-        --// kept while it stays clear, so a wall is followed instead of the
-        --// character running into it and turning every frame.
-        local STEER_PROBE = 6
-        local STEER_SHORT_PROBE = 2.5
-        local STEER_STEP = 5
-        local STEER_SAMPLE = 0.15
-        --// Longest a heading is held before it is looked at again, so walking
-        --// along a wall cannot turn into walking away from the stop forever.
-        local STEER_HOLD = 1.2
-        --// How far from a wall the slide tries to keep the character.
-        local STEER_WALL_STANDOFF = 2.5
-        --// How far ahead the straight way to the stop is checked before a wall
-        --// is considered gone. Six studs said "clear" with the building still
-        --// in the way, so the character turned into it again and sawed.
-        local STEER_GOAL_PROBE = 40
-        local STEER_BACKOFF = 0.7
-        local STEER_ANGLES = { 0, 30, -30, 60, -60, 90, -90, 120, -120, 150, -150 }
-        local STEER_RAY_HEIGHTS = { 1.2, 3.5 }
-        local STEER_RAY_OFFSETS = { -0.9, 0, 0.9 }
-        --// How far below the feet a step may land and still be taken.
-        local STEER_STEP_DOWN = 7
+        --// How far from the boss the character stops to swing. The combat range
+        --// says when the attack input may be pressed, not where a swing lands.
+        local FIGHT_STANDOFF = 6
         --// How far from the character a mob name is offered in the picker.
         local NAME_SCAN_RADIUS = 300
         --// The status line is rewritten at most this often.
@@ -127,9 +95,16 @@ return {
             Name = "BossNavigator",
             IsFeature = true,
             S = {
-                --// "Idle", "Approach", "Wait", "Fight", "Recover" or "Done".
+                --// "Idle", "Approach", "Fight", "Recover" or "Done".
                 Phase = "Idle",
                 Index = 1,
+                --// Next point of the stop's saved Path to walk (1 = first).
+                PathIndex = 1,
+                --// When the weapon draw was last asked for, so a stop cannot
+                --// toggle the equip input every frame (nil = not asked yet).
+                DrawAt = nil,
+                WalkFrom = nil,
+                WalkSampleAt = nil,
                 PhaseStart = 0,
                 FightStart = nil,
                 WaitUntil = nil,
@@ -224,516 +199,47 @@ return {
         end
 
         ------------------------------------------------------------------------
-        --// Travel: one path, followed waypoint by waypoint
+        --// Travel: the saved Path points, walked in order
         ------------------------------------------------------------------------
 
-        local PathState = {
-            Waypoints = nil,
-            Index = 1,
-            Destination = nil,
-            Time = 0,
-            Computing = false,
-            Token = 0,
-            FailedAt = 0,
-            StuckSince = nil,
-            LastPosition = nil,
-            SampleAt = nil,
-        }
-
-        local function ResetPath()
-            PathState.Token += 1
-            PathState.Waypoints = nil
-            PathState.Index = 1
-            PathState.Destination = nil
-            PathState.Computing = false
-            PathState.FailedAt = 0
-            PathState.StuckSince = nil
-            PathState.LastPosition = nil
-            PathState.SampleAt = nil
+        --// Forgets the walk samples, so the next point starts a fresh stuck
+        --// check.
+        local function ResetWalk()
+            S.WalkFrom = nil
+            S.WalkSampleAt = nil
         end
 
-        --// A path to Destination, solved off the frame. The path already in
-        --// hand keeps being walked while the next one is solved, so a
-        --// recalculation is never a pause or a step in another direction.
-        local function RequestPath(From, Destination)
-            local _, _, RootPart = Runtime:GetCharacter()
-
-            PathState.Token += 1
-            local Token = PathState.Token
-            PathState.Computing = true
-            PathState.Destination = Destination
-
-            local Start = From
-            local Radius = RootPart and math.max(RootPart.Size.X * 0.5, 2) or 2
-
-            task.spawn(function()
-                local Solver = PathfindingService:CreatePath({
-                    AgentRadius = Radius,
-                    AgentHeight = 5,
-                    AgentCanJump = true,
-                    WaypointSpacing = PATH_SPACING,
-                })
-
-                local Ok = pcall(function()
-                    Solver:ComputeAsync(Start, Destination)
-                end)
-
-                --// Reset or superseded while solving.
-                if Token ~= PathState.Token then
-                    return
-                end
-
-                PathState.Computing = false
-
-                local Waypoints = Ok and Solver.Status == Enum.PathStatus.Success and Solver:GetWaypoints()
-
-                if not Waypoints or #Waypoints < 2 then
-                    PathState.Waypoints = nil
-                    PathState.FailedAt = os.clock()
-                    return
-                end
-
-                PathState.Waypoints = Waypoints
-                PathState.Index = 2
-                PathState.Time = os.clock()
-                PathState.FailedAt = 0
-            end)
-        end
-
-        ------------------------------------------------------------------------
-        --// Steering: walking round walls where the game has no navmesh
-        ------------------------------------------------------------------------
-
-        local Steer = {
-            Direction = nil,
-            Params = nil,
-            Key = nil,
-            DecidedAt = 0,
-            ChosenAt = 0,
-            Side = 0,
-            BackOffPoint = nil,
-            BackOffUntil = 0,
-            NoHeadingAt = nil,
-            Sliding = false,
-        }
-
-        local function RotateFlat(Direction, Degrees)
-            local Radians = math.rad(Degrees)
-            local Cos, Sin = math.cos(Radians), math.sin(Radians)
-
-            return Vector3.new(
-                Direction.X * Cos - Direction.Z * Sin,
-                0,
-                Direction.X * Sin + Direction.Z * Cos
-            )
-        end
-
-        --// Raycast parameters that ignore the character, the other players'
-        --// characters and the mobs: a mob standing in the way is not a wall.
-        local function GetProbeParams(Character)
-            if not Character then
-                return nil
-            end
-
-            if Steer.Params and Steer.Key == Character then
-                return Steer.Params
-            end
-
-            local Filter = { Character }
-            local MobFolder = workspace:FindFirstChild("Mobs")
-
-            if MobFolder then
-                table.insert(Filter, MobFolder)
-            end
-
-            if Players then
-                for _, Other in ipairs(Players:GetPlayers()) do
-                    if Other.Character and Other.Character ~= Character then
-                        table.insert(Filter, Other.Character)
-                    end
-                end
-            end
-
-            if AICCombatUtils.S and AICCombatUtils.S.DebugFolder then
-                table.insert(Filter, AICCombatUtils.S.DebugFolder)
-            end
-
-            local Params = RaycastParams.new()
-            Params.FilterType = Enum.RaycastFilterType.Exclude
-            Params.FilterDescendantsInstances = Filter
-            Params.IgnoreWater = true
-
-            Steer.Params = Params
-            Steer.Key = Character
-
-            return Params
-        end
-
-        --// Is Direction walkable? One centre ray carries the look-ahead; the
-        --// side rays are body width but only a short way ahead, so walking
-        --// parallel to a wall is not rejected by a ray grazing it.
-        local function IsDirectionClear(Origin, Direction, Distance, Params)
-            if workspace:Raycast(Origin + Vector3.new(0, 2.2, 0), Direction * Distance, Params) then
-                return false
-            end
-
-            local Side = Vector3.new(-Direction.Z, 0, Direction.X)
-            local Width = math.min(Distance, STEER_SHORT_PROBE)
-
-            for _, Height in ipairs(STEER_RAY_HEIGHTS) do
-                for _, Offset in ipairs(STEER_RAY_OFFSETS) do
-                    local Start = Origin + Vector3.new(0, Height, 0) + Side * Offset
-
-                    if workspace:Raycast(Start, Direction * Width, Params) then
-                        return false
-                    end
-                end
-            end
-
-            return true
-        end
-
-        --// A step has to land on ground at about the character's height: no
-        --// hole to fall into and no ledge to climb.
-        local function HasStepGround(Point, FeetY, Params)
-            local Hit = workspace:Raycast(Point + Vector3.new(0, 4, 0), Vector3.new(0, -16, 0), Params)
-
-            if not Hit or Hit.Material == Enum.Material.Water then
-                return false
-            end
-
-            return math.abs(Hit.Position.Y - FeetY) <= STEER_STEP_DOWN
-        end
-
-        --// The clearest heading that still makes progress toward the stop:
-        --// straight first, then widening to either side. This handles props and
-        --// doorways; a wall is walked along instead (ChooseSlide).
-        local function ChooseHeading(Origin, Destination, Params, Distance)
-            local Offset = Destination - Origin
-            local Flat = Vector3.new(Offset.X, 0, Offset.Z)
-
-            if Flat.Magnitude <= 0.01 then
-                return nil
-            end
-
-            local Forward = Flat.Unit
-            local Best, BestScore = nil, -math.huge
-
-            for _, Angle in ipairs(STEER_ANGLES) do
-                local Direction = RotateFlat(Forward, Angle)
-
-                if IsDirectionClear(Origin, Direction, Distance, Params)
-                    and HasStepGround(Origin + Direction * Distance, Origin.Y, Params)
-                then
-                    local Score = math.cos(math.rad(Angle)) - math.abs(Angle) / 180 * 0.5
-
-                    if Score > BestScore then
-                        Best, BestScore = Direction, Score
-                    end
-
-                    if Angle == 0 then
-                        break
-                    end
-                end
-            end
-
-            if not Best then
-                return nil
-            end
-
-            return Best
-        end
-
-        --// Walking along a wall. The ray toward the stop gives the surface
-        --// normal; the heading runs across it, leaning toward or away from the
-        --// wall to hold roughly STEER_WALL_STANDOFF, and the side it is
-        --// followed on is picked once and kept until the way opens. A fan of
-        --// fixed angles cannot do this: against a long wall it turns away in
-        --// 30° steps and then flips to the other side, which is the
-        --// side-to-side pacing this replaces.
-        local function ChooseSlide(Origin, Destination, Params)
-            local Offset = Destination - Origin
-            local Flat = Vector3.new(Offset.X, 0, Offset.Z)
-
-            if Flat.Magnitude <= 0.01 then
-                return nil
-            end
-
-            local Forward = Flat.Unit
-            local Reach = math.min(Flat.Magnitude, STEER_GOAL_PROBE)
-            local Hit = workspace:Raycast(Origin + Vector3.new(0, 2.2, 0), Forward * Reach, Params)
-
-            if not Hit then
-                return nil
-            end
-
-            local Normal = Vector3.new(Hit.Normal.X, 0, Hit.Normal.Z)
-
-            if Normal.Magnitude <= 0.01 then
-                Normal = -Forward
-            else
-                Normal = Normal.Unit
-            end
-
-            --// One consistent way round the surface: 90° from its normal.
-            local Tangent = Vector3.new(-Normal.Z, 0, Normal.X)
-
-            if Tangent.Magnitude <= 0.01 then
-                return nil
-            end
-
-            Tangent = Tangent.Unit
-
-            --// No side picked for this wall yet: take the way round that ends
-            --// up nearer the stop.
-            if Steer.Side == 0 then
-                local Right = Origin + Tangent * STEER_STEP
-                local Left = Origin - Tangent * STEER_STEP
-                local RightRemain = Vector3.new(Destination.X - Right.X, 0, Destination.Z - Right.Z).Magnitude
-                local LeftRemain = Vector3.new(Destination.X - Left.X, 0, Destination.Z - Left.Z).Magnitude
-
-                Steer.Side = RightRemain <= LeftRemain and 1 or -1
-            end
-
-            --// Lean toward the wall when it is far, away when it is close, so
-            --// the walk follows it at roughly the same distance instead of
-            --// drifting off in a wide arc.
-            local Perpendicular = math.abs(Forward:Dot(Normal))
-            local WallDistance = Hit.Distance
-                and Hit.Distance * math.max(Perpendicular, 0.2)
-                or STEER_WALL_STANDOFF
-            local Lean = math.clamp(
-                (WallDistance - STEER_WALL_STANDOFF) / STEER_WALL_STANDOFF,
-                -0.4,
-                0.4
-            )
-
-            local function DirectionFor(Side)
-                return (Tangent * Side - Normal * Lean).Unit
-            end
-
-            local function Usable(Direction)
-                return IsDirectionClear(Origin, Direction, STEER_PROBE, Params)
-                    and HasStepGround(Origin + Direction * STEER_STEP, Origin.Y, Params)
-            end
-
-            local Direction = DirectionFor(Steer.Side)
-
-            if not Usable(Direction) then
-                --// A corner or a prop on this side: try the other way round,
-                --// and keep that side while it works.
-                Steer.Side = -Steer.Side
-                Direction = DirectionFor(Steer.Side)
-
-                if not Usable(Direction) then
-                    return nil
-                end
-            end
-
-            return Direction
-        end
-
-        --// Straight line to the stop, up to STEER_GOAL_PROBE studs. Wall
-        --// following lasts until this is clear, not until the next few studs
-        --// are: a six-stud look-ahead kept saying the wall was gone while the
-        --// building was still between the character and the stop.
-        local function IsGoalLineClear(Origin, Destination, Params)
-            local Offset = Destination - Origin
-            local Flat = Vector3.new(Offset.X, 0, Offset.Z)
-
-            if Flat.Magnitude <= STEER_SHORT_PROBE then
-                return true
-            end
-
-            return IsDirectionClear(
-                Origin,
-                Flat.Unit,
-                math.min(Flat.Magnitude, STEER_GOAL_PROBE),
-                Params
-            )
-        end
-
-        --// One heading at a time, re-checked a few times a second, so the
-        --// character walks a straight stretch and then turns, instead of
-        --// re-aiming every frame. Returns "moving" while it has somewhere to
-        --// go, "blocked" when nothing around is clear (it jumps and backs out,
-        --// and the caller's progress check decides when to give the stop up).
-        local function SteerTo(Destination, Now, RootPart, Humanoid)
-            local Character = Runtime:GetCharacter()
-            local Params = GetProbeParams(Character)
-
-            if not Params then
-                return "failed"
-            end
-
-            local Origin = RootPart.Position
-
-            if Steer.BackOffPoint and Now < Steer.BackOffUntil then
-                Humanoid:MoveTo(Steer.BackOffPoint)
-                return "moving"
-            end
-
-            Steer.BackOffPoint = nil
-
-            if Now - Steer.DecidedAt >= STEER_SAMPLE or not Steer.Direction then
-                Steer.DecidedAt = Now
-
-                local ToStop = Vector3.new(Destination.X - Origin.X, 0, Destination.Z - Origin.Z)
-                local Forward = ToStop.Magnitude > 0.01 and ToStop.Unit or nil
-                local Heading = Steer.Direction
-                local GoalClear = Forward ~= nil and IsGoalLineClear(Origin, Destination, Params)
-                local Clear = Heading ~= nil
-                    and Forward ~= nil
-                    and (Steer.Sliding or Heading:Dot(Forward) > 0)
-                    and Now - Steer.ChosenAt < STEER_HOLD
-                    and IsDirectionClear(Origin, Heading, STEER_PROBE, Params)
-                    and HasStepGround(Origin + Heading * STEER_PROBE, Origin.Y, Params)
-
-                --// The straight way opened: stop walking the wall.
-                if Steer.Sliding and GoalClear then
-                    Clear = false
-                end
-
-                if not Clear then
-                    if GoalClear then
-                        Heading = Forward
-                        Steer.Sliding = false
-                    else
-                        Heading = ChooseSlide(Origin, Destination, Params)
-                        Steer.Sliding = Heading ~= nil
-
-                        --// A prop or a doorway rather than a wall: the fan
-                        --// finds a way through where a slide would not.
-                        if not Heading then
-                            Heading = ChooseHeading(Origin, Destination, Params, STEER_PROBE)
-                        end
-
-                        --// Boxed in close up: a short step through a doorway
-                        --// or between two props.
-                        if not Heading then
-                            Heading = ChooseHeading(Origin, Destination, Params, STEER_SHORT_PROBE)
-                        end
-                    end
-                end
-
-                if not Heading then
-                    AICCombatUtils.DoJump()
-                    Steer.Direction = nil
-                    Steer.Side = -Steer.Side
-                    Steer.NoHeadingAt = Steer.NoHeadingAt or Now
-
-                    --// Turning on the spot never gets out of a corner.
-                    if Now - Steer.NoHeadingAt >= STEER_BACKOFF then
-                        local Away = Vector3.new(Origin.X - Destination.X, 0, Origin.Z - Destination.Z)
-
-                        if Away.Magnitude > 0.01 then
-                            Steer.BackOffPoint = Origin + Away.Unit * STEER_STEP
-                            Steer.BackOffUntil = Now + STEER_BACKOFF
-                            Humanoid:MoveTo(Steer.BackOffPoint)
-                        end
-
-                        Steer.NoHeadingAt = Now
-                    end
-
-                    return "blocked"
-                end
-
-                Steer.NoHeadingAt = nil
-
-                if Heading ~= Steer.Direction then
-                    Steer.ChosenAt = Now
-                end
-
-                Steer.Direction = Heading
-            end
-
-            local Step = Origin + Steer.Direction * STEER_STEP
-            AICCombatUtils.DoJumpIfObstacle(Step)
-            Humanoid:MoveTo(Step)
-
-            return "moving"
-        end
-
-        --// "moving", "waiting" (a path is being solved), "blocked" (no path
-        --// and no clear heading) or "done" at the destination. Never a straight
-        --// line at the stop: without a navmesh that walked into walls.
-        local function WalkTo(Destination, Now)
+        --// Walks at Point until it is within Reach of it. Straight MoveTo with
+        --// a hop over anything low: the way there is the stop's saved Path, so
+        --// nothing has to guess a route round a building.
+        local function WalkTo(Point, Reach, Now)
             local _, Humanoid, RootPart = Runtime:GetCharacter()
 
             if not Humanoid or not RootPart then
-                return "failed"
+                return false
             end
 
-            if AICCombatUtils.GetHorizontalDistance(Destination, RootPart.Position)
-                <= PATH_WAYPOINT_REACH
-            then
+            if AICCombatUtils.GetHorizontalDistance(Point, RootPart.Position) <= Reach then
                 Humanoid:Move(Vector3.zero)
-                return "done"
+                return true
             end
 
-            --// Stuck on the way: hop once and ask for a fresh path, rather
-            --// than walking off in a random direction. The position is
-            --// sampled, not compared frame by frame: a walking character
-            --// moves well under a stud per frame, so a per-frame check called
-            --// every frame "stuck" and reset a healthy path constantly.
-            if not PathState.SampleAt or Now - PathState.SampleAt >= STUCK_SAMPLE
-            then
-                if PathState.LastPosition
-                    and (RootPart.Position - PathState.LastPosition).Magnitude < STUCK_DISTANCE
-                then
-                    PathState.StuckSince = PathState.StuckSince or Now
-                else
-                    PathState.StuckSince = nil
+            --// Stuck (a step, a fence, a corner): hop. Sampled, never compared
+            --// frame by frame: a walking character covers under a stud a
+            --// frame, which a per-frame check reads as standing still.
+            if not S.WalkSampleAt or Now - S.WalkSampleAt >= STUCK_SAMPLE then
+                if S.WalkFrom and (RootPart.Position - S.WalkFrom).Magnitude < STUCK_DISTANCE then
+                    AICCombatUtils.DoJump()
                 end
 
-                PathState.LastPosition = RootPart.Position
-                PathState.SampleAt = Now
+                S.WalkFrom = RootPart.Position
+                S.WalkSampleAt = Now
             end
 
-            if PathState.StuckSince and Now - PathState.StuckSince >= PATH_STUCK_SECONDS then
-                AICCombatUtils.DoJump()
-                PathState.StuckSince = nil
-                PathState.Waypoints = nil
-            end
+            AICCombatUtils.DoJumpIfObstacle(Point)
+            Humanoid:MoveTo(Point)
 
-            local Moved = PathState.Destination
-                and (PathState.Destination - Destination).Magnitude > PATH_DEST_TOLERANCE
-            local Stale = not PathState.Waypoints or Now - PathState.Time >= PATH_MAX_AGE
-            local MayRetry = PathState.FailedAt == 0 or Now - PathState.FailedAt >= PATH_RETRY
-
-            if not PathState.Computing and (Moved or Stale) and MayRetry then
-                RequestPath(RootPart.Position, Destination)
-            end
-
-            if not PathState.Waypoints then
-                return SteerTo(Destination, Now, RootPart, Humanoid)
-            end
-
-            while PathState.Index <= #PathState.Waypoints do
-                local Waypoint = PathState.Waypoints[PathState.Index]
-
-                if AICCombatUtils.GetHorizontalDistance(Waypoint.Position, RootPart.Position)
-                    <= PATH_WAYPOINT_REACH
-                then
-                    PathState.Index += 1
-                else
-                    break
-                end
-            end
-
-            local Waypoint = PathState.Waypoints[PathState.Index]
-
-            if Waypoint then
-                if Waypoint.Action == Enum.PathWaypointAction.Jump then
-                    AICCombatUtils.DoJumpIfObstacle(Waypoint.Position)
-                end
-
-                Humanoid:MoveTo(Waypoint.Position)
-            else
-                Humanoid:MoveTo(Destination)
-            end
-
-            return "moving"
+            return false
         end
 
         --// The Boss Route list labels. A stop keeps its number and position in
@@ -747,6 +253,10 @@ return {
 
                 if (Stop.Waypoint or 0) > 0 then
                     Extra = string.format("  > WP%d", Stop.Waypoint)
+                end
+
+                if #(Stop.Path or {}) > 0 then
+                    Extra = Extra .. string.format("  P%d", #Stop.Path)
                 end
 
                 if #Stop.Targets > 0 then
@@ -765,14 +275,45 @@ return {
             return Labels
         end
 
-        local function GetResetValues()
-            local Values = {}
+        --// Saved Path points of the stop picked in "Edit Boss Stop".
+        local function BuildPathLabels()
+            local Stop = SelectedStop()
+            local Labels = {}
 
-            for Index, Stop in ipairs(GetStops()) do
-                Values[Index] = tonumber(Stop.ResetAfter) or 0
+            for Index, Point in ipairs(Stop and Stop.Path or {}) do
+                Labels[Index] = string.format(
+                    "#%d  (%.0f, %.0f, %.0f)",
+                    Index,
+                    Point.X,
+                    Point.Y,
+                    Point.Z
+                )
             end
 
-            return Values
+            return Labels
+        end
+
+        function AICUI.RefreshBossPathList()
+            if not UIRef.BossPathComponent then
+                return
+            end
+
+            UIRef.BossPathComponent:SetPriority(BuildPathLabels())
+
+            if UIRef.BossPathLabel then
+                local Stop = SelectedStop()
+
+                if Stop then
+                    UIRef.BossPathLabel.Text = string.format(
+                        "PATH TO %s  (#%d)  %d POINTS",
+                        string.upper(Stop.Label),
+                        AICProfile.S.SelectedBossStopIndex,
+                        #(Stop.Path or {})
+                    )
+                else
+                    UIRef.BossPathLabel.Text = "PATH TO BOSS  NO STOP SELECTED"
+                end
+            end
         end
 
         local function GetWaitExpChecks()
@@ -790,7 +331,7 @@ return {
                 return
             end
 
-            UIRef.BossListComponent:SetPriority(BuildLabels(), GetResetValues(), GetWaitExpChecks())
+            UIRef.BossListComponent:SetPriority(BuildLabels(), nil, GetWaitExpChecks())
         end
 
         --// Names of the boss picked in "Edit Boss Stop": a list plus a
@@ -924,13 +465,13 @@ return {
 
             if UIRef.BossNameBox then UIRef.BossNameBox:Set(Stop.Label, false) end
             if UIRef.BossWaypointBox then UIRef.BossWaypointBox:Set(tostring(Stop.Waypoint or 0), false) end
-            if UIRef.BossWaitBox then UIRef.BossWaitBox:Set(tostring(Stop.Wait or 0), false) end
             if UIRef.BossRespawnWaitBox then UIRef.BossRespawnWaitBox:Set(tostring(Stop.RespawnWait or 0), false) end
             if UIRef.BossRadiusBox then UIRef.BossRadiusBox:Set(tostring(Stop.Radius or 0), false) end
             if UIRef.BossResetAfterKillToggle then
                 UIRef.BossResetAfterKillToggle:Set(Stop.ResetAfterKill == true, false)
             end
             if UIRef.BossLoopToggle then UIRef.BossLoopToggle:Set(CONFIG.BOSS_ROUTE_LOOP ~= false, false) end
+            AICUI.RefreshBossPathList()
         end
 
         --// Rebuilds the "Edit Boss Stop" picker, keeping its slot in the
@@ -984,6 +525,7 @@ return {
             Runtime:SetPlaceConfig(AICConfig.NormalizePlaceConfig(Runtime:GetPlaceConfig()))
             AICUI.RefreshBossRouteList()
             AICUI.RefreshBossRoutePickers()
+            AICUI.RefreshBossPathList()
             AICProfile.SaveActiveProfile()
             SetStatus(StatusText)
             AICDebug.UpdateDebugVisualizer()
@@ -1013,7 +555,7 @@ return {
             S.WaitUntil = nil
             S.WalkStart = nil
             AICCombat.S.ClosestTarget = nil
-            ResetPath()
+            ResetWalk()
             SetStatus(StatusText or "IDLE")
         end
 
@@ -1035,20 +577,14 @@ return {
             S.SeenTarget = false
             S.KillAt = nil
             S.Teleported = false
+            S.PathIndex = 1
+            S.DrawAt = nil
             S.BestDistance = nil
             S.LastProgressAt = Now
             S.Resets = 0
-            Steer.Direction = nil
-            Steer.DecidedAt = 0
-            Steer.ChosenAt = 0
-            Steer.Sliding = false
-            Steer.Side = 0
-            Steer.BackOffPoint = nil
-            Steer.BackOffUntil = 0
-            Steer.NoHeadingAt = nil
             S.SkipExpCheck = true
             AICCombat.S.ClosestTarget = nil
-            ResetPath()
+            ResetWalk()
             SetStatus(string.format("STOP %d/%d  %s", S.Index, #Stops, Stop.Label))
         end
 
@@ -1097,7 +633,7 @@ return {
 
             S.ExpDeadline = Now + EXP_LOSS_TIMEOUT
             AICCombat.S.ClosestTarget = nil
-            ResetPath()
+            ResetWalk()
             SetStatus(string.format("STOP %d/%d  %s", S.Index, #GetStops(), Reason))
         end
 
@@ -1248,14 +784,15 @@ return {
             return nil
         end
 
-        --// Walks into reach and fights. The weapon is drawn first, which costs
-        --// a frame, and the swing itself is the same combat input Auto Farm
-        --// presses.
+        --// Walks into swinging distance and fights. The weapon is drawn once
+        --// per stop: the shared draw helper toggles the equip input, and asking
+        --// it every frame drew and sheathed the sword over and over, which is
+        --// why the first swing took seconds and later swings came and went.
+        --// The attack goes through AttackTarget, not PerformCombatActions: that
+        --// one also demands the mob be on Auto Farm's Enemy Priority list, so
+        --// the boss stop's own target was found, drawn for, and then never
+        --// swung at.
         local function Fight(Target, Now)
-            if AICFeature.EnsureWeaponDrawn and AICFeature.EnsureWeaponDrawn(Now) then
-                return
-            end
-
             local _, Humanoid, RootPart = Runtime:GetCharacter()
             local TargetRoot = Target:FindFirstChild("HumanoidRootPart")
 
@@ -1263,18 +800,25 @@ return {
                 return
             end
 
+            local Equipped = AICFeature.S and AICFeature.S.Equipped
+
+            --// The first fight frame asks at once; a later ask is only a
+            --// retry (no sword yet, still sheathed), never a toggle.
+            if AICFeature.EnsureWeaponDrawn and not Equipped
+                and (S.DrawAt == nil or Now - S.DrawAt >= 2)
+            then
+                S.DrawAt = Now
+                AICFeature.EnsureWeaponDrawn(Now)
+            end
+
             local Offset = TargetRoot.Position - RootPart.Position
             local Distance = AICCombat.GetCombatDistance(Target, Offset)
-            local Range = AICCombat.GetCombatAttackRange(Target)
 
-            if Distance > Range * 0.95 then
+            if Distance > FIGHT_STANDOFF then
                 local Flat = Vector3.new(Offset.X, 0, Offset.Z)
                 local Direction = Flat.Magnitude > 0.01 and Flat.Unit or Vector3.xAxis
-                --// Stop a little short of the body, not inside it. The target
-                --// is in sight at this range, so this is a straight step with
-                --// a hop over anything low; no path or detour is needed.
-                local Standoff = math.clamp(Range * 0.4, 1, 4)
-                local Destination = TargetRoot.Position - Direction * Standoff
+                --// Stop just short of the body, not inside it.
+                local Destination = TargetRoot.Position - Direction * math.max(FIGHT_STANDOFF - 1, 2)
 
                 AICCombatUtils.DoJumpIfObstacle(Destination)
                 Humanoid:MoveTo(Destination)
@@ -1283,7 +827,10 @@ return {
                 AICCombat.FaceCombatTarget(Target)
             end
 
-            AICCombat.PerformCombatActions(Target, Now)
+            --// The same swing and skill inputs Auto Farm presses, with the
+            --// same attack clock. Called while closing in too: it only swings
+            --// once the target is in the combat range.
+            AICCombat.AttackTarget(Target, Now)
         end
 
         local function TeleportToWaypoint(Number)
@@ -1330,22 +877,16 @@ return {
                 return
             end
 
-            local Offset = Stop.Position - RootPart.Position
-            local Flat = Vector3.new(Offset.X, 0, Offset.Z).Magnitude
-            local Reach = tonumber(Runtime:GetPlaceConfig().REACH_DISTANCE) or REACH_DISTANCE
+            local Path = Stop.Path or {}
+            local Point = Path[S.PathIndex]
+            local Destination = Point or Stop.Position
+            local Reach = Point
+                and PATH_REACH
+                or (tonumber(Runtime:GetPlaceConfig().REACH_DISTANCE) or REACH_DISTANCE)
+            local Flat = AICCombatUtils.GetHorizontalDistance(Destination, RootPart.Position)
 
-            if Flat <= Reach then
-                S.Phase = "Wait"
-                S.WaitUntil = Now + (tonumber(Stop.Wait) or 0)
-                Humanoid:Move(Vector3.zero)
-                SetStatus(string.format("STOP %d/%d  WAITING", S.Index, #GetStops()))
-                return
-            end
-
-            --// Progress, not the solver's opinion: a map without a navmesh
-            --// reports no path while the steering still gets there, so only a
-            --// stop the character stops getting closer to is skipped. Half a
-            --// stud of slack absorbs the dodging round an obstacle.
+            --// Progress, not the walker's opinion: a wrong point or a wall in
+            --// the way shows up as no approach at all.
             if not S.BestDistance or Flat < S.BestDistance - 0.5 then
                 S.BestDistance = Flat
                 S.LastProgressAt = Now
@@ -1359,11 +900,48 @@ return {
                 return
             end
 
-            SetStatus(string.format("STOP %d/%d  WALKING", S.Index, #GetStops()))
+            if WalkTo(Destination, Reach, Now) then
+                if Point then
+                    S.PathIndex += 1
+                    S.BestDistance = nil
+                    S.LastProgressAt = Now
+                    --// The 120 s cap is per leg, so a long recorded route is
+                    --// not cut short just for having many points.
+                    S.WalkStart = Now
+                    ResetWalk()
 
-            --// One path, walked waypoint by waypoint; with no navmesh a
-            --// steering heading round whatever is in the way (WalkTo).
-            WalkTo(Stop.Position, Now)
+                    SetStatus(string.format(
+                        "STOP %d/%d  PATH %d/%d",
+                        S.Index,
+                        #GetStops(),
+                        math.min(S.PathIndex - 1, #Path),
+                        #Path
+                    ))
+                else
+                    --// On the spot: fight straight away. There is no wait at
+                    --// the stop any more; the boss is picked up from here.
+                    S.Phase = "Fight"
+                    S.FightStart = Now
+                    S.SeenTarget = false
+                    S.KillAt = nil
+                    Humanoid:Move(Vector3.zero)
+                    SetStatus(string.format("STOP %d/%d  FIGHT  %s", S.Index, #GetStops(), Stop.Label))
+                end
+
+                return
+            end
+
+            if Point then
+                SetStatus(string.format(
+                    "STOP %d/%d  PATH %d/%d",
+                    S.Index,
+                    #GetStops(),
+                    S.PathIndex,
+                    #Path
+                ))
+            else
+                SetStatus(string.format("STOP %d/%d  WALKING", S.Index, #GetStops()))
+            end
         end
 
         local function FightStep(Stop, Now)
@@ -1380,13 +958,6 @@ return {
                 S.KillAt = nil
                 AICCombat.S.ClosestTarget = Target
 
-                local ResetAfter = tonumber(Stop.ResetAfter) or 0
-
-                if ResetAfter > 0 and S.FightStart and Now - S.FightStart >= ResetAfter then
-                    BeginReset(Now, "TIMER")
-                    return
-                end
-
                 SetStatus(string.format("STOP %d/%d  FIGHT  %s", S.Index, #GetStops(), Stop.Label))
                 Fight(Target, Now)
                 return
@@ -1402,8 +973,8 @@ return {
                 SetStatus(string.format("STOP %d/%d  CLEARING", S.Index, #GetStops()))
 
                 if Now - S.KillAt >= KILL_GRACE then
-                    --// The fight is done: reset and travel on when the stop
-                    --// asks for it, otherwise just take the next stop.
+                    --// The fight is done. The only reset is this one: after
+                    --// the kill, never while the boss is still standing.
                     if Stop.ResetAfterKill then
                         BeginReset(Now, "BOSS DOWN")
                     else
@@ -1473,19 +1044,6 @@ return {
                 return true
             end
 
-            if S.Phase == "Wait" then
-                Humanoid:Move(Vector3.zero)
-
-                if Now < (S.WaitUntil or 0) then
-                    return true
-                end
-
-                S.Phase = "Fight"
-                S.FightStart = Now
-                S.SeenTarget = false
-                S.KillAt = nil
-            end
-
             if S.Phase == "Fight" then
                 FightStep(Stop, Now)
                 return true
@@ -1524,7 +1082,7 @@ return {
             S.KillAt = nil
             S.WaitUntil = nil
             S.WalkStart = nil
-            ResetPath()
+            ResetWalk()
         end
 
         ------------------------------------------------------------------------
@@ -1562,10 +1120,9 @@ return {
             table.insert(Stops, {
                 Label = "Boss " .. tostring(#Stops + 1),
                 Position = AICConfig.RoundVector3(RootPart.Position),
+                Path = {},
                 Targets = {},
                 Waypoint = 0,
-                Wait = 0,
-                ResetAfter = AICConfig.DEFAULT_BOSS_RESET_AFTER,
                 ResetAfterKill = true,
                 RespawnWait = AICConfig.DEFAULT_BOSS_RESPAWN_WAIT,
                 WaitExp = false,
@@ -1591,34 +1148,10 @@ return {
         end)
 
         UIRef.BossListComponent = UIRef.BossSection:AddPriority("Boss Route", BuildLabels(), {
-            --// Seconds of fighting before the character is reset.
-            Values = true,
-            ValueLabel = "Reset (s)",
-            Default = 0,
-            Min = 0,
-            Max = AICConfig.MAX_BOSS_RESET,
             --// Hold the next stop until the EXP loss is registered.
             Checks = true,
             CheckLabel = "Wait Exp",
         })
-
-        UIRef.BossListComponent.OnValueChanged = function(Index, Value)
-            local Stop = GetStops()[Index]
-
-            if not Stop then
-                return
-            end
-
-            if not AICProfile.S.ActiveProfileName then
-                SetStatus("DEFAULT PLACE_CONFIG IS READ-ONLY")
-                AICUI.RefreshBossRouteList()
-                return
-            end
-
-            Stop.ResetAfter = Value
-            AICProfile.QueueProfileSave()
-            SetStatus(string.format("STOP #%d RESET AFTER %ss", Index, tostring(Value)))
-        end
 
         UIRef.BossListComponent.OnCheckChanged = function(Index, Checked)
             local Stop = GetStops()[Index]
@@ -1741,17 +1274,6 @@ return {
             end
 
             Stop.Waypoint = math.clamp(math.floor(Number), 0, AICConfig.MAX_BOSS_WAYPOINT)
-            return true
-        end)
-
-        UIRef.BossWaitBox = AddStopBox("Wait At Spot (s)", function(Stop, Value)
-            local Number = tonumber(Value)
-
-            if not Number or Number < 0 then
-                return false
-            end
-
-            Stop.Wait = math.clamp(Number, 0, AICConfig.MAX_WAYPOINT_WAIT)
             return true
         end)
 
@@ -1934,9 +1456,117 @@ return {
             end
         )
 
+        ------------------------------------------------------------------------
+        --// Path to Boss: the points walked to reach each stop
+        ------------------------------------------------------------------------
+
+        UIRef.BossPathSection = UIRef.BossTab:AddSection("Path to Boss")
+        UIRef.BossPathLabel = UIRef.BossPathSection:AddLabel("PATH TO BOSS  NO STOP SELECTED")
+
+        UIRef.BossPathSection:AddButton("Add Path Point Here", function()
+            local Stop = SelectedStop()
+            local _, _, RootPart = Runtime:GetCharacter()
+
+            if not Stop then
+                SetStatus("PICK A BOSS STOP FIRST")
+                return
+            end
+
+            if not RootPart then
+                SetStatus("CHARACTER NOT READY")
+                return
+            end
+
+            if not CanEdit() then
+                return
+            end
+
+            Stop.Path = Stop.Path or {}
+            table.insert(Stop.Path, AICConfig.RoundVector3(RootPart.Position))
+            Commit(string.format("PATH POINT #%d ADDED", #Stop.Path))
+            Say("Boss Route", string.format("Path point #%d saved", #Stop.Path))
+        end)
+
+        UIRef.BossPathSection:AddButton("Clear Path", function()
+            local Stop = SelectedStop()
+
+            if not Stop then
+                SetStatus("PICK A BOSS STOP FIRST")
+                return
+            end
+
+            if not CanEdit("DEFAULT PLACE_CONFIG IS READ-ONLY") then
+                return
+            end
+
+            table.clear(Stop.Path or {})
+            Commit("PATH CLEARED")
+        end)
+
+        UIRef.BossPathComponent = UIRef.BossPathSection:AddPriority("Path Points", {})
+
+        local PathMoveUp = UIRef.BossPathComponent.MoveUp
+        local PathMoveDown = UIRef.BossPathComponent.MoveDown
+        local PathRemove = UIRef.BossPathComponent.Remove
+
+        local function MovePath(Component, Label, Delta, Original, StatusText)
+            local Stop = SelectedStop()
+
+            if not Stop then
+                return
+            end
+
+            if not CanEdit("DEFAULT PLACE_CONFIG IS READ-ONLY") then
+                return
+            end
+
+            local Path = Stop.Path or {}
+            local Index = table.find(BuildPathLabels(), Label)
+            local Other = Index and Index + Delta
+
+            if not Other or Other < 1 or Other > #Path then
+                return
+            end
+
+            Path[Index], Path[Other] = Path[Other], Path[Index]
+            Original(Component, Label)
+            Commit(StatusText)
+        end
+
+        function UIRef.BossPathComponent:MoveUp(Label)
+            MovePath(self, Label, -1, PathMoveUp, "PATH POINT MOVED UP")
+        end
+
+        function UIRef.BossPathComponent:MoveDown(Label)
+            MovePath(self, Label, 1, PathMoveDown, "PATH POINT MOVED DOWN")
+        end
+
+        function UIRef.BossPathComponent:Remove(Label)
+            local Stop = SelectedStop()
+
+            if not Stop then
+                return
+            end
+
+            if not CanEdit("DEFAULT PLACE_CONFIG IS READ-ONLY") then
+                return
+            end
+
+            local Index = table.find(BuildPathLabels(), Label)
+
+            if not Index then
+                return
+            end
+
+            table.remove(Stop.Path, Index)
+            PathRemove(self, Label)
+            Commit("PATH POINT REMOVED #" .. tostring(Index))
+        end
+
         --// Every control exists now, so fill the edit boxes from the selected
         --// stop instead of leaving them empty until the first edit.
         AICUI.RefreshBossRoutePickers()
+        AICUI.RefreshBossPathList()
         SetStatus("IDLE")
 
         return Feature

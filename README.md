@@ -47,8 +47,9 @@ The feature modules, roughly grouped:
   AutoSkill, AutoFind, AutoPatrol, EnemyPriority, MobGather.
 - **Zones & movement** — Waypoints (+ WaypointLoop), Farmzone, Deadzone,
   Minezone, WalkController, ReturnToFarmZone, IgnoreFarmZone, TeleportNavigate.
-- **Boss route** — BossNavigator: its own tab, its own saved stop list and its
-  own reset timers, separate from the farming and profile waypoints.
+- **Boss route** — BossNavigator: its own tab, its own saved stop list, a
+  recorded **Path to Boss** per stop (walked point to point) and a reset after
+  each kill, separate from the farming and profile waypoints.
 - **Jobs** — AutoMining, AutoSmithing (with SmithingRecipes, SmithingMinigame,
   SmithingBrowser, SmithingDetail).
 - **Support** — AutoHeal, AutoRefill (Refill Booster), SafeBoosterReset,
