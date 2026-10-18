@@ -555,6 +555,14 @@ were added.
 > - Detection widened: `ClickDetector` counts as an interaction as well, prompts the game has switched off are skipped, and the prompt's position is found by walking up to its part — so one hanging off an `Attachment` or a `Model`/`Folder` is no longer invisible. The miss message names the nearest distance (`nearest 73`), which says immediately whether the prompt is simply out of range.
 > - Harness: 112 checks. New ones press the button with a nearby prompt (saved name and position) and with none (falls back to the character, and the toast is posted).
 
+### [x] Boss Route: the skill dodge ran too far and kept getting further out
+
+> **Done (v3.44):** `Features/BossNavigator.lua`, Boss Route only
+> - The dodge point was **40 studs from the character**, and every time the character reached it while the effects were still up a new point was picked another 40 out — so a long skill walked it across the map. The point is now on a **fixed ring 26 studs from the boss**, and once the character is out there it holds its ground facing the boss rather than re-picking.
+> - The sprint is only for getting out: while holding on the ring the borrowed speed is put back, and `EndDodge` still restores it at the end (target death, stop change, reset, route off).
+> - A stale dodge end was fixed on the way: a dodge that started already out on the ring never borrowed a speed, and the end-of-ceiling branch skipped `EndDodge` when no speed existed, leaving a dead `DodgeMaxUntil` behind.
+> - Harness: 116 checks. New ones assert the point is on the 26-stud ring, that the character holds and stands still once out, and that the sprint is put away. Mutations: measuring the point from the character fails the ring check; never holding fails three.
+
 ## To Fix
 
 ### [x] Waypoints Looped & Paired Farmzone/Waypoint/Targets: walking back to waypoints that are not paired

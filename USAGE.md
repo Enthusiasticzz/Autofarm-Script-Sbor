@@ -536,9 +536,11 @@ damage: the boss's `Skill` sound or its blade/body particles switching on is the
 signal, so the character steps out before the hit lands. A loss of **20% of the
 bar within 0.6 s** is still read as a skill landing and used as the backup when
 the effects were missed. Either way the character stops swinging and runs — the
-normal run speed plus a sprint — about 40 studs away from the boss, picking a
-direction that has ground and a clear line, and picking a fresh point further
-out if it reaches the first one while the effects are still showing.
+normal run speed plus a sprint — out to a ring **26 studs from the boss**,
+picking a direction that has ground and a clear line. It stays on that ring: once
+it is out it stands there facing the boss (the sprint put away) instead of
+picking a point further out, so a skill that lasts walks it a step out, not
+across the room.
 
 How long it stays out is read from the boss, not from a timer. The game turns on
 the blade's `Sparkles`/particles and plays a `Skill` sound while the skill is

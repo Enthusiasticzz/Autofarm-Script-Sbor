@@ -145,7 +145,12 @@ return {
         local DODGE_MIN_TIME = 1.5
         local DODGE_MAX_TIME = 8
         local DODGE_EFFECT_GRACE = 0.5
-        local DODGE_DISTANCE = 40
+        --// The distance the dodge settles at, measured from the boss: far
+        --// enough to be out of a skill, close enough that it is a step out and
+        --// not a run across the room. It is held, not added to, so a skill
+        --// that stays up does not walk the character further every second.
+        local DODGE_DISTANCE = 26
+        local DODGE_HOLD_SLACK = 2
         local DODGE_SPEED_BONUS = 12
         --// The boss's emitters and sounds are listed again this often. Once a
         --// second is enough: the boss tool is equipped a frame or two after
@@ -1278,8 +1283,10 @@ return {
             return false
         end
 
-        --// A point to run to from TargetRoot: straight away first, then to
+        --// A point DODGE_DISTANCE from the boss: straight away first, then to
         --// either side, then behind, skipping directions with a hole or a wall.
+        --// Measured from the boss rather than from the character, so every
+        --// pick lands on the same ring instead of one ring further out.
         local function PickDodgePoint(RootPart, TargetRoot)
             local Away = Vector3.new(
                 RootPart.Position.X - TargetRoot.Position.X,
@@ -1293,6 +1300,16 @@ return {
                 Away = Away.Unit
             end
 
+            local Height = RootPart.Position.Y
+
+            local function OnRing(Direction)
+                return Vector3.new(
+                    TargetRoot.Position.X + Direction.X * DODGE_DISTANCE,
+                    Height,
+                    TargetRoot.Position.Z + Direction.Z * DODGE_DISTANCE
+                )
+            end
+
             local Fallback = nil
 
             for _, Degrees in ipairs({ 0, 45, -45, 90, -90, 135, -135, 180 }) do
@@ -1303,7 +1320,7 @@ return {
                     0,
                     Away.X * Sin + Away.Z * Cos
                 )
-                local Candidate = RootPart.Position + Direction * DODGE_DISTANCE
+                local Candidate = OnRing(Direction)
                 local Hole = AICCombatUtils.IsHoleAhead(Candidate)
 
                 if not Hole and AICCombatUtils.IsPathClear(Candidate) then
@@ -1315,7 +1332,7 @@ return {
                 end
             end
 
-            return Fallback or (RootPart.Position + Away * DODGE_DISTANCE)
+            return Fallback or OnRing(Away)
         end
 
         --// Runs away from the boss at sprint speed. True while the dodge is
@@ -1329,8 +1346,11 @@ return {
         --// one that flashes past still gets the full minimum. DODGE_MAX_TIME
         --// is the ceiling, for an effect that never switches off.
         local function DodgeStep(Target, Humanoid, RootPart, Now)
-            if (S.DodgeMaxUntil or 0) <= Now then
-                if S.DodgeFromSpeed then
+            --// Ended (or never armed). The state is cleared even when no speed
+            --// was borrowed - a dodge that started already out on the ring
+            --// never takes one - or the stale max keeps looking like a dodge.
+            if (S.DodgeMaxUntil or 0) <= 0 or S.DodgeMaxUntil <= Now then
+                if (S.DodgeMaxUntil or 0) > 0 then
                     EndDodge(Humanoid)
                 end
 
@@ -1357,30 +1377,47 @@ return {
                 return false
             end
 
-            if not S.DodgeTarget then
-                --// The speed to put back is the first one seen, never the
-                --// sprint a later frame is already running at.
-                S.DodgeFromSpeed = S.DodgeFromSpeed or tonumber(Humanoid.WalkSpeed) or 0
-                S.DodgeTarget = PickDodgePoint(RootPart, TargetRoot)
-            elseif S.SkillActive
-                and AICCombatUtils.GetHorizontalDistance(S.DodgeTarget, RootPart.Position) <= 4
-            then
-                --// At the point and the skill is still showing: pick a fresh
-                --// one further out. Standing still inside its range while the
-                --// particles are up is the thing the dodge exists to avoid.
-                S.DodgeTarget = PickDodgePoint(RootPart, TargetRoot)
+            --// Kept on one ring around the boss. Out there already, it stands
+            --// its ground: the old code picked a point further away every time
+            --// it arrived, so a long skill walked it across the map.
+            local FromBoss = AICCombatUtils.GetHorizontalDistance(TargetRoot.Position, RootPart.Position)
+
+            if FromBoss < DODGE_DISTANCE - DODGE_HOLD_SLACK then
+                local Stale = not S.DodgeTarget
+                    or AICCombatUtils.GetHorizontalDistance(S.DodgeTarget, TargetRoot.Position) > 6
+
+                if Stale then
+                    --// The speed to put back is the first one seen, never the
+                    --// sprint a later frame is already running at.
+                    S.DodgeFromSpeed = S.DodgeFromSpeed or tonumber(Humanoid.WalkSpeed) or 0
+                    S.DodgeTarget = PickDodgePoint(RootPart, TargetRoot)
+                end
+
+                --// Run, not walk: the normal run speed plus a sprint.
+                local Speed = tonumber(Humanoid.WalkSpeed) or 0
+                local RunSpeed = (tonumber(CONFIG.MAXIMUM_WALKSPEED) or Speed) + DODGE_SPEED_BONUS
+
+                if Speed < RunSpeed then
+                    Humanoid.WalkSpeed = RunSpeed
+                end
+
+                AICCombatUtils.DoJumpIfObstacle(S.DodgeTarget)
+                Humanoid:MoveTo(S.DodgeTarget)
+            else
+                --// On the ring (or the boss came no closer): hold here, facing
+                --// it, until the skill's effects go out. The sprint is only
+                --// for getting out, so standing still is done at the normal
+                --// speed; EndDodge puts it back again anyway.
+                S.DodgeTarget = nil
+
+                if S.DodgeFromSpeed then
+                    Humanoid.WalkSpeed = S.DodgeFromSpeed
+                end
+
+                Humanoid:Move(Vector3.zero)
+                AICCombat.FaceCombatTarget(Target)
             end
 
-            --// Run, not walk: the normal run speed plus a sprint.
-            local Speed = tonumber(Humanoid.WalkSpeed) or 0
-            local RunSpeed = (tonumber(CONFIG.MAXIMUM_WALKSPEED) or Speed) + DODGE_SPEED_BONUS
-
-            if Speed < RunSpeed then
-                Humanoid.WalkSpeed = RunSpeed
-            end
-
-            AICCombatUtils.DoJumpIfObstacle(S.DodgeTarget)
-            Humanoid:MoveTo(S.DodgeTarget)
             SetStatus(string.format("STOP %d/%d  DODGE", S.Index, #GetStops()))
 
             return true
