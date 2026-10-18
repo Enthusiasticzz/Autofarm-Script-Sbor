@@ -902,7 +902,9 @@ return {
         --// the travel points walked before it; there is no fight timer, so a
         --// stop only ever resets after the kill.
         AICConfig.DEFAULT_BOSS_RADIUS = 120
-        AICConfig.DEFAULT_BOSS_RESET_WAIT = 0
+        --// Held at the corpse before a reset that would actually lose EXP.
+        --// A reset that would not is not held at all, whatever this says.
+        AICConfig.DEFAULT_BOSS_RESET_WAIT = 10
         AICConfig.MAX_BOSS_PATH = 64
         AICConfig.MAX_BOSS_RESET = 600
         AICConfig.MAX_BOSS_RADIUS = 500
@@ -938,6 +940,10 @@ return {
         --//   ResetWait   seconds held at the corpse before that reset
         --//   WaitExp     hold the next stop until EXP actually dropped
         --//   Radius      how far from Position a boss is picked up
+        --//   Dodge       sprint out of the boss's skill while it is casting
+        --//   Prompt      travel by teleporting to PromptPosition first
+        --//   PromptPosition  where that interaction prompt stands
+        --//   PromptName  its name, for the editor and the status line
         function AICConfig.NormalizeBossStops(List)
             local Result = {}
 
@@ -954,6 +960,22 @@ return {
 
                 if Position then
                     local Label = type(Stop.Label) == "string" and Stop.Label:gsub("^%s*(.-)%s*$", "%1") or ""
+                    --// Where the interaction prompt of this stop stands, saved
+                    --// from the button in Edit Boss Stop. Rounded like any
+                    --// other point, so a save cannot drift it.
+                    local PromptPosition = Stop.PromptPosition
+
+                    if typeof(PromptPosition) == "Vector3" then
+                        PromptPosition = AICConfig.RoundVector3(PromptPosition)
+                    elseif type(PromptPosition) == "table" then
+                        PromptPosition = AICConfig.DecodeVector3(PromptPosition)
+                    else
+                        PromptPosition = nil
+                    end
+
+                    local PromptName = type(Stop.PromptName) == "string"
+                        and string.sub(Stop.PromptName:gsub("^%s*(.-)%s*$", "%1"), 1, 64)
+                        or ""
                     --// Stops saved before Reset After Kill existed: they were
                     --// written with the old 10 s timeout and never reset after
                     --// a kill. Treat them as the new default, fight until the
@@ -979,6 +1001,14 @@ return {
                             AICConfig.MAX_BOSS_RESET
                         ),
                         WaitExp = Stop.WaitExp == true,
+                        --// Default on: a boss skill is worth stepping out of
+                        --// until the stop says otherwise.
+                        Dodge = Stop.Dodge ~= false,
+                        --// On with nothing saved is allowed: the nearest prompt
+                        --// to the stop is found at run time.
+                        Prompt = Stop.Prompt == true,
+                        PromptPosition = PromptPosition,
+                        PromptName = PromptName,
                         Radius = math.clamp(
                             tonumber(Stop.Radius) or AICConfig.DEFAULT_BOSS_RADIUS,
                             1,

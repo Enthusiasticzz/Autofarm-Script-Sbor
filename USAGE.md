@@ -407,18 +407,21 @@ teleport) to a boss, fight it, and reset back to spawn before the next one.
   Farm on or off; while it is on it owns movement and combat, and the safety
   checks above it (party hold, retreat, Auto Block, server age) still run first.
 - **STATUS:  …** — what the route is doing: `STOP 2/4  PATH 3/8`,
-  `STOP 2/4  WALKING`, `… FIGHT`, `… CLEARING`, `… RESPAWNED`, `… WAITING FOR
-  EXP LOSS`, `ROUTE FINISHED`, `OFF`.
+  `STOP 2/4  WALKING`, `… FIGHT`, `… CLEARING  7s  LOSE 95 EXP`, `… BOSS DOWN`,
+  `… TELEPORT WP3`, `… TELEPORT <prompt>`, `… RESET PENDING`, `… RESET RETRY 1`,
+  `… WAITING FOR EXP LOSS  KEEP 90%`, `ROUTE FINISHED`, `OFF`.
 - **Add Boss Stop Here** — saves a stop at your current position, with an empty
-  **Path to Boss**. A new stop starts with **Reset After 0 s**, **Reset After
-  Kill on** and a 120-stud engage radius.
+  **Path to Boss**. A new stop starts with **Reset After Kill on**, a 10 s
+  **Reset (s)**, **Dodge Skills on**, **Teleport To Prompt off** and a 120-stud
+  engage radius.
 - **Boss Route** (list) — one row per stop, `#1  Boss 1  > WP3  P6  Goblin
   (x, y, z)`: the stop's name, its teleport waypoint, how many path points it
   has, its first boss name and where it is. Drag a row (or use ▲▼) to reorder
-  the route. Its `Reset (s)` box is the pause held at the corpse after the kill
-  before the character resets (0–600, 0 = just the 2 s kill grace); its
-  `Wait Exp` tick is whether the next stop waits for the EXP loss; ✕ removes the
-  row. There is no fight timer: the row can never reset while the boss lives.
+  the route. Its `Reset (s)` box is the pause held at the corpse before the
+  character resets (0–600), used **only when the reset would cost EXP** — see
+  *What a stop does*; its `Wait Exp` tick is whether the next stop waits for
+  that EXP loss; ✕ removes the row. There is no fight timer: the row can never
+  reset while the boss lives.
 - **Clear Boss Route** — removes every stop.
 - **Edit Boss Stop** — picks which stop the boxes below change, and which stop
   **Path to Boss** and **Boss Names** edit.
@@ -430,6 +433,20 @@ teleport) to a boss, fight it, and reset back to spawn before the next one.
 - **Reset After Kill** (on for a new stop) — once the boss is down, reset the
   character so the next stop is travelled to from spawn. Off, the next stop
   starts from wherever the fight ended.
+- **Dodge Skills** (on for a new stop) — whether this boss's skill is dodged.
+  Off, the character fights through the cast, never sprints away and never
+  touches its own walk speed: the stop for a boss whose effects never switch
+  off.
+- **Teleport To Prompt** (off for a new stop) — travel by the interaction
+  prompt (a door, a portal, a boss-room button) instead of a waypoint. The
+  character is put next to the prompt, **Interact** is pressed there, and the
+  stop's Path is walked from the first point. A stop with both set uses the
+  prompt, not the waypoint.
+- **Save Prompt Here** — records the nearest `ProximityPrompt` (within 40
+  studs) to where you stand as this stop's prompt, and switches **Teleport To
+  Prompt** on. The label under the toggle shows what is saved; with nothing
+  saved the nearest prompt to the stop itself is used, so the button is
+  optional.
 - **Add Boss Name** — a dropdown, nothing typed: the mobs **around the player**
   (within 300 studs) nearest first, then every other mob the game has loaded.
   Pick one to add it to the selected stop. This is the same picker pattern as
@@ -467,7 +484,9 @@ final point can be the doorway and the stop the boss.
 
 #### What a stop does
 
-1. Teleports to its waypoint (when one is set) and waits 2 s to land.
+1. Teleports to its prompt (when **Teleport To Prompt** is on), presses
+   **Interact** on landing and waits 0.6 s; otherwise teleports to its waypoint
+   (when one is set) and waits 2 s to land.
 2. Walks its **Path to Boss** points in order, then the stop itself. A point
    counts as reached within 4 studs (`Waypoint Reach Distance` for the stop).
 3. Fights as soon as the stop is reached — there is no wait at the spot any
@@ -481,24 +500,39 @@ final point can be the doorway and the stop the boss.
    Farm are pressed from then on.
 4. Ends the stop when the target dies and nothing else is left there (a 2 s
    grace), or when there is nothing to fight for 5 s.
-5. If it ends on the kill and **Reset After Kill** is on, the character holds at
-   the corpse for the row's **Reset (s)** (at least the 2 s grace) and is then
-   reset (health set to 0, the same reset Party System uses). That is the
-   **only** reset: the character never resets while the boss is still standing,
-   and there is no fight timeout to reset on. `CLEARING  7s` counts the pause
-   down in the status line.
+5. If it ends on the kill and **Reset After Kill** is on, the reset is decided
+   from the level first. A reset keeps **10% of the EXP for every 100 levels**,
+   stopping at 90% from level 900 up; the route works out what that reset would
+   take from `PlayerStats.Level` and `PlayerStats.EXP`, as a share of one
+   level's EXP bar. If that share is under **2% of the bar** the reset costs
+   nothing worth waiting for and happens as soon as the 2 s kill grace is over
+   (`CLEARING  2s`). Otherwise the character holds at the corpse for the row's
+   **Reset (s)** — **10 s** for a stop that has not set one — and
+   `CLEARING  7s  LOSE 95 EXP` counts it down. Then the character is reset
+   (health set to 0, the same reset Party System uses). That is the **only**
+   reset: the character never resets while the boss is still standing, and
+   there is no fight timeout to reset on. A corpse left in the stop's radius
+   counts as the kill even when the fight never saw the boss standing, so a
+   boss that dies between two scans still resets the stop instead of sending
+   the route to the next waypoint.
 6. Once the character is back it goes straight on to the next leg — there is no
-   second pause after the reset. With **Wait Exp** on it first holds until
-   `PlayerStats.EXP` is lower than before the reset (15 s at most, so a game
-   that applies the loss differently cannot stall the route).
+   second pause after the reset. With **Wait Exp** on it first holds until the
+   game's `PlayerStats.EXP` has actually dropped (or reached the cutoff the
+   level's keep-percentage predicts), and never longer than **10 s**; a reset
+   that cost nothing is not waited for at all. A reset the game ignores (health
+   restored, the request dropped) is asked again after 3 s, up to twice, and
+   the status says `RESET PENDING` / `RESET RETRY n` in the meantime.
 7. Then the next stop begins — teleporting to its own waypoint first. Reaching
    the end loops, or finishes when **Loop Route** is off.
 
-**Skill dodge (Boss Route only).** While fighting, health is sampled every
-frame. Losing **20% of the bar within 0.6 s** is read as a boss skill landing:
-the character stops swinging and runs — the normal run speed plus a sprint —
-about 40 studs away from the boss, picking a direction that has ground and a
-clear line.
+**Skill dodge (Boss Route only).** The dodge starts on the **cast**, not on the
+damage: the boss's `Skill` sound or its blade/body particles switching on is the
+signal, so the character steps out before the hit lands. A loss of **20% of the
+bar within 0.6 s** is still read as a skill landing and used as the backup when
+the effects were missed. Either way the character stops swinging and runs — the
+normal run speed plus a sprint — about 40 studs away from the boss, picking a
+direction that has ground and a clear line, and picking a fresh point further
+out if it reaches the first one while the effects are still showing.
 
 How long it stays out is read from the boss, not from a timer. The game turns on
 the blade's `Sparkles`/particles and plays a `Skill` sound while the skill is
@@ -506,8 +540,9 @@ running, so the dodge holds while those effects are showing and comes back
 **0.5 s after they go out** (at least 1.5 s, at most 8 s in case an effect never
 switches off). A long skill is therefore dodged for its whole length instead of
 walking back into it, and a short one still gets the minimum. Slow damage is not
-a skill and never triggers it. This lives in the Bosses tab only: the Farming
-tab's own retreat behaves exactly as before.
+a skill and never triggers it. **Dodge Skills** on the stop turns all of this off
+for that boss. This lives in the Bosses tab only: the Farming tab's own retreat
+behaves exactly as before.
 
 #### Walking to a stop
 
@@ -538,6 +573,9 @@ Notes:
 - The route is saved per profile on the place config, so a profile without one
   starts empty and adding stops needs a loaded profile (`CREATE / LOAD PROFILE
   FIRST`, `DEFAULT PLACE_CONFIG IS READ-ONLY` on a built-in preset).
+- A prompt teleport the game refuses (a dead character, a load) falls back to
+  the stop's waypoint or the walk, and the teleport is retried once when nothing
+  moved and the stop is still far away.
 - Dying on the way, or in the fight, is **not** treated as the stop being done:
   the route waits for the respawn, then teleports to
   that stop's **Teleport Waypoint #** again (if it has one) and walks the same
