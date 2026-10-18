@@ -527,6 +527,14 @@ were added.
 > - Nothing outside `Features/BossNavigator.lua` changed, so Auto Farm's own retreat and combat are untouched.
 > - Harness: 66 checks. New ones cover a 45% drop starting a dodge, the sprint speed, running away from the boss, no attacks during it, the report, the speed restored afterwards, and a 5% drop not triggering. Mutation: disabling the trigger fails five of them.
 
+### [x] Boss Route: the dodge came back before the boss's skill was over
+
+> **Done (v3.41):** `Features/BossNavigator.lua`, Boss Route only
+> - The dodge was a fixed **1.3 s** timer, so a skill that kept going longer than that was walked back into. It now ends on the boss's own effects: the game plays a `Skill` sound and switches on the blade's `Sparkles`/particles while the skill runs, and the dodge holds until those have been off for **0.5 s**.
+> - The shared `AICCombat.IsEnemyUsingSkill` check provides the sound/sparkles signal; the route also lists the boss model's own effect objects (once a second, and effects on its weapon or named for a skill) so a boss whose particles sit on the body is read the same way. Ambient body particles are left out on purpose, or nothing would ever look finished.
+> - Floor and ceiling: at least **1.5 s** so a skill that flashes past still gets a real dodge, at most **8 s** so an effect that never clears cannot keep the character running. Distance raised 36 → **40 studs**.
+> - Harness: 78 checks. New ones hold the dodge for 2.5 s with the skill sound still playing, require the 0.5 s grace before returning, end a dodge on body particles, and end one on an effect that never switches off at the 8 s ceiling. Mutations: a fixed timer fails six checks, ignoring the effect list fails the body-particle one, and removing the ceiling fails three.
+
 ## To Fix
 
 ### [x] Waypoints Looped & Paired Farmzone/Waypoint/Targets: walking back to waypoints that are not paired

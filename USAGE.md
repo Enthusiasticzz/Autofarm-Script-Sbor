@@ -1,6 +1,6 @@
 # AIC usage guide
 
-How to use Automated Industry Complex (AutoFarmV3, `v3.40`) once it is loaded. The
+How to use Automated Industry Complex (AutoFarmV3, `v3.41`) once it is loaded. The
 loadstring and what the loader fetches are in [README.md](README.md); this file is
 about the features and about why the farm sometimes appears to do nothing.
 
@@ -496,11 +496,18 @@ final point can be the doorway and the stop the boss.
 
 **Skill dodge (Boss Route only).** While fighting, health is sampled every
 frame. Losing **20% of the bar within 0.6 s** is read as a boss skill landing:
-the character stops swinging, runs — the normal run speed plus a sprint — about
-36 studs away from the boss for 1.3 s, picking a direction that has ground and
-a clear line, then goes back in. Slow damage is not a skill and never triggers
-it. This lives in the Bosses tab only: the Farming tab's own retreat behaves
-exactly as before.
+the character stops swinging and runs — the normal run speed plus a sprint —
+about 40 studs away from the boss, picking a direction that has ground and a
+clear line.
+
+How long it stays out is read from the boss, not from a timer. The game turns on
+the blade's `Sparkles`/particles and plays a `Skill` sound while the skill is
+running, so the dodge holds while those effects are showing and comes back
+**0.5 s after they go out** (at least 1.5 s, at most 8 s in case an effect never
+switches off). A long skill is therefore dodged for its whole length instead of
+walking back into it, and a short one still gets the minimum. Slow damage is not
+a skill and never triggers it. This lives in the Bosses tab only: the Farming
+tab's own retreat behaves exactly as before.
 
 #### Walking to a stop
 

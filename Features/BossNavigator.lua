@@ -27,8 +27,9 @@
 -- presses the game's Interact input like the Farming waypoint route, so doors,
 -- levers and other proximity prompts on the path are used. The fight uses the
 -- same combat inputs as Auto Farm, and a big health drop in a moment (a boss
--- skill) makes the character sprint out of range before going back in. Auto
--- Farm hands this module the frame while it is on, with Auto Farm on or off.
+-- skill) makes the character sprint out of range and stay out until the
+-- skill's own effects - its particles and skill sound - have gone. Auto Farm
+-- hands this module the frame while it is on, with Auto Farm on or off.
 return {
     Name = "BossNavigator",
     IsFeature = true,
@@ -103,11 +104,21 @@ return {
         --// at any level and a slow grind of small hits is not a skill.
         local BURST_WINDOW = 0.6
         local BURST_DROP_PERCENT = 0.2
-        --// How long the dodge lasts, how far it goes, and the sprint on top of
-        --// the normal run speed while it does.
-        local DODGE_TIME = 1.3
-        local DODGE_DISTANCE = 36
+        --// The dodge is not a fixed timer. It stays out while the boss's own
+        --// skill is still showing - the game plays a Skill sound and switches
+        --// on the blade's Sparkles/particles - and only comes back a moment
+        --// after those go out. These are the floor and the ceiling around it,
+        --// so a signal that is missed cannot end it early, and a signal that
+        --// never clears cannot keep the character running forever.
+        local DODGE_MIN_TIME = 1.5
+        local DODGE_MAX_TIME = 8
+        local DODGE_EFFECT_GRACE = 0.5
+        local DODGE_DISTANCE = 40
         local DODGE_SPEED_BONUS = 12
+        --// The boss's emitters and sounds are listed again this often. Once a
+        --// second is enough: the boss tool is equipped a frame or two after
+        --// the model spawns, and the list only changes with the tool.
+        local SKILL_SCAN_INTERVAL = 1
         --// How far from the character a mob name is offered in the picker.
         local NAME_SCAN_RADIUS = 300
         --// The status line is rewritten at most this often.
@@ -152,9 +163,15 @@ return {
                 HpBase = nil,
                 --// While a dodge runs: when it ends, where it runs to, and the
                 --// normal speed to put back afterwards.
-                DodgeUntil = 0,
+                DodgeMinUntil = 0,
+                DodgeMaxUntil = 0,
                 DodgeTarget = nil,
                 DodgeFromSpeed = nil,
+                --// Whether the boss's skill effects were showing this frame,
+                --// and when they were last seen. The dodge holds until they
+                --// have been off again for DODGE_EFFECT_GRACE.
+                SkillActive = false,
+                SkillSeenAt = nil,
                 --// This recovery is a death, not a planned reset: walk the same
                 --// stop's path again instead of moving on to the next stop.
                 RestartStop = false,
@@ -610,8 +627,11 @@ return {
             end
 
             S.DodgeFromSpeed = nil
-            S.DodgeUntil = 0
+            S.DodgeMinUntil = 0
+            S.DodgeMaxUntil = 0
             S.DodgeTarget = nil
+            S.SkillActive = false
+            S.SkillSeenAt = nil
         end
 
         local function StopRoute(StatusText)
@@ -893,6 +913,79 @@ return {
             return AICFeature.EnsureWeaponDrawn(Now) == true
         end
 
+        --// The boss's own skill effects, listed once per target and refreshed
+        --// slowly: sounds and particles on its weapon, plus anything named for
+        --// a skill. Ambient particles on the body are left out on purpose -
+        --// they never go out, and the dodge is waiting for exactly that.
+        local SkillEffects = { Target = nil, At = 0, List = {} }
+
+        local function GetSkillEffects(Target, Now)
+            if SkillEffects.Target == Target
+                and Now - SkillEffects.At < SKILL_SCAN_INTERVAL
+            then
+                return SkillEffects.List
+            end
+
+            local List = {}
+            local Scan = Target.GetDescendants
+
+            if Scan then
+                for _, Descendant in ipairs(Scan(Target)) do
+                    local Name = string.lower(tostring(Descendant.Name or ""))
+
+                    if Descendant:IsA("Sound") then
+                        if string.find(Name, "skill", 1, true) then
+                            table.insert(List, Descendant)
+                        end
+                    elseif Descendant:IsA("ParticleEmitter")
+                        or Descendant:IsA("Sparkles")
+                    then
+                        local Parent = Descendant.Parent
+
+                        if string.find(Name, "skill", 1, true)
+                            or (Parent and Parent.Name == "BladePart")
+                        then
+                            table.insert(List, Descendant)
+                        end
+                    end
+                end
+            end
+
+            SkillEffects.Target = Target
+            SkillEffects.At = Now
+            SkillEffects.List = List
+
+            return List
+        end
+
+        --// True while the boss's skill is still showing. The shared check reads
+        --// the game's Skill sound and the blade's Sparkles, the same signal Auto
+        --// Farm reacts to; the list above covers a boss whose effects sit
+        --// somewhere else on the model.
+        local function IsSkillShowing(Target, Now)
+            if not Target then
+                return false
+            end
+
+            if AICCombat.IsEnemyUsingSkill and AICCombat.IsEnemyUsingSkill(Target) then
+                return true
+            end
+
+            for _, Effect in ipairs(GetSkillEffects(Target, Now)) do
+                if Effect.Parent then
+                    if Effect:IsA("Sound") then
+                        if Effect.IsPlaying then
+                            return true
+                        end
+                    elseif Effect.Enabled then
+                        return true
+                    end
+                end
+            end
+
+            return false
+        end
+
         --// A point to run to from TargetRoot: straight away first, then to
         --// either side, then behind, skipping directions with a hole or a wall.
         local function PickDodgePoint(RootPart, TargetRoot)
@@ -933,15 +1026,35 @@ return {
             return Fallback or (RootPart.Position + Away * DODGE_DISTANCE)
         end
 
-        --// Runs away from the boss for a moment at sprint speed. True while the
-        --// dodge is still running; false on the frame it ends (and whenever
-        --// there is no dodge), so the fight can carry on.
+        --// Runs away from the boss at sprint speed. True while the dodge is
+        --// still running; false on the frame it ends (and whenever there is no
+        --// dodge), so the fight can carry on.
+        --//
+        --// The health burst starts it, but the skill's own effects end it: it
+        --// runs for at least DODGE_MIN_TIME and after that only comes back once
+        --// those effects have been off for DODGE_EFFECT_GRACE. A skill that
+        --// keeps its particles up for two seconds is dodged for two seconds;
+        --// one that flashes past still gets the full minimum. DODGE_MAX_TIME
+        --// is the ceiling, for an effect that never switches off.
         local function DodgeStep(Target, Humanoid, RootPart, Now)
-            if (S.DodgeUntil or 0) <= Now then
+            if (S.DodgeMaxUntil or 0) <= Now then
                 if S.DodgeFromSpeed then
                     EndDodge(Humanoid)
                 end
 
+                return false
+            end
+
+            S.SkillActive = IsSkillShowing(Target, Now)
+
+            if S.SkillActive then
+                S.SkillSeenAt = Now
+            end
+
+            local EffectsGoneAt = (S.SkillSeenAt or 0) + DODGE_EFFECT_GRACE
+
+            if Now >= math.max(S.DodgeMinUntil or 0, EffectsGoneAt) then
+                EndDodge(Humanoid)
                 return false
             end
 
@@ -1023,9 +1136,14 @@ return {
                 return
             end
 
-            --// A skill just landed: run out of it instead of trading hits.
+            --// A skill just landed: run out of it instead of trading hits. The
+            --// dodge then follows the skill's effects, so it lasts as long as
+            --// the boss is still flashing rather than a fixed moment.
             if IsHealthBurst(Humanoid, Now) then
-                S.DodgeUntil = Now + DODGE_TIME
+                S.DodgeMinUntil = Now + DODGE_MIN_TIME
+                S.DodgeMaxUntil = Now + DODGE_MAX_TIME
+                S.SkillSeenAt = nil
+                S.SkillActive = false
                 S.DodgeTarget = nil
 
                 if DodgeStep(Target, Humanoid, RootPart, Now) then
