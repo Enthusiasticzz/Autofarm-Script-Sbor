@@ -7,19 +7,22 @@
 -- the game's waypoints first when the stop names one, then waits Wait seconds
 -- and fights whatever matches its Boss Names inside its radius.
 --
--- A fight ends one of three ways:
---   * the target dies and nothing else is in the radius -> the next stop;
---   * Reset After seconds pass, or health drops to Reset Below HP % -> the
---     character is reset and the next stop begins once it is back;
---   * nothing is there to fight -> the next stop.
+-- A fight ends when the target dies and nothing else is in the radius, or
+-- when nothing is there to fight at all. With Reset After Kill on (the default
+-- for a new stop) the character is then reset, so the next stop is travelled
+-- to from spawn. Reset After is only a timeout for a fight that drags on
+-- (0 = never, fight until the boss is down).
 -- Wait Exp holds the next stop until the game's EXP actually dropped after the
 -- reset, so the loss is registered before walking off. A stop with it off
--- moves on after Respawn Wait instead.
+-- moves on after Wait After Reset instead.
 --
 -- The route loops unless Loop Route is off; then it plays once and switches
--- itself off. Uneven terrain is handled by WalkController, and the fight uses
--- the same combat inputs as Auto Farm. Auto Farm hands this module the frame
--- while it is on, with Auto Farm on or off.
+-- itself off. Travel is a PathfindingService path followed waypoint by
+-- waypoint, not the mining walker's detour probes: that walker is built to
+-- creep around an ore on a straight line, and using it for boss travel made
+-- the character pace backwards and sideways. The fight uses the same combat
+-- inputs as Auto Farm. Auto Farm hands this module the frame while it is on,
+-- with Auto Farm on or off.
 return {
     Name = "BossNavigator",
     IsFeature = true,
@@ -31,13 +34,14 @@ return {
         "CombatUtils",
         "Navigation",
         "Combat",
-        "WalkController",
     },
 
     Start = function(Context)
         local Runtime = Context.Runtime
         local Player = Context.Player
         local Replicated = Context.Services.Replicated
+        local PathfindingService = Context.Services.PathfindingService
+        local AICCombatUtils = Context.AICCombatUtils
         local CONFIG = Context.CONFIG
         local FeatureState = Context.Feature
         local AICFeature = Context.AICFeature
@@ -47,7 +51,6 @@ return {
         local AICConfig = Context.AICConfig
         local AICCombat = Context.AICCombat
         local UIRef = Context.UIRef
-        local Movement = Context.WalkController
         local NotifyAction = Context.NotifyAction
 
         --// How close to the stop counts as standing on it, when the place has
@@ -73,6 +76,22 @@ return {
         --// given this long, walking straight at the stop as a last resort,
         --// before the stop is skipped instead of standing there for minutes.
         local NO_PATH_TIMEOUT = 15
+        --// Path following. A path is solved off the frame and its waypoints are
+        --// walked in order; it is solved again only when the destination has
+        --// moved, the path is old, or the character is stuck, so the character
+        --// never paces around deciding where to go.
+        local PATH_SPACING = 4
+        local PATH_MAX_AGE = 8
+        local PATH_DEST_TOLERANCE = 4
+        local PATH_WAYPOINT_REACH = 3
+        local PATH_RETRY = 2
+        local PATH_STUCK_SECONDS = 1.5
+        --// A stuck check samples the position this often, and counts as stuck
+        --// when less than this many studs were covered in that window.
+        local STUCK_SAMPLE = 0.5
+        local STUCK_DISTANCE = 0.75
+        --// How far from the character a mob name is offered in the picker.
+        local NAME_SCAN_RADIUS = 300
         --// The status line is rewritten at most this often.
         local STATUS_INTERVAL = 0.5
         --// Longest a stop name may be, for the list.
@@ -175,6 +194,168 @@ return {
             return Exp and tonumber(Exp.Value) or nil
         end
 
+        ------------------------------------------------------------------------
+        --// Travel: one path, followed waypoint by waypoint
+        ------------------------------------------------------------------------
+
+        local PathState = {
+            Waypoints = nil,
+            Index = 1,
+            Destination = nil,
+            Time = 0,
+            Computing = false,
+            Token = 0,
+            FailedAt = 0,
+            StuckSince = nil,
+            LastPosition = nil,
+            SampleAt = nil,
+        }
+
+        local function ResetPath()
+            PathState.Token += 1
+            PathState.Waypoints = nil
+            PathState.Index = 1
+            PathState.Destination = nil
+            PathState.Computing = false
+            PathState.FailedAt = 0
+            PathState.StuckSince = nil
+            PathState.LastPosition = nil
+            PathState.SampleAt = nil
+        end
+
+        --// A path to Destination, solved off the frame. The path already in
+        --// hand keeps being walked while the next one is solved, so a
+        --// recalculation is never a pause or a step in another direction.
+        local function RequestPath(From, Destination)
+            local _, _, RootPart = Runtime:GetCharacter()
+
+            PathState.Token += 1
+            local Token = PathState.Token
+            PathState.Computing = true
+            PathState.Destination = Destination
+
+            local Start = From
+            local Radius = RootPart and math.max(RootPart.Size.X * 0.5, 2) or 2
+
+            task.spawn(function()
+                local Solver = PathfindingService:CreatePath({
+                    AgentRadius = Radius,
+                    AgentHeight = 5,
+                    AgentCanJump = true,
+                    WaypointSpacing = PATH_SPACING,
+                })
+
+                local Ok = pcall(function()
+                    Solver:ComputeAsync(Start, Destination)
+                end)
+
+                --// Reset or superseded while solving.
+                if Token ~= PathState.Token then
+                    return
+                end
+
+                PathState.Computing = false
+
+                local Waypoints = Ok and Solver.Status == Enum.PathStatus.Success and Solver:GetWaypoints()
+
+                if not Waypoints or #Waypoints < 2 then
+                    PathState.Waypoints = nil
+                    PathState.FailedAt = os.clock()
+                    return
+                end
+
+                PathState.Waypoints = Waypoints
+                PathState.Index = 2
+                PathState.Time = os.clock()
+                PathState.FailedAt = 0
+            end)
+        end
+
+        --// "moving", "waiting" (a path is being solved), "failed" (no path:
+        --// walk straight at the destination while the solver retries) or
+        --// "done" at the destination. No detour probes: those are what made
+        --// boss travel pace backwards and sideways.
+        local function WalkTo(Destination, Now)
+            local _, Humanoid, RootPart = Runtime:GetCharacter()
+
+            if not Humanoid or not RootPart then
+                return "failed"
+            end
+
+            if AICCombatUtils.GetHorizontalDistance(Destination, RootPart.Position)
+                <= PATH_WAYPOINT_REACH
+            then
+                Humanoid:Move(Vector3.zero)
+                return "done"
+            end
+
+            --// Stuck on the way: hop once and ask for a fresh path, rather
+            --// than walking off in a random direction. The position is
+            --// sampled, not compared frame by frame: a walking character
+            --// moves well under a stud per frame, so a per-frame check called
+            --// every frame "stuck" and reset a healthy path constantly.
+            if not PathState.SampleAt or Now - PathState.SampleAt >= STUCK_SAMPLE
+            then
+                if PathState.LastPosition
+                    and (RootPart.Position - PathState.LastPosition).Magnitude < STUCK_DISTANCE
+                then
+                    PathState.StuckSince = PathState.StuckSince or Now
+                else
+                    PathState.StuckSince = nil
+                end
+
+                PathState.LastPosition = RootPart.Position
+                PathState.SampleAt = Now
+            end
+
+            if PathState.StuckSince and Now - PathState.StuckSince >= PATH_STUCK_SECONDS then
+                AICCombatUtils.DoJump()
+                PathState.StuckSince = nil
+                PathState.Waypoints = nil
+            end
+
+            local Moved = PathState.Destination
+                and (PathState.Destination - Destination).Magnitude > PATH_DEST_TOLERANCE
+            local Stale = not PathState.Waypoints or Now - PathState.Time >= PATH_MAX_AGE
+            local MayRetry = PathState.FailedAt == 0 or Now - PathState.FailedAt >= PATH_RETRY
+
+            if not PathState.Computing and (Moved or Stale) and MayRetry then
+                RequestPath(RootPart.Position, Destination)
+            end
+
+            if not PathState.Waypoints then
+                AICCombatUtils.DoJumpIfObstacle(Destination)
+                Humanoid:MoveTo(Destination)
+                return PathState.Computing and "waiting" or "failed"
+            end
+
+            while PathState.Index <= #PathState.Waypoints do
+                local Waypoint = PathState.Waypoints[PathState.Index]
+
+                if AICCombatUtils.GetHorizontalDistance(Waypoint.Position, RootPart.Position)
+                    <= PATH_WAYPOINT_REACH
+                then
+                    PathState.Index += 1
+                else
+                    break
+                end
+            end
+
+            local Waypoint = PathState.Waypoints[PathState.Index]
+
+            if Waypoint then
+                if Waypoint.Action == Enum.PathWaypointAction.Jump then
+                    AICCombatUtils.DoJumpIfObstacle(Waypoint.Position)
+                end
+
+                Humanoid:MoveTo(Waypoint.Position)
+            else
+                Humanoid:MoveTo(Destination)
+            end
+
+            return "moving"
+        end
+
         --// The Boss Route list labels. A stop keeps its number and position in
         --// the label so a drag can find it again, even with two identically
         --// named stops.
@@ -232,6 +413,126 @@ return {
             UIRef.BossListComponent:SetPriority(BuildLabels(), GetResetValues(), GetWaitExpChecks())
         end
 
+        --// Names of the boss picked in "Edit Boss Stop": a list plus a
+        --// dropdown of the mobs around the player, the same pattern as Zone
+        --// Targets. Nothing is typed by hand.
+        function AICUI.RefreshBossNames()
+            local Component = UIRef.BossNamesComponent
+            local Section = UIRef.BossSection
+
+            if not Component or not Section then
+                return
+            end
+
+            local Stop = SelectedStop()
+            local Names = Stop and Stop.Targets or {}
+
+            Component:SetPriority(table.clone(Names))
+
+            local _, _, RootPart = Runtime:GetCharacter()
+            local Options = {}
+            local Offered = {}
+
+            local function Offer(Name)
+                if type(Name) ~= "string" or Name == "" or Offered[Name] then
+                    return
+                end
+
+                if table.find(Names, Name) then
+                    return
+                end
+
+                Offered[Name] = true
+                table.insert(Options, Name)
+            end
+
+            --// Nearest first: the mobs actually around the character, so the
+            --// usual pick is the first entry.
+            local Nearby, NearbyDistance = {}, {}
+            local MobFolder = workspace:FindFirstChild("Mobs")
+
+            if RootPart and MobFolder then
+                for _, Mob in ipairs(MobFolder:GetChildren()) do
+                    if Mob:IsA("Model") then
+                        local MobRoot = Mob:FindFirstChild("HumanoidRootPart")
+                        local Name = AICCombat.GetTargetEntityName(Mob)
+
+                        if Name and MobRoot then
+                            local Distance = (MobRoot.Position - RootPart.Position).Magnitude
+
+                            if Distance <= NAME_SCAN_RADIUS
+                                and Distance < (NearbyDistance[Name] or math.huge)
+                            then
+                                Nearby[Name] = true
+                                NearbyDistance[Name] = Distance
+                            end
+                        end
+                    end
+                end
+            end
+
+            local NearbyNames = {}
+
+            for Name in pairs(Nearby) do
+                table.insert(NearbyNames, Name)
+            end
+
+            table.sort(NearbyNames, function(A, B)
+                if NearbyDistance[A] == NearbyDistance[B] then
+                    return A < B
+                end
+
+                return NearbyDistance[A] < NearbyDistance[B]
+            end)
+
+            for _, Name in ipairs(NearbyNames) do
+                Offer(Name)
+            end
+
+            --// Then every other mob the game has loaded, so a boss name can
+            --// be picked before walking next to it.
+            local Detected = type(AICCombat.GetDetectedMobTargets) == "function"
+                and AICCombat.GetDetectedMobTargets()
+                or {}
+
+            for _, Name in ipairs(Detected) do
+                Offer(Name)
+            end
+
+            if #Options == 0 then
+                Options = { "No mobs nearby" }
+            end
+
+            UIRef.BossNameDropdown = AICUI.ReplaceDropdown(
+                UIRef.BossNameDropdown,
+                Section,
+                "Add Boss Name",
+                Options,
+                function(Value)
+                    local Current = SelectedStop()
+
+                    if not Current or Value == "No mobs nearby" then
+                        return
+                    end
+
+                    if not AICProfile.S.ActiveProfileName then
+                        SetStatus("CREATE / LOAD PROFILE FIRST")
+                        return
+                    end
+
+                    Current.Targets = Current.Targets or {}
+
+                    if not table.find(Current.Targets, Value) then
+                        table.insert(Current.Targets, Value)
+                        AICProfile.SaveActiveProfile()
+                        Say("Boss Route", "Boss name added: " .. Value)
+                    end
+
+                    AICUI.RefreshBossNames()
+                end
+            )
+        end
+
         --// Puts the selected stop's values back into the edit boxes, after a
         --// selection change or an edit was applied.
         local function RefreshEditor()
@@ -244,10 +545,11 @@ return {
             if UIRef.BossNameBox then UIRef.BossNameBox:Set(Stop.Label, false) end
             if UIRef.BossWaypointBox then UIRef.BossWaypointBox:Set(tostring(Stop.Waypoint or 0), false) end
             if UIRef.BossWaitBox then UIRef.BossWaitBox:Set(tostring(Stop.Wait or 0), false) end
-            if UIRef.BossResetBelowBox then UIRef.BossResetBelowBox:Set(tostring(Stop.ResetBelow or 0), false) end
             if UIRef.BossRespawnWaitBox then UIRef.BossRespawnWaitBox:Set(tostring(Stop.RespawnWait or 0), false) end
             if UIRef.BossRadiusBox then UIRef.BossRadiusBox:Set(tostring(Stop.Radius or 0), false) end
-            if UIRef.BossNamesBox then UIRef.BossNamesBox:Set(table.concat(Stop.Targets, ", "), false) end
+            if UIRef.BossResetAfterKillToggle then
+                UIRef.BossResetAfterKillToggle:Set(Stop.ResetAfterKill == true, false)
+            end
             if UIRef.BossLoopToggle then UIRef.BossLoopToggle:Set(CONFIG.BOSS_ROUTE_LOOP ~= false, false) end
         end
 
@@ -286,6 +588,7 @@ return {
                     if Index and GetStops()[Index] then
                         AICProfile.S.SelectedBossStopIndex = Index
                         RefreshEditor()
+                        AICUI.RefreshBossNames()
                     end
                 end
             )
@@ -295,6 +598,7 @@ return {
             end
 
             RefreshEditor()
+            AICUI.RefreshBossNames()
         end
 
         local function Commit(StatusText)
@@ -330,7 +634,7 @@ return {
             S.WaitUntil = nil
             S.WalkStart = nil
             AICCombat.S.ClosestTarget = nil
-            Movement:Reset()
+            ResetPath()
             SetStatus(StatusText or "IDLE")
         end
 
@@ -356,7 +660,7 @@ return {
             S.Resets = 0
             S.SkipExpCheck = true
             AICCombat.S.ClosestTarget = nil
-            Movement:Reset()
+            ResetPath()
             SetStatus(string.format("STOP %d/%d  %s", S.Index, #Stops, Stop.Label))
         end
 
@@ -404,7 +708,7 @@ return {
 
             S.ExpDeadline = Now + EXP_LOSS_TIMEOUT
             AICCombat.S.ClosestTarget = nil
-            Movement:Reset()
+            ResetPath()
             SetStatus(string.format("STOP %d/%d  %s", S.Index, #GetStops(), Reason))
         end
 
@@ -560,14 +864,14 @@ return {
             if Distance > Range * 0.95 then
                 local Flat = Vector3.new(Offset.X, 0, Offset.Z)
                 local Direction = Flat.Magnitude > 0.01 and Flat.Unit or Vector3.xAxis
-                --// Stop a little short of the body, not inside it.
+                --// Stop a little short of the body, not inside it. The target
+                --// is in sight at this range, so this is a straight step with
+                --// a hop over anything low; no path or detour is needed.
                 local Standoff = math.clamp(Range * 0.4, 1, 4)
                 local Destination = TargetRoot.Position - Direction * Standoff
-                local Result = Movement:MoveTo(Destination, { Ignore = Target })
 
-                if Result == "failed" then
-                    Humanoid:MoveTo(Destination)
-                end
+                AICCombatUtils.DoJumpIfObstacle(Destination)
+                Humanoid:MoveTo(Destination)
             else
                 Humanoid:Move(Vector3.zero)
                 AICCombat.FaceCombatTarget(Target)
@@ -640,13 +944,11 @@ return {
 
             SetStatus(string.format("STOP %d/%d  WALKING", S.Index, #GetStops()))
 
-            --// The walker paths when the straight line is blocked (navmesh,
-            --// holes, deadzones). When it cannot find a way at all, walk
-            --// straight at the spot for a while, then skip the stop rather
-            --// than stand here until the much longer WALK_TIMEOUT.
-            if Movement:MoveTo(Stop.Position) == "failed" then
+            --// One path, walked waypoint by waypoint (WalkTo). When the game
+            --// has no path it walks straight at the stop while retrying, and
+            --// only gives up on the stop after NO_PATH_TIMEOUT of that.
+            if WalkTo(Stop.Position, Now) == "failed" then
                 S.NoPathSince = S.NoPathSince or Now
-                Humanoid:MoveTo(Stop.Position)
 
                 if Now - S.NoPathSince >= NO_PATH_TIMEOUT then
                     Say("Boss Route", "No way to stop #" .. tostring(S.Index) .. "; skipping", 4)
@@ -679,16 +981,6 @@ return {
                     return
                 end
 
-                local ResetBelow = tonumber(Stop.ResetBelow) or 0
-
-                if ResetBelow > 0
-                    and Humanoid.MaxHealth > 0
-                    and (Humanoid.Health / Humanoid.MaxHealth) * 100 <= ResetBelow
-                then
-                    BeginReset(Now, "LOW HP")
-                    return
-                end
-
                 SetStatus(string.format("STOP %d/%d  FIGHT  %s", S.Index, #GetStops(), Stop.Label))
                 Fight(Target, Now)
                 return
@@ -704,7 +996,13 @@ return {
                 SetStatus(string.format("STOP %d/%d  CLEARING", S.Index, #GetStops()))
 
                 if Now - S.KillAt >= KILL_GRACE then
-                    Advance(Now)
+                    --// The fight is done: reset and travel on when the stop
+                    --// asks for it, otherwise just take the next stop.
+                    if Stop.ResetAfterKill then
+                        BeginReset(Now, "BOSS DOWN")
+                    else
+                        Advance(Now)
+                    end
                 end
 
                 return
@@ -820,7 +1118,7 @@ return {
             S.KillAt = nil
             S.WaitUntil = nil
             S.WalkStart = nil
-            Movement:Reset()
+            ResetPath()
         end
 
         ------------------------------------------------------------------------
@@ -862,7 +1160,7 @@ return {
                 Waypoint = 0,
                 Wait = 0,
                 ResetAfter = AICConfig.DEFAULT_BOSS_RESET_AFTER,
-                ResetBelow = 0,
+                ResetAfterKill = true,
                 RespawnWait = AICConfig.DEFAULT_BOSS_RESPAWN_WAIT,
                 WaitExp = false,
                 Radius = AICConfig.DEFAULT_BOSS_RADIUS,
@@ -1051,18 +1349,10 @@ return {
             return true
         end)
 
-        UIRef.BossResetBelowBox = AddStopBox("Reset Below HP %", function(Stop, Value)
-            local Number = tonumber(Value)
-
-            if not Number or Number < 0 then
-                return false
-            end
-
-            Stop.ResetBelow = math.clamp(Number, 0, 100)
-            return true
-        end)
-
-        UIRef.BossRespawnWaitBox = AddStopBox("Respawn Wait (s)", function(Stop, Value)
+        --// How long to wait after the reset's respawn before walking on. The
+        --// stored key keeps its old name (RespawnWait) so existing profiles
+        --// still load; only the label changed.
+        UIRef.BossRespawnWaitBox = AddStopBox("Wait After Reset (s)", function(Stop, Value)
             local Number = tonumber(Value)
 
             if not Number or Number < 0 then
@@ -1084,20 +1374,96 @@ return {
             return true
         end)
 
-        UIRef.BossNamesBox = AddStopBox("Boss Names", function(Stop, Value)
-            local Names = {}
+        --// Reset once the boss is down, i.e. the character respawns at the
+        --// usual spawn point before the next stop is travelled to. Off, the
+        --// next stop starts from wherever the fight ended.
+        UIRef.BossResetAfterKillToggle = UIRef.BossSection:AddToggle(
+            "Reset After Kill",
+            true,
+            function(Value)
+                local Stop = SelectedStop()
 
-            for Name in string.gmatch(tostring(Value or ""), "[^,]+") do
-                local Text = Name:gsub("^%s*(.-)%s*$", "%1")
-
-                if Text ~= "" and not table.find(Names, Text) then
-                    table.insert(Names, Text)
+                if not Stop then
+                    SetStatus("ADD A BOSS STOP FIRST")
+                    return
                 end
+
+                if not AICProfile.S.ActiveProfileName then
+                    SetStatus("DEFAULT PLACE_CONFIG IS READ-ONLY")
+                    RefreshEditor()
+                    return
+                end
+
+                Stop.ResetAfterKill = Value == true
+                AICProfile.SaveActiveProfile()
+                SetStatus(
+                    Stop.ResetAfterKill
+                        and "STOP RESETS AFTER THE KILL"
+                        or "STOP STAYS WHERE THE BOSS DIED"
+                )
+            end
+        )
+
+        --// Boss names come from a list of the mobs around the player, the same
+        --// way Zone Targets does it, so nothing has to be typed.
+        UIRef.BossNamesComponent = UIRef.BossSection:AddPriority("Boss Names", {})
+
+        UIRef.BossSection:AddButton("Refresh Nearby Bosses", function()
+            AICUI.RefreshBossNames()
+            SetStatus("NEARBY BOSSES REFRESHED")
+        end)
+
+        local OriginalNameRemove = UIRef.BossNamesComponent.Remove
+        local OriginalNameMoveUp = UIRef.BossNamesComponent.MoveUp
+        local OriginalNameMoveDown = UIRef.BossNamesComponent.MoveDown
+
+        local function CommitNames(Component)
+            local Stop = SelectedStop()
+
+            if Stop then
+                Stop.Targets = table.clone(Component.Priority)
+                AICProfile.SaveActiveProfile()
             end
 
-            Stop.Targets = Names
-            return true
-        end)
+            AICUI.RefreshBossNames()
+        end
+
+        local function NamesGuard()
+            if AICProfile.S.ActiveProfileName and SelectedStop() then
+                return true
+            end
+
+            SetStatus("ADD A BOSS STOP FIRST")
+            return false
+        end
+
+        function UIRef.BossNamesComponent:Remove(Value)
+            if not NamesGuard() then
+                return false
+            end
+
+            local Changed = OriginalNameRemove(self, Value)
+            CommitNames(self)
+            return Changed
+        end
+
+        function UIRef.BossNamesComponent:MoveUp(Value)
+            if not NamesGuard() then
+                return
+            end
+
+            OriginalNameMoveUp(self, Value)
+            CommitNames(self)
+        end
+
+        function UIRef.BossNamesComponent:MoveDown(Value)
+            if not NamesGuard() then
+                return
+            end
+
+            OriginalNameMoveDown(self, Value)
+            CommitNames(self)
+        end
 
         UIRef.BossSection:AddButton("Move Stop Here", function()
             local Stop = SelectedStop()

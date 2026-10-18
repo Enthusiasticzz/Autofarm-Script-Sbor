@@ -896,10 +896,13 @@ return {
         end
 
         --// Boss Route limits. The defaults are what a new stop starts with:
-        --// fight for 10 seconds, then reset and move on, unless the boss dies
-        --// first. Respawn Wait gives the new character time to load, and the
+        --// fight until the boss is down with no timeout, then reset and move
+        --// on. Wait After Reset gives the new character time to load, and the
         --// engage radius reaches across a boss room from the standing spot.
-        AICConfig.DEFAULT_BOSS_RESET_AFTER = 10
+        --// Older builds always wrote a 10 s fight timeout; a stop saved before
+        --// Reset After Kill existed is migrated to the new behaviour.
+        AICConfig.DEFAULT_BOSS_RESET_AFTER = 0
+        AICConfig.LEGACY_BOSS_RESET_AFTER = 10
         AICConfig.DEFAULT_BOSS_RESPAWN_WAIT = 4
         AICConfig.DEFAULT_BOSS_RADIUS = 120
         AICConfig.MAX_BOSS_RESET = 600
@@ -915,7 +918,7 @@ return {
         --//   Waypoint    game waypoint number teleported to first, 0 walks
         --//   Wait        seconds stood still before the fight starts
         --//   ResetAfter  seconds of fighting before resetting, 0 never
-        --//   ResetBelow  reset at or below this % of health, 0 never
+        --//   ResetAfterKill  reset once the boss is down, then the next stop
         --//   RespawnWait seconds after respawning before the next stop
         --//   WaitExp     hold the next stop until EXP actually dropped
         --//   Radius      how far from Position a boss is picked up
@@ -935,6 +938,16 @@ return {
 
                 if Position then
                     local Label = type(Stop.Label) == "string" and Stop.Label:gsub("^%s*(.-)%s*$", "%1") or ""
+                    --// Stops saved before Reset After Kill existed: they were
+                    --// written with the old 10 s timeout and never reset after
+                    --// a kill. Treat them as the new default, fight until the
+                    --// boss is down and then reset.
+                    local Legacy = Stop.ResetAfterKill == nil
+                    local ResetAfter = tonumber(Stop.ResetAfter) or 0
+
+                    if Legacy and ResetAfter == AICConfig.LEGACY_BOSS_RESET_AFTER then
+                        ResetAfter = 0
+                    end
 
                     table.insert(Result, {
                         Label = Label ~= "" and Label or ("Boss " .. tostring(#Result + 1)),
@@ -944,10 +957,8 @@ return {
                             math.floor(tonumber(Stop.Waypoint) or 0), 0, AICConfig.MAX_BOSS_WAYPOINT
                         ),
                         Wait = math.clamp(tonumber(Stop.Wait) or 0, 0, AICConfig.MAX_WAYPOINT_WAIT),
-                        ResetAfter = math.clamp(
-                            tonumber(Stop.ResetAfter) or 0, 0, AICConfig.MAX_BOSS_RESET
-                        ),
-                        ResetBelow = math.clamp(tonumber(Stop.ResetBelow) or 0, 0, 100),
+                        ResetAfter = math.clamp(ResetAfter, 0, AICConfig.MAX_BOSS_RESET),
+                        ResetAfterKill = Legacy or Stop.ResetAfterKill == true,
                         RespawnWait = math.clamp(
                             tonumber(Stop.RespawnWait) or AICConfig.DEFAULT_BOSS_RESPAWN_WAIT,
                             0,

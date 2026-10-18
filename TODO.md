@@ -2,7 +2,7 @@
 
 Status: `[ ]` not started · `[x]` done or fixed (written, not yet verified in-game)
 
-All 101 items are complete — nothing here is pending. This file is the record of
+All 102 items are complete — nothing here is pending. This file is the record of
 what was asked for and what shipped, oldest work first: `## To Do` lists requested
 features, `## To Fix` lists reported bugs. Every item names the version it shipped
 in, and the note under it explains what actually changed and which tuning constants
@@ -457,6 +457,15 @@ were added.
 > **Done (v3.32):** `Features/BossNavigator.lua` reads the walker's result now instead of calling `MoveTo` and hoping
 > - When `WalkController` reports `failed` (no navmesh, no allowed path, every detour refused) the character walks straight at the stop as a last resort and the stop is skipped with a notice after 15 s (`NO_PATH_TIMEOUT`) instead of standing there until the 120 s `WALK_TIMEOUT`
 > - While the walker is still working (reported `moving` or `waiting` while a path solves) nothing changes; `USAGE.md` now has a **Walking to a stop** section describing the direct line, pathfinding, hole jumps, detours and the navmesh requirement
+
+### [x] Boss Route: travel paces backwards and sideways, names are typed by hand, and the HP reset makes no sense
+
+> **Done (v3.33):** three fixes to `Features/BossNavigator.lua`
+> - **Travel**: the boss route no longer uses `WalkController`. That walker is built for a short line to an ore, and its blocked-line behaviour walks to detour points at 30°–150° to either side before retrying — which is exactly the "runs backwards for a second, then sideways, then at the boss" look. The route now follows one `PathfindingService` path waypoint by waypoint (character radius/height, `AgentCanJump`, 4-stud spacing, solved off the frame), and only re-solves when the destination moves, the path is 8 s old, or the character stalls (then it jumps and re-solves). The old path keeps being walked while a new one solves, so a recalculation is not a pause or a step in another direction. With no path at all it walks straight at the stop and retries every 2 s, and skips the stop after 15 s.
+> - **Stuck check**: the stall detector samples the position every 0.5 s and counts a stall when < 0.75 studs were covered — a per-frame comparison called a normally walking character stuck and threw its path away every 1.5 s, which was the other half of the wandering
+> - **Boss names**: the typed comma-separated box is gone. **Add Boss Name** is a dropdown built like **Add Zone Target**: the mobs around the player first (within 300 studs, nearest first, already-added names filtered out), then every other mob the game has loaded. **Boss Names** is the per-stop list (drag/▲▼/✕) and **Refresh Nearby Bosses** rebuilds the picker after walking somewhere new.
+> - **Reset**: **Reset Below HP %** is removed from the storage, the UI and the fight. A new **Reset After Kill** toggle (on for a new stop) resets once the boss is down so the next stop is travelled to from spawn. **Reset After (s)** stays only as a fight timeout and now defaults to 0 (fight until the boss is down); **Respawn Wait (s)** is relabelled **Wait After Reset (s)** — it is the pause after that reset, not a fight timer.
+> - Older saves migrate: `ResetBelow` is dropped, and a stop saved before `ResetAfterKill` existed (which always carried the old 10 s default timeout) becomes **Reset After Kill on**, **Reset After 0** — the run it had before, only resetting after the fight instead of mid-fight. An intentionally typed timeout is edited in the row as before.
 
 ## To Fix
 

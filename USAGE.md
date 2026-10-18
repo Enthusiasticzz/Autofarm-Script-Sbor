@@ -1,6 +1,6 @@
 # AIC usage guide
 
-How to use Automated Industry Complex (AutoFarmV3, `v3.32`) once it is loaded. The
+How to use Automated Industry Complex (AutoFarmV3, `v3.33`) once it is loaded. The
 loadstring and what the loader fetches are in [README.md](README.md); this file is
 about the features and about why the farm sometimes appears to do nothing.
 
@@ -399,7 +399,7 @@ A boss route is its own list of stops. It is saved in the profile like waypoints
 and zones, but kept apart from them (place config `BOSS_ROUTE`): the Farming
 waypoint route and the Profile Settings waypoints never move it, and editing a
 boss stop never moves either of those. Use it for the run where you walk (or
-teleport) to a boss, fight it, and reset on a timer instead of dying to it.
+teleport) to a boss, fight it, and reset back to spawn before the next one.
 
 #### Boss Route
 
@@ -410,11 +410,13 @@ teleport) to a boss, fight it, and reset on a timer instead of dying to it.
   `… FIGHT`, `… CLEARING`, `… RESET TIMER`, `… WAITING FOR EXP LOSS`,
   `ROUTE FINISHED`, `OFF`.
 - **Add Boss Stop Here** — saves a stop at your current position. A new stop
-  starts with a 10 s reset timer, a 4 s respawn wait and a 120-stud engage radius.
+  starts with **Reset After 0 s** (fight until the boss is down), **Wait After
+  Reset 4 s**, **Reset After Kill on** and a 120-stud engage radius.
 - **Boss Route** (list) — one row per stop, `#1  Boss 1  > WP3  Goblin  (x, y, z)`.
-  Drag a row (or use ▲▼) to reorder the route; each row's `Reset (s)` box is that
-  stop's reset timer (0–600, 0 = never) and its `Wait Exp` tick is whether the
-  next stop waits for the EXP loss. ✕ removes the row.
+  Drag a row (or use ▲▼) to reorder the route; each row's `Reset (s)` box is only
+  a fight timeout — reset if the boss is somehow still standing after that many
+  seconds (0–600, 0 = never) — and its `Wait Exp` tick is whether the next stop
+  waits for the EXP loss. ✕ removes the row.
 - **Clear Boss Route** — removes every stop.
 - **Edit Boss Stop** — picks which stop the boxes below change.
 - **Boss Stop Name** — the name shown in the list.
@@ -423,13 +425,19 @@ teleport) to a boss, fight it, and reset on a timer instead of dying to it.
   remote as the Teleport tab.
 - **Wait At Spot (s)** — seconds stood still at the stop before the fight starts
   (e.g. to let a boss spawn).
-- **Reset Below HP %** — reset the character at or below this share of health;
-  0 never. This is the "reset before it kills me" guard.
-- **Respawn Wait (s)** — seconds after the character is back before the next stop
-  starts.
+- **Wait After Reset (s)** — seconds after the reset's respawn before the next
+  stop starts (time for the character to load and for the EXP loss to apply).
 - **Engage Radius** — how far from the stop a boss is picked up.
-- **Boss Names** — comma separated boss names (the same entity names the Enemy
-  Priority list uses); empty fights whatever is at the stop.
+- **Reset After Kill** (on for a new stop) — once the boss is down, reset the
+  character so the next stop is travelled to from spawn. Off, the next stop
+  starts from wherever the fight ended.
+- **Add Boss Name** — a dropdown, nothing typed: the mobs **around the player**
+  (within 300 studs) nearest first, then every other mob the game has loaded.
+  Pick one to add it to the selected stop. This is the same picker pattern as
+  Zone Targets.
+- **Boss Names** (list) — the names the stop fights, in order; drag to reorder,
+  ▲▼ or ✕ to change. Empty fights whatever is at the spot.
+- **Refresh Nearby Bosses** — rebuilds that dropdown after walking somewhere new.
 - **Move Stop Here** / **Remove Stop** — move the selected stop to the character,
   or delete it.
 - **Loop Route** (on by default) — after the last stop, start again at the first.
@@ -438,45 +446,51 @@ teleport) to a boss, fight it, and reset on a timer instead of dying to it.
 #### What a stop does
 
 1. Teleports to its waypoint (when one is set) and waits 2 s, then walks to the
-   stop with the same walker mining and smithing use (see *Walking to a stop*
-   below). A stop the walker finds no way to after 15 s, or still has not
-   reached after 120 s, is skipped with a notice.
+   stop along a `PathfindingService` path (see *Walking to a stop* below). A
+   stop with no path after 15 s, or still not reached after 120 s, is skipped
+   with a notice.
 2. Waits **Wait At Spot** seconds.
 3. Fights the nearest living mob inside **Engage Radius** that matches **Boss
    Names** (anything when empty), drawing the weapon first and using the same
    attack and skill inputs as Auto Farm.
 4. Ends the stop when the target dies and nothing else is left there (a 2 s
-   grace), when `Reset After` seconds of fighting have passed, when health drops
-   to **Reset Below HP %**, or when there is nothing to fight for 5 s.
-5. On a reset the character's health is set to 0 (the same reset Party System
-   uses). Once it is back it waits **Respawn Wait**, and with **Wait Exp** on it
-   also holds until `PlayerStats.EXP` is lower than before the reset (15 s at
-   most, so a game that applies the loss differently cannot stall the route).
-6. Then the next stop begins. Reaching the end loops, or finishes when **Loop
-   Route** is off.
+   grace), when the row's `Reset (s)` timeout runs out with the boss still
+   standing (0 = never, the default), or when there is nothing to fight for 5 s.
+5. If it ends on the kill and **Reset After Kill** is on, or on the timeout, the
+   character is reset (health set to 0, the same reset Party System uses).
+   There is no low-health reset: a fight is never abandoned part-way on purpose.
+   Once the character is back it waits **Wait After Reset**, and with **Wait
+   Exp** on it also holds until `PlayerStats.EXP` is lower than before the reset
+   (15 s at most, so a game that applies the loss differently cannot stall the
+   route).
+6. Then the next stop begins — teleporting to its own waypoint first. Reaching
+   the end loops, or finishes when **Loop Route** is off.
 
 #### Walking to a stop
 
-The walk is not a straight line: `WalkController` tests a body-sized box along
-the direct line every 0.1 s, and while that line is clear it simply walks it
-(holes in the floor are jumped when they are narrow enough). As soon as a wall,
-a too-wide gap, a climb or a deadzone blocks the line, it asks Roblox's
-`PathfindingService` for a path with the character's own radius and height,
-computed off the frame so a slow solve never stutters the game. Path waypoints
-that call for a jump are only jumped when something is actually in the way or
-the character has stalled. When no path exists it detours — probes out 30°, 60°,
-90°, 120° and 150° to either side, walks a clear one and retries the line — up
-to four times, then hops the obstacle if it is low enough. A stop it still
-cannot reach is walked at directly for 15 s as a last try and then skipped with
-a notice.
+Travel to a stop is one `PathfindingService` path, followed waypoint by
+waypoint. It is solved off the frame with the character's own radius and
+height, `AgentCanJump` on and 4-stud spacing, so a slow solve never stutters
+the game. The path is solved again only when the destination has moved, it is
+older than 8 s, or the character has not moved for 1.5 s (which also jumps);
+while a new one is being solved the old one keeps being walked, so a
+recalculation is never a pause or a step in another direction. Path waypoints
+marked Jump are jumped only when something is actually in the way.
 
-Two limits worth knowing: pathfinding needs the game to have a navmesh where
-the character is standing — if it does not, only the direct line, hole jumps,
-low hops and detours are available; and a stop is reached when the character is
-within the place's **Waypoint Reach Distance** (5 studs by default) of the saved
-spot. That is why a **Teleport Waypoint #** near the boss is the reliable
-option: the character warps most of the way and only has to walk the last short
-leg.
+This is deliberately **not** the mining walker (`WalkController`). That walker
+is built to creep around an ore on a short straight line: it probes a body-sized
+box ahead, and when the line is blocked it walks to detour points at 30°–150° to
+either side before retrying. On a long walk to a boss those detours are what
+looked like running backwards and sideways, so the boss route no longer uses
+it.
+
+When the game has no path at all (no navmesh, a sealed room) the character
+walks straight at the stop while the solver retries every 2 s, and the stop is
+skipped with a notice after 15 s of that. A stop counts as reached within the
+place's **Waypoint Reach Distance** (5 studs by default) of the saved spot, and
+the whole walk gives up after 120 s. A **Teleport Waypoint #** near the boss is
+still the most reliable option: it warps most of the way, leaving only the last
+short leg to walk.
 
 Notes:
 
