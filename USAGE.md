@@ -537,7 +537,7 @@ the route started on the stop are still walked.
    no dead frame at all — is still walked back to the stop instead of being
    taken for a fresh arrival that waits. The nearest
    living mob inside **Engage Radius** that matches **Boss Names** (anything
-   when empty) is the target. The sword is asked for from 60
+   when empty)   is the target. The sword is asked for from 60
    studs out on the last leg, and again every frame of the fight until the
    tool's weld says it is really in the hand (the cached equipped flag is not
    trusted: it survives a respawn that sheathed the sword). The frame the equip
@@ -546,9 +546,16 @@ the route started on the stop are still walked.
    Farm are pressed from then on.
 4. Ends the stop when the target dies and nothing else is left there (a 2 s
    grace), or when there is nothing to fight for 5 s. The fight is only over
-   when the game says the boss is dead: a scan that loses a living boss (out
+   when the game says the boss is gone: a scan that loses a living boss (out
    of **Engage Radius**, a model swap, a root gone for a frame) keeps the mob
-   already being fought, so it can no longer reset mid-fight.
+   already being fought, so it can no longer reset mid-fight. That keep is a
+   grace, not a switch — the scan reads the `Mobs` folder every 0.2 s, and a
+   mob it has not found for **4 s** is not the stop's boss any more. Without
+   the limit, a boss killed by another player whose body the game took out of
+   that folder without ever setting its health to 0 held the stop in `FIGHT`
+   on a reference nothing could reach: the character stood at the corpse until
+   the game finally dropped the model, which is why it looked like the route
+   was waiting for the character to heal before it would reset.
 5. If it ends on the kill and **Reset After Kill** is on, where the character
    is in its EXP bar decides the reset. A reset keeps the **first 10% of the
    bar for every 100 levels**, stopping at **90% from level 900 up** — the part

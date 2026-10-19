@@ -90,6 +90,18 @@ return {
         --// The target just died; this long with nothing else there counts as
         --// the boss being down.
         local KILL_GRACE = 2
+        --// A target the scan has lost is still fought for this long: a model
+        --// swap, a boss stepping out of the engage radius or a root that is
+        --// gone for a moment is not a kill. Past it the mob is not one the
+        --// game is listing at the stop any more - the scan reads the Mobs
+        --// folder every 0.2 s, and a boss still standing there is in it. The
+        --// kept reference was otherwise held forever: another player kills
+        --// the boss, the game takes the body out of the folder without ever
+        --// zeroing its health, and the route sat in FIGHT at a corpse until
+        --// the model was finally destroyed - which only happened after a
+        --// while, so the stop looked like it was waiting for the character
+        --// to heal before it would reset.
+        local TARGET_KEEP_TIME = 4
         --// A reset whose character never comes back gives up after this.
         local RESPAWN_TIMEOUT = 20
         --// EXP kept after a reset: the first ten percent of the level's EXP
@@ -232,9 +244,12 @@ return {
                 FoughtThisVisit = false,
                 --// The mob this stop was last fighting. A scan can lose a live
                 --// boss (out of the engage radius, a model swap, a root that
-                --// is gone for a moment) and that is not a kill; the health
-                --// of this one is the only thing that can end the fight.
+                --// is gone for a moment) and that is not a kill, so this one
+                --// is fought on while the scan keeps finding it.
                 LastTarget = nil,
+                --// When the scan last saw that mob. Only a target it has found
+                --// within TARGET_KEEP_TIME is still the stop's boss.
+                TargetSeenAt = nil,
                 KillAt = nil,
                 --// The walk speed the hold borrowed to run from a mob, so it can
                 --// be put back when the hold ends.
@@ -930,6 +945,7 @@ return {
             S.Phase = "Idle"
             S.SeenTarget = false
             S.LastTarget = nil
+            S.TargetSeenAt = nil
             S.KillAt = nil
             S.WaitUntil = nil
             S.SpotWaitUntil = nil
@@ -964,6 +980,7 @@ return {
             S.SeenTarget = false
             S.FoughtThisVisit = false
             S.LastTarget = nil
+            S.TargetSeenAt = nil
             S.KillAt = nil
             S.Teleported = false
             S.PathIndex = 1
@@ -999,6 +1016,7 @@ return {
             local Stops = GetStops()
             S.SeenTarget = false
             S.LastTarget = nil
+            S.TargetSeenAt = nil
             S.KillAt = nil
             S.FightStart = nil
             S.WalkStart = nil
@@ -2134,6 +2152,7 @@ return {
                     S.FightStart = Now
                     S.SeenTarget = false
                     S.LastTarget = nil
+                    S.TargetSeenAt = nil
                     S.KillAt = nil
                     ScanAt = 0
                     ScanDone = false
@@ -2174,6 +2193,7 @@ return {
             end
 
             local Target = FindTarget(Stop, Now)
+            local Scanned = Target ~= nil
 
             --// The scan is a snapshot of the room, not the game's health: a
             --// boss that steps out of the engage radius, has its model swapped
@@ -2181,8 +2201,17 @@ return {
             --// while still alive. Treating that as a kill reset the character
             --// in the middle of the fight (the free path fires a fifth of a
             --// second after one missed scan). The mob already being fought is
-            --// kept instead, so only a dead or destroyed boss ends the fight.
-            if not Target and IsMobAlive(S.LastTarget) and IsWantedTarget(S.LastTarget, Stop) then
+            --// kept instead - but only while the scan keeps finding it every
+            --// so often. A reference the scan never sees again is a body the
+            --// game has taken away (another player's kill, a corpse moved out
+            --// of the Mobs folder), not a boss still standing: holding it cost
+            --// nothing while it was alive and frozen the stop in FIGHT when it
+            --// was not, so the keep lapses after TARGET_KEEP_TIME.
+            if not Target
+                and IsMobAlive(S.LastTarget)
+                and IsWantedTarget(S.LastTarget, Stop)
+                and Now - (S.TargetSeenAt or 0) <= TARGET_KEEP_TIME
+            then
                 Target = S.LastTarget
             end
 
@@ -2191,6 +2220,11 @@ return {
                 S.FoughtThisVisit = true
                 S.LastTarget = Target
                 S.KillAt = nil
+
+                --// The scan watching it is the clock the keep above runs on.
+                if Scanned then
+                    S.TargetSeenAt = Now
+                end
                 AICCombat.S.ClosestTarget = Target
 
                 SetStatus(string.format("STOP %d/%d  FIGHT  %s", S.Index, #GetStops(), Stop.Label))
@@ -2210,9 +2244,14 @@ return {
             --// pause is held before the character is reset.
             if S.SeenTarget then
                 --// A boss that is still alive is never a kill, even when no
-                --// scan finds it. The name was taken off this stop's list:
-                --// the route simply moves on, with no reset and no EXP lost.
-                if IsMobAlive(S.LastTarget) then
+                --// scan finds it - as long as the scan still finds it now and
+                --// then. Past TARGET_KEEP_TIME its health no longer holds the
+                --// stop: it is not standing at the spot any more. The name was
+                --// taken off this stop's list: the route simply moves on, with
+                --// no reset and no EXP lost.
+                if IsMobAlive(S.LastTarget)
+                    and Now - (S.TargetSeenAt or 0) <= TARGET_KEEP_TIME
+                then
                     if not IsWantedTarget(S.LastTarget, Stop) then
                         Advance(Now)
                     else
@@ -2406,6 +2445,7 @@ return {
             S.Phase = "Idle"
             S.SeenTarget = false
             S.LastTarget = nil
+            S.TargetSeenAt = nil
             S.KillAt = nil
             S.WaitUntil = nil
             S.SpotWaitUntil = nil

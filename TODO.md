@@ -666,6 +666,13 @@ were added.
 > - A bump while the route is already in **Recover** is its own reset (or a death it already has) and is only marked as read, so a reset still moves the route on to the next stop. Switching the route off, a profile load and the end of the run re-take the counter, so deaths from a time the route was not watching are never replayed into the next run.
 > - Harness: 178 checks (was 168). New ones: a body replaced between two frames with no `Health <= 0` — on the walk in and in the fight at the stop — restarts the stop and fights on arrival with no `WAIT`; the harness now bumps the counter on every respawn, the way `CharacterAdded` does, so every reset test proves the route's own resets are not read as deaths. Mutations caught: the counter never noticed (5 failures), a bump during Recover taken as a fresh death (7).
 
+### [x] Boss Route: sat in FIGHT at a boss another player had already killed
+
+> **Done (v3.58):** `Features/BossNavigator.lua`, Boss Route only
+> - The fight deliberately keeps the mob it was already fighting when a scan loses it, because a live boss can step out of **Engage Radius**, have its model swapped for a phase, or lose its root for a frame — and counting those as kills reset the stop in the middle of a fight. That keep had no end: it ran on the mob's health alone (`IsMobAlive`). When another player landed the kill and the game took the body out of the `Mobs` folder without ever zeroing its Humanoid, the route held **FIGHT** on a reference the scan could never see again and the character stood at the stop — at low health, so it looked like the route was waiting for the heal — until the game finally dropped the model and the stop reset.
+> - The keep now lapses: `S.TargetSeenAt` records the last scan that actually found the mob, and a target the scan has not found for `TARGET_KEEP_TIME` (**4 s** — the folder is read every 0.2 s) is not the stop's boss any more. The same window guards the "a living boss is never a kill" check, so a body the game has taken away cannot pin the stop there either. A boss that comes back inside the window is the same fight, with no reset on the way.
+> - Harness: 186 checks (was 178). New ones: a boss engaged and then removed from the `Mobs` folder while its Humanoid still reads alive (the character at 20 health, no heal available) resets the stop inside the window and moves on; a boss out of reach for 3 s inside the window keeps the same fight, no reset. Mutations caught: the keep never lapses (3 failures), one missed scan is a kill again (13), the kept target refreshing the clock that should run out (3).
+
 ## To Fix
 
 ### [x] Waypoints Looped & Paired Farmzone/Waypoint/Targets: walking back to waypoints that are not paired
