@@ -216,6 +216,12 @@ return {
                 --// BeginStop it leads to. Kept apart so the skip belongs to
                 --// that visit and not to every later one.
                 SkipSpotWaitNext = false,
+                --// The player's death counter (AICFeature.S.DEATH_COUNT, bumped
+                --// by CharacterAdded) as the route last read it. A game that
+                --// respawns in the same instant it kills leaves no dead frame
+                --// to read, so Health alone missed the death and the walk back
+                --// was taken for a fresh arrival - complete with Wait At Spot.
+                DeathMark = nil,
                 WalkStart = nil,
                 Teleported = false,
                 --// A target was fought at this stop, so its absence now means
@@ -327,6 +333,21 @@ return {
         local function GetStops()
             local PlaceConfig = Runtime:GetPlaceConfig()
             return PlaceConfig and PlaceConfig.BOSS_ROUTE or {}
+        end
+
+        --// How many bodies the player has had: Core/Bootstrap bumps this from
+        --// CharacterAdded, so it counts a respawn even when the dead frame was
+        --// never drawn, and it counts one per reset too.
+        local function GetDeathCount()
+            local Stats = AICFeature.S
+            return Stats and tonumber(Stats.DEATH_COUNT) or 0
+        end
+
+        --// Takes the counter as read without calling anything a death. Used
+        --// where the route legitimately stops watching (switched off, a
+        --// profile load) so the deaths of that time are not replayed later.
+        local function SyncDeathMark()
+            S.DeathMark = GetDeathCount()
         end
 
         local function CurrentStop()
@@ -913,9 +934,11 @@ return {
             S.WaitUntil = nil
             S.SpotWaitUntil = nil
             S.WalkStart = nil
-            --// Nothing carries a death's skip into a later run.
+            --// Nothing carries a death's skip into a later run, and a death
+            --// from while the route was off is not the next run's.
             S.SkipSpotWait = false
             S.SkipSpotWaitNext = false
+            SyncDeathMark()
             EndDodge()
             StopFlee()
             AICCombat.S.ClosestTarget = nil
@@ -1057,6 +1080,44 @@ return {
             else
                 Advance(Now)
             end
+        end
+
+        --// A death the dead-frame check never got to see. A game that
+        --// respawns in the same instant it kills destroys the body and hands
+        --// back a live one before the next step, and Runtime:GetCharacter()
+        --// follows it: Health never reads 0, so the route never entered
+        --// Recover and the walk back from the spawn was taken for a fresh
+        --// arrival - which held Wait At Spot at a boss that had just killed
+        --// the character. The player's death counter does not have that gap:
+        --// CharacterAdded bumps it however fast the respawn is.
+        --//
+        --// A bump while Recover runs is the route's own reset (or a death it
+        --// already has), so it is only marked as read.
+        local function WatchDeath(Now)
+            local Count = GetDeathCount()
+
+            if S.DeathMark == nil then
+                S.DeathMark = Count
+                return false
+            end
+
+            if Count <= S.DeathMark then
+                S.DeathMark = Count
+                return false
+            end
+
+            S.DeathMark = Count
+
+            --// Already recovering from it, or nothing left to walk again.
+            if S.Phase == "Recover" or S.Phase == "Done" or not CurrentStop() then
+                return false
+            end
+
+            --// Died and is back already: the stop is walked again from where
+            --// the character is, and its Wait At Spot is not held on the
+            --// arrival - the boss that killed it is standing there.
+            BeginRecover(Now, "DIED", true)
+            return true
         end
 
         --// Waits for the character after a reset or a death, then for Wait
@@ -2244,6 +2305,10 @@ return {
                 return false
             end
 
+            if WatchDeath(Now) then
+                return true
+            end
+
             if S.Phase == "Recover" then
                 return RecoverStep(Now)
             end
@@ -2321,6 +2386,10 @@ return {
                 return false
             end
 
+            if WatchDeath(Now) then
+                return true
+            end
+
             if S.Phase ~= "Recover" then
                 BeginRecover(Now, "DIED", true)
             end
@@ -2343,6 +2412,7 @@ return {
             S.WalkStart = nil
             S.SkipSpotWait = false
             S.SkipSpotWaitNext = false
+            SyncDeathMark()
             ResetWalk()
         end
 
@@ -2356,6 +2426,8 @@ return {
             if Enabled then
                 S.Index = 1
                 S.Phase = "Idle"
+                --// Deaths from while the route was off are not this run's.
+                SyncDeathMark()
                 BeginStop(os.clock())
             else
                 StopRoute("OFF")

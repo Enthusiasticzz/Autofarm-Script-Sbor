@@ -658,6 +658,14 @@ were added.
 > - The hold before a reset (`Reset (s)`, `CLEARING … LOSE n EXP`) is untouched: that one is the EXP the reset would take, not a wait for a spawn.
 > - Harness: 168 checks (was 159). New ones: a character killed on the way to a `Wait = 3` stop respawns, walks the stop again and is in the fight on the frame it arrives — no `WAIT` countdown, swings on that frame — while a fresh arrival at the same stop still holds the wait. Mutations caught: the return holds the wait (3 failures), the skip sticks to later visits (4), the death restart never marks the visit (3).
 
+### [x] Boss Route: still held Wait At Spot after a death at the stop
+
+> **Done (v3.57):** `Features/BossNavigator.lua`, Boss Route only
+> - v3.56 skipped the wait on the visit that follows a death, and could not fire when the death itself was never seen. The route only knew a death from `Humanoid.Health <= 0`, and `Runtime:GetCharacter()` follows the player's current body: a game that respawns in the same instant it kills destroys the dead model and hands back a live one before the next step, so **no dead frame exists to read**. The route stayed in Approach (or Fight) at a stop, the walk from spawn went on as if nothing had happened, and the arrival counted as a fresh visit — Wait At Spot and all.
+> - A death is now read from the player's death counter as well (`AICFeature.S.DEATH_COUNT`, bumped by `CharacterAdded` in `Core/Bootstrap`), which a respawn cannot outrun. A bump the route did not cause is a death it has to recover from: the stop begins again (`DIED`), the walk starts from where the character is, and the arrival skips the wait exactly as v3.56 does. It also fixes the same death seen mid-fight, which used to leave the route standing in **Fight** next to a boss it was no longer fighting.
+> - A bump while the route is already in **Recover** is its own reset (or a death it already has) and is only marked as read, so a reset still moves the route on to the next stop. Switching the route off, a profile load and the end of the run re-take the counter, so deaths from a time the route was not watching are never replayed into the next run.
+> - Harness: 178 checks (was 168). New ones: a body replaced between two frames with no `Health <= 0` — on the walk in and in the fight at the stop — restarts the stop and fights on arrival with no `WAIT`; the harness now bumps the counter on every respawn, the way `CharacterAdded` does, so every reset test proves the route's own resets are not read as deaths. Mutations caught: the counter never noticed (5 failures), a bump during Recover taken as a fresh death (7).
+
 ## To Fix
 
 ### [x] Waypoints Looped & Paired Farmzone/Waypoint/Targets: walking back to waypoints that are not paired

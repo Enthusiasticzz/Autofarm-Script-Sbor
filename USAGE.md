@@ -440,7 +440,9 @@ teleport) to a boss, fight it, and reset back to spawn before the next one.
   **0 by default**. Raise it for a boss that spawns a moment after the walk
   arrives; at 0 the first swing is on the frame the stop is reached. It is
   **not held on the run back from a death**: the stop is walked again right
-  after the respawn and the fight starts on arrival, whatever this box says.
+  after the respawn and the fight starts on arrival, whatever this box says —
+  including on a game that respawns the character in the same instant it dies,
+  where no dead frame is ever drawn for the script to see.
 - **Engage Radius** — how far from the stop a boss is picked up.
 - **Reset After Kill** (on for a new stop) — once the boss is down, reset the
   character so the next stop is travelled to from spawn. Off, the next stop
@@ -529,7 +531,11 @@ the route started on the stop are still walked.
    a visit that continues a stop the character **died** at: the walk back
    starts again from the stop's first path point once the character respawns,
    and the fight starts the moment it is there — the boss that killed it is
-   already standing in the spot, so there is no spawn to wait for. The nearest
+   already standing in the spot, so there is no spawn to wait for. A death is
+   read from the character's health **and** from the player's own death counter
+   (`CharacterAdded`), so a game that respawns in the same instant it kills —
+   no dead frame at all — is still walked back to the stop instead of being
+   taken for a fresh arrival that waits. The nearest
    living mob inside **Engage Radius** that matches **Boss Names** (anything
    when empty) is the target. The sword is asked for from 60
    studs out on the last leg, and again every frame of the fight until the
