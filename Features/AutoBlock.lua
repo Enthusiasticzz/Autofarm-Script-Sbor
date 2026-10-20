@@ -113,7 +113,12 @@ return {
 
             if Success then
                 task.delay(HOP_WATCHDOG, function()
+                    --// Still running means the hop never took, so this attempt
+                    --// is over and the next one is a new departure: it may
+                    --// report again, because the first end described a leave
+                    --// that did not happen.
                     AICFeature.S.Departing = false
+                    AICFeature.S.LeaveStarted = false
                 end)
 
                 return true

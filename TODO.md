@@ -750,6 +750,17 @@ were added.
 
 ## To Fix
 
+### [x] Webhook: the macro-ended report is missing when Leave Instead Of Block kicks
+
+- Leaving through the auto-kick toggle does not post the macro-ended report.
+
+> **Done (v3.70):** `Features/Webhook.lua`, `Features/AutoBlock.lua`, `USAGE.md`.
+> - **A departure now always posts.** `ReportBeforeLeave` posts through `PostReport(true, true, OtherPlayer)`, so the eight-second window cannot swallow it. That window is what lost the message: a kick that lands within eight seconds of another report — a started report on a fresh server with a zero Block Delay, or an earlier end — was treated as a repeat of the same event and dropped. A departure is the one report that cannot be retried, because the client is about to be kicked out of the game.
+> - Repeats are still impossible: `AutoBlock`'s `Departing` latch allows one leave per session, and the four manual-leave signals are silent once `LeaveStarted` is set.
+> - The hop watchdog now clears `LeaveStarted` as well as `Departing`, so a teleport that never happened is treated as a departure that did not happen: a real leave later in that session reports again rather than staying silent.
+> - Plain ends (Auto Farm switched off, a manual leave) keep the window, so the same event seen twice still posts once.
+> - Harness: Webhook suite **157 checks**: a departure inside the window still posts, while `AnnounceEnd` inside the window is skipped; the teleport after a script leave stays silent through the `LeaveStarted` guard rather than the window. AutoBlock suite **52 checks** (was 50): a later departure after a watchdog-cleared hop reports and kicks again. `luau-compile` clean.
+
 ### [x] Auto Block: the leave fires several times in a row and keeps reporting behind the kicked screen
 
 - Leaving the server made four or five rapid leave attempts and posted a report for each.

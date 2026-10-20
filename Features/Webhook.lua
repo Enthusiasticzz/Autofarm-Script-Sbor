@@ -567,9 +567,12 @@ return {
         end
 
         --// Auto Block, Server Hop, Danger Group and Follower Guard call this
-        --// before they leave, so the report is already on its way out.
+        --// before they leave, so the report is already on its way out. A
+        --// departure posts even inside the window: the client is about to go,
+        --// a missed end cannot be retried, and the leave that causes it happens
+        --// once anyway (AutoBlock's LeaveStarted latch).
         AICFeature.ReportBeforeLeave = function(OtherPlayer)
-            return Feature:AnnounceEnd(OtherPlayer)
+            return Feature:PostReport(true, true, OtherPlayer)
         end
 
         local SessionLabel
