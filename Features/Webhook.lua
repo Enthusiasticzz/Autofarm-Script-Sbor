@@ -256,6 +256,84 @@ return {
             return table.concat(Lines, "\n")
         end
 
+        --// Some executors blacklist HttpService:RequestAsync, so the report
+        --// goes through the executor's own request function when one exists
+        --// (syn.request, http.request, http_request, request), and only then
+        --// through HttpService. Returns true, or false and the reason.
+        local function PostJSON(Url, Body)
+            local Headers = { ["Content-Type"] = "application/json" }
+
+            --// Only the functions that exist are kept: a fixed-size table
+            --// with a nil first slot would hide every name after it.
+            local Executors = {}
+            local function AddRequest(Request)
+                if type(Request) == "function" then
+                    table.insert(Executors, Request)
+                end
+            end
+
+            AddRequest(syn and syn.request)
+            AddRequest(http and http.request)
+            AddRequest(http_request)
+            AddRequest(request)
+
+            local LastError
+
+            for _, Request in ipairs(Executors) do
+                local Ok, Response = pcall(Request, {
+                    Url = Url,
+                    Method = "POST",
+                    Headers = Headers,
+                    Body = Body,
+                })
+
+                if not Ok then
+                    LastError = Response
+                elseif type(Response) == "table" then
+                    local Status = tonumber(Response.StatusCode)
+                        or tonumber(Response.statusCode)
+                        or tonumber(Response.Status)
+
+                    if Status == nil then
+                        --// No code to read: a body or anything short of an
+                        --// explicit failure is as much as this executor
+                        --// says about the call.
+                        if Response.Body ~= nil or Response.Success ~= false then
+                            return true
+                        end
+
+                        LastError = "empty response"
+                    elseif Status >= 200 and Status < 300 then
+                        return true
+                    else
+                        return false, "Discord rejected the report (HTTP " .. tostring(Status) .. ")"
+                    end
+                else
+                    LastError = "empty response"
+                end
+            end
+
+            local Ok, Response = pcall(function()
+                return HttpService:RequestAsync({
+                    Url = Url,
+                    Method = "POST",
+                    Headers = Headers,
+                    Body = Body,
+                })
+            end)
+
+            if Ok then
+                if type(Response) == "table" and Response.Success then
+                    return true
+                end
+
+                local Status = type(Response) == "table" and Response.StatusCode or "?"
+                return false, "Discord rejected the report (HTTP " .. tostring(Status) .. ")"
+            end
+
+            return false, "Request failed: " .. tostring(LastError or Response)
+        end
+
         --// Posts the report. The HTTP call runs in the background so the
         --// window does not stall on it, and the result is reported either way.
         function Feature:Send()
@@ -271,9 +349,23 @@ return {
                 return false
             end
 
+            --// The duo is mentioned separately, so both accounts get the
+            --// ping; the same id in both boxes is only mentioned once.
+            local Mentions = {}
             local Ping = FormatPing(CONFIG.DISCORD_PING)
+            local DuoPing = FormatPing(CONFIG.DISCORD_DUO_PING)
+
+            if Ping ~= "" then
+                table.insert(Mentions, Ping)
+            end
+
+            if DuoPing ~= "" and DuoPing ~= Ping then
+                table.insert(Mentions, DuoPing)
+            end
+
+            local Prefix = table.concat(Mentions, " ")
             local Text = self:BuildReport()
-            local Content = Ping ~= "" and (Ping .. "\n" .. Text) or Text
+            local Content = Prefix ~= "" and (Prefix .. "\n" .. Text) or Text
             local Payload = {
                 content = Content,
                 --// Both, so a UserId ping and @everyone both actually mention.
@@ -290,23 +382,10 @@ return {
                     return
                 end
 
-                local RequestOk, Response = pcall(function()
-                    return HttpService:RequestAsync({
-                        Url = Url,
-                        Method = "POST",
-                        Headers = { ["Content-Type"] = "application/json" },
-                        Body = Body,
-                    })
-                end)
+                local Delivered, Reason = PostJSON(Url, Body)
 
-                if not RequestOk then
-                    NotifyAction("Webhook", "Request failed: " .. tostring(Response), 6)
-                    return
-                end
-
-                if type(Response) ~= "table" or not Response.Success then
-                    local Status = type(Response) == "table" and Response.StatusCode or "?"
-                    NotifyAction("Webhook", "Discord rejected the report (HTTP " .. tostring(Status) .. ")", 6)
+                if not Delivered then
+                    NotifyAction("Webhook", tostring(Reason), 6)
                     return
                 end
 
@@ -350,6 +429,11 @@ return {
                 Save("DISCORD_PING", Trim(Value))
             end)
             Section:AddLabel("UserId to ping, everyone, or blank for no ping")
+
+            Section:AddTextbox("Ping Duo User ID", Trim(CONFIG.DISCORD_DUO_PING), function(Value)
+                Save("DISCORD_DUO_PING", Trim(Value))
+            end)
+            Section:AddLabel("Duo's UserId to ping as well, or blank for none")
 
             Section:AddTextbox("Duo Username", Trim(CONFIG.DISCORD_DUO), function(Value)
                 Save("DISCORD_DUO", Trim(Value))

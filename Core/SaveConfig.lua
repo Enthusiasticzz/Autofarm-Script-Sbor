@@ -308,6 +308,10 @@ return {
             { Key = "DISCORD_PING", Default = "", Normalize = function(Value)
                 return type(Value) == "string" and Value:gsub("^%s*(.-)%s*$", "%1") or ""
             end },
+            --// The duo's own UserId, mentioned next to the ping above.
+            { Key = "DISCORD_DUO_PING", Default = "", Normalize = function(Value)
+                return type(Value) == "string" and Value:gsub("^%s*(.-)%s*$", "%1") or ""
+            end },
             { Key = "DISCORD_DUO", Default = "", Normalize = function(Value)
                 return type(Value) == "string" and Value:gsub("^%s*(.-)%s*$", "%1") or ""
             end },

@@ -91,6 +91,7 @@ return {
             --// Webhook
             ["Webhook URL"] = "Discord webhook the report is posted to",
             ["Ping User ID"] = "UserId to mention, everyone, or blank for none",
+            ["Ping Duo User ID"] = "Duo's UserId to mention too, or blank for none",
             ["Duo Username"] = "Name reported next to yours; blank when solo",
             ["Report Format"] = "Which report to post: Event Currency or EXP Grind",
             ["EC Item Name"] = "Inventory item counted as EC; blank uses the tracked currency",

@@ -786,6 +786,7 @@ in `AutoFarmProfiles/Global.json`, so every profile and place reports to the sam
 
 - **Webhook URL** — the Discord webhook URL (`https://discord.com/api/webhooks/...`). Blank sends nothing.
 - **Ping User ID** — a UserId to mention with the report, `everyone` for `@everyone`, or blank to mention nobody. A hand-typed `@name` is passed through.
+- **Ping Duo User ID** — your duo's UserId, mentioned alongside yours so both accounts get the ping. Blank mentions nobody extra; the same id in both boxes is only mentioned once.
 - **Duo Username** — who you are duoing with. Blank reports only your account; filled in, the Account line reads `You and Them`.
 - **Report Format** — **Event Currency** or **EXP Grind**; it chooses which two numbers the report carries (see below).
 - **EC Item Name** — the inventory item counted as event currency. Blank uses the currency the script already tracks for the current event (`Fallen Camellia` now).
@@ -810,6 +811,7 @@ and the rest is unchanged. `Time` is `Nh NNm` after an hour and `N min` before i
 - The start time is **US Eastern** (`EST`, or `EDT` while daylight saving is on — the clock is correct either way).
 - **Sending does not restart the session**, so repeated reports keep the same start and starting numbers and only the current ones move; press **Reset Session** to start a new one.
 - The floor name is looked up from the PlaceId; until that answers (or if it cannot), the report uses the server's own name.
+- Some executors blacklist `HttpService:RequestAsync` (the `disabled/blacklisted` notice). The report goes through the executor's own request function when it has one — `syn.request`, `http.request`, `http_request`, `request` — and only falls back to `HttpService` when none does, so it sends either way. If every route fails, the notification carries the reason.
 
 ### Configuration panel
 

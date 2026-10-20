@@ -2,7 +2,7 @@
 
 Status: `[ ]` not started · `[x]` done or fixed (written, not yet verified in-game)
 
-All 135 items are complete — nothing here is pending. This file is the record of
+All 136 items are complete — nothing here is pending. This file is the record of
 what was asked for and what shipped, oldest work first: `## To Do` lists requested
 features, `## To Fix` lists reported bugs. Every item names the version it shipped
 in, and the note under it explains what actually changed and which tuning constants
@@ -703,6 +703,16 @@ were added.
 > - Harness: 16 checks over the section order (leave toggle above the divider, the divider above Auto Block, Auto Confirm Block directly below it and above the delay), both toggles bound as saved features, and the confirm hook reaching the module. `luau-compile` clean on every touched file.
 
 ## To Fix
+
+### [x] Webhook: "Request failed: This function has been disabled/blacklisted", and a ping for the duo
+
+- Sending a report fails with `Request failed: Features/Webhook.lua:294: This function has been disabled/blacklisted for`.
+- Add a box to ping your duo as well, blank when there is none.
+
+> **Done (v3.60):** `Features/Webhook.lua`, `Core/SaveConfig.lua` (`DISCORD_DUO_PING`), `UI/Descriptions.lua`, `USAGE.md`.
+> - The executor blacklists `HttpService:RequestAsync`, so the report now posts through the executor's own request function first — `syn.request`, `http.request`, `http_request`, `request`, whichever is present — and only falls back to `HttpService` when none exists. A 2xx status, or an answer with a body and no failure flag, counts as sent; a 4xx/5xx is reported as `Discord rejected the report (HTTP nnn)`. If every route fails, the notification carries the reason instead of the bare blacklist error.
+> - New **Ping Duo User ID** box under **Ping User ID**: the duo's UserId is mentioned next to yours, so both accounts get pinged. Blank adds nothing, and the same id in both boxes is mentioned once. It is a global setting like the rest of the section.
+> - Harness: 84 checks (was 54). New ones: each executor function used when present (`syn.request`, `http.request`, `http_request`, `request`), `HttpService` used only when no executor function exists, a 204 and a body-only answer counting as sent, a 400 reported as rejected, a blacklisted `RequestAsync` still sending through the executor, and the duo ping (blank, filled, `everyone`, same id as yours mentioned once) in the message and its save. `luau-compile` clean.
 
 ### [x] Waypoints Looped & Paired Farmzone/Waypoint/Targets: walking back to waypoints that are not paired
 
