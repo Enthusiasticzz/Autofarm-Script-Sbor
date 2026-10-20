@@ -334,6 +334,14 @@ return {
             -- Keep walkspeed / position UI in sync every frame (was RenderUpdate)
             Feature:RenderUpdate(dt)
 
+            --// A departure is under way: the client is being teleported, or it
+            --// is already disconnected behind a kick screen while the executor
+            --// keeps running. Nothing acts and nothing reports again until the
+            --// script reloads in the next server.
+            if AICFeature.S.Departing then
+                return
+            end
+
             local now = os.clock()
             local Character, Humanoid, RootPart = Runtime:GetCharacter()
             local InputBindableFunction = Runtime:GetInputBindableFunction()

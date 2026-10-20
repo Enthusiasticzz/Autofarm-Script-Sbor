@@ -708,12 +708,22 @@ return {
             end
         end
 
+        --// A leave the script started has already posted its own end report
+        --// (`ReportBeforeLeave` set AutoBlock's LeaveStarted). The signals
+        --// below are for departures the script did not start, so they stay
+        --// silent once one has: a kick leaves the client sitting on the
+        --// disconnect screen with the script still running, and the end
+        --// report used to go out again and again from here.
+        local function ScriptLeaveReported()
+            return AICFeature.S ~= nil and AICFeature.S.LeaveStarted == true
+        end
+
         --// A teleport the script did not start (a door in the game, another
         --// script, the game's own party teleport) still reports first. The
         --// leave hook does not fire for it, so this is the only notice.
         if Player.OnTeleport then
             Context.Connect(Player.OnTeleport, function(State)
-                if State == Enum.TeleportState.Started then
+                if State == Enum.TeleportState.Started and not ScriptLeaveReported() then
                     Feature:AnnounceEnd()
                 end
             end)
@@ -725,7 +735,7 @@ return {
         local Players = Services.Players or game:GetService("Players")
 
         Context.Connect(Players.PlayerRemoving, function(Who)
-            if Who == Player then
+            if Who == Player and not ScriptLeaveReported() then
                 Feature:AnnounceEnd()
             end
         end)
@@ -735,7 +745,7 @@ return {
         --// when the player is destroyed, not on a respawn.
         if Player.AncestryChanged then
             Context.Connect(Player.AncestryChanged, function(_, Parent)
-                if Parent == nil then
+                if Parent == nil and not ScriptLeaveReported() then
                     Feature:AnnounceEnd()
                 end
             end)
@@ -745,7 +755,9 @@ return {
         --// it to fire on leave. Wrapped, so a refusal changes nothing.
         pcall(function()
             game:BindToClose(function()
-                Feature:AnnounceEnd()
+                if not ScriptLeaveReported() then
+                    Feature:AnnounceEnd()
+                end
             end)
         end)
 

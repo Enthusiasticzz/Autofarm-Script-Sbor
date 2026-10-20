@@ -57,16 +57,96 @@ return {
             end
         end
 
-        --// Every hop in the farm (block, server age) goes through here, so the
-        --// Webhook report is posted before the client is moved and cannot be
-        --// cut off by the teleport. A hop caused by a player names them in the
-        --// report, so the log says who it was.
-        function AutoBlock:TeleportToPlace(PlaceId, OtherPlayer)
+        --// One departure per session. A teleport or kick can fail without
+        --// saying so, and the farm used to ask again on the very next frame:
+        --// each ask posted another departure report and, after a kick, the
+        --// farm kept running behind the disconnect screen. Departing is set
+        --// on the first ask and cleared only by the script reloading in the
+        --// next server, or by the watchdog of a hop that never happened;
+        --// LeaveStarted records that the report went out, so a retry cannot
+        --// post it twice; LeaveAttempts counts teleport tries, so a refused
+        --// hop gets one retry and then gives up with a notice.
+        AICFeature.S.Departing = false
+        AICFeature.S.LeaveStarted = false
+        AICFeature.S.LeaveAttempts = 0
+
+        --// Seconds before a refused teleport is tried once more.
+        local LEAVE_RETRY_DELAY = 10
+
+        --// A teleport that never happens leaves the client where it was. If
+        --// this timer still runs, the hop did not take, so the latch is freed
+        --// and the farm may try again - with no second report, because
+        --// LeaveStarted stays set. A kick runs no such timer: it is decisive,
+        --// and repeating it is what put the client through five kicks' worth
+        --// of reports.
+        local HOP_WATCHDOG = 20
+
+        function AutoBlock:IsLeaving()
+            return AICFeature.S.Departing == true
+        end
+
+        --// The departure report, posted once. False when one was already sent,
+        --// so a retry or a second caller cannot report the same leave again.
+        function AutoBlock:BeginLeave(OtherPlayer)
+            if AICFeature.S.LeaveStarted then
+                return false
+            end
+
+            AICFeature.S.LeaveStarted = true
+
             if AICFeature.ReportBeforeLeave then
                 AICFeature.ReportBeforeLeave(OtherPlayer)
             end
 
-            game:GetService("TeleportService"):Teleport(PlaceId or game.PlaceId, Player)
+            return true
+        end
+
+        --// The teleport itself, carrying out a departure that has already been
+        --// reported. A refusal is retried once, later, and then dropped with a
+        --// notice rather than being asked for again every frame.
+        function AutoBlock:SendHop(Target)
+            AICFeature.S.LeaveAttempts += 1
+
+            local Success, Error = pcall(function()
+                game:GetService("TeleportService"):Teleport(Target, Player)
+            end)
+
+            if Success then
+                task.delay(HOP_WATCHDOG, function()
+                    AICFeature.S.Departing = false
+                end)
+
+                return true
+            end
+
+            warn("[AutoBlock] Teleport failed:", Error)
+
+            if AICFeature.S.LeaveAttempts >= 2 then
+                NotifyAction("Auto Block", "Could not leave the server", 6)
+                return false
+            end
+
+            task.delay(LEAVE_RETRY_DELAY, function()
+                AutoBlock:SendHop(Target)
+            end)
+
+            return false
+        end
+
+        --// Every hop in the farm (block, server age) goes through here, so the
+        --// Webhook report is posted before the client is moved and cannot be
+        --// cut off by the teleport. A hop caused by a player names them in the
+        --// report, so the log says who it was. Only the first hop of a session
+        --// is made and reported; a later call is ignored.
+        function AutoBlock:TeleportToPlace(PlaceId, OtherPlayer)
+            if self:IsLeaving() then
+                return false
+            end
+
+            AICFeature.S.Departing = true
+            self:BeginLeave(OtherPlayer)
+
+            return self:SendHop(PlaceId or game.PlaceId)
         end
 
         --// Someone on the Block Whitelist is never the reason the game is
@@ -91,19 +171,30 @@ return {
                 return false
             end
 
-            if AICFeature.ReportBeforeLeave then
-                AICFeature.ReportBeforeLeave(OtherPlayer)
+            if self:IsLeaving() then
+                return false
             end
+
+            AICFeature.S.Departing = true
+            self:BeginLeave(OtherPlayer)
 
             local Text = Reason or "Auto Block: leaving the game"
 
             if OtherPlayer and OtherPlayer.Name then
-                Text = Text .. " (@" .. OtherPlayer.Name .. ")"
+                Text = Text .. " (@" .. tostring(OtherPlayer.Name) .. ")"
             end
 
-            pcall(function()
+            local Success = pcall(function()
                 Player:Kick(Text)
             end)
+
+            if Success then
+                return true
+            end
+
+            --// The kick was refused: hop instead, with no second report, so
+            --// the setting still gets the client out of the server.
+            return self:SendHop(game.PlaceId)
         end
 
         function AutoBlock:NormalizeUserId(Value)

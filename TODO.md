@@ -750,6 +750,20 @@ were added.
 
 ## To Fix
 
+### [x] Auto Block: the leave fires several times in a row and keeps reporting behind the kicked screen
+
+- Leaving the server made four or five rapid leave attempts and posted a report for each.
+- Leave Instead Of Block only kicks the client, and the script kept posting session reports while it sat on the kicked menu.
+- Wanted: something that returns to the home screen, or the behaviour removed.
+
+> **Done (v3.69):** `Features/AutoBlock.lua`, `Features/AutoFarming.lua`, `Features/Webhook.lua`, `USAGE.md`.
+> - **One departure per session.** `AutoBlock` now keeps `Departing` (a leave is under way), `LeaveStarted` (its report went out) and `LeaveAttempts` (teleport tries). `TeleportToPlace` and `LeaveGame` latch on the first ask and refuse every later one, so the frame after the click cannot hop or kick again. `BeginLeave` posts the departure report exactly once; a retry after a refused teleport reuses it, so the retry is silent.
+> - **The farm stops with the leave.** `AutoFarming:Update` returns at once while `Departing` is set, which is what ends the reports after a kick: the client can stay on the disconnect screen with the executor alive, and the farm used to keep calling `LeaveGame` there, posting an end report every eight seconds.
+> - **The signals for a leave the script did not start stay quiet** once `LeaveStarted` is set — `Player.OnTeleport`, `Players.PlayerRemoving`, `AncestryChanged` and `BindToClose` — so a kicked client cannot post the end again from any of them.
+> - **A refused teleport retries once, ten seconds later, then gives up with `Could not leave the server`** instead of asking every frame; a refused kick falls back to a hop, with no second report. A hop that reports success but never happens frees `Departing` after a 20 s watchdog, so a dead teleport cannot freeze the run; a kick schedules no watchdog, because repeating it is the fault being fixed.
+> - **On reaching the home screen:** Roblox has no client-side API for it. `Player:Kick()` disconnects to the kick screen (the built-in Leave uses `game:Shutdown()` from a restricted CoreScript), `GuiService:SetMenuIsOpen` is `RobloxScriptSecurity`, and `SetCore` has no leave key — so the kick stays as the only exit, made once.
+> - Harness: AutoBlock suite **50 checks** (was 27): one kick and one report per session with the repeats refused, a refused kick hopping instead, a second hop refused, a refused teleport reported once and retried once after 10 s, the retry carrying the departure out without a second report, a second refusal saying so, the hop watchdog freeing the latch without a report, and a kick scheduling no watchdog. Webhook suite **157 checks** (was 152): every manual-leave signal silent after a script leave, and a manual leave still reporting when nothing left first. `luau-compile` clean.
+
 ### [x] Webhook: no end report when Auto Farm is switched off, the whitelist ignored by Leave Instead Of Block, and the started report carrying the starting numbers
 
 - Switching Auto Farm off did not post the macro-ended message to Discord.
