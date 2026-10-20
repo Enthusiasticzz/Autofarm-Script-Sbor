@@ -2,7 +2,7 @@
 
 Status: `[ ]` not started · `[x]` done or fixed (written, not yet verified in-game)
 
-All 136 items are complete — nothing here is pending. This file is the record of
+All 137 items are complete — nothing here is pending. This file is the record of
 what was asked for and what shipped, oldest work first: `## To Do` lists requested
 features, `## To Fix` lists reported bugs. Every item names the version it shipped
 in, and the note under it explains what actually changed and which tuning constants
@@ -701,6 +701,17 @@ were added.
 > - **Auto Confirm Block** had to be made by AutoBlock rather than AutoBlockConfirm: that module starts after it, so its toggle used to land past the whitelist at the end of the section. AutoBlock now makes the toggle in place and calls `AICFeature.OnAutoBlockConfirmChanged`, which AutoBlockConfirm sets with the old on/off behaviour (warn when the executor cannot reach CoreGui, disarm when switched off).
 > - `UI/Utils.lua` gained `Section:AddDivider()`: a LayoutOrder component, so later controls still land in the right place.
 > - Harness: 16 checks over the section order (leave toggle above the divider, the divider above Auto Block, Auto Confirm Block directly below it and above the delay), both toggles bound as saved features, and the confirm hook reaching the module. `luau-compile` clean on every touched file.
+
+### [x] Webhook: report the EXP bar on the level lines, and spell the time out in seconds
+
+- The EXP report should show the level and the EXP inside that level's bar: `Current Level & EXP: <level> - <exp>/<needed>`, and the same on the starting line.
+- `Time` should carry seconds, like `23 Minutes, 10 Seconds`.
+
+> **Done (v3.61):** `Features/Webhook.lua`, `USAGE.md`.
+> - **EXP Grind** now reads `Current Level & EXP: 250 - 1234/2438097` and `Starting Level & EXP: 248 - 8110/2394027`. The level comes from `PlayerStats.Level`, the progress from `PlayerStats.EXP`, and the bar size from `AICUI.neededExp(Level)` — the same curve the HUD prints, so `Needed` always matches the bar on screen. A missing `EXP` stat reads 0, and a level with no curve yet reads `0` rather than leaving a gap in the line.
+> - `StartExp` is captured with `StartLevel` (and retried alongside it until PlayerStats loads), so the starting line keeps the EXP it had before the session levelled up.
+> - `Time` is now `23 Minutes, 10 Seconds`, with hours in front when there are any — `2 Hours, 15 Minutes, 42 Seconds`. Singular units read `1 Minute` / `1 Second`, and the live **SESSION STARTED** line uses the same format, so it ticks in seconds.
+> - Harness: 89 checks (was 84). New ones: `Current Level & EXP` and `Starting Level & EXP` shapes and values, the bar size at level 250 from `AICUI.neededExp`, the starting EXP kept after a level-up and after `ResetSession`, a missing `EXP` stat reading 0, and every time string (`0 Seconds`, `10 Seconds`, `1 Minute, 5 Seconds`, `1 Hour, 2 Minutes, 5 Seconds`, `23 Minutes, 10 Seconds`). `luau-compile` clean.
 
 ## To Fix
 

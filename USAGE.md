@@ -802,11 +802,23 @@ Account: YourName and DuoName
 Floor: Floor Name (10299594856)
 Current EC: 1204
 Starting EC: 900
-Time: 2h 15m
+Time: 2 Hours, 15 Minutes, 42 Seconds
 ```
 
-With **EXP Grind** picked, `Current EC` / `Starting EC` become `Current Level` / `Starting Level`
-and the rest is unchanged. `Time` is `Nh NNm` after an hour and `N min` before it.
+With **EXP Grind** picked, the two number lines become level and progress inside that
+level's EXP bar, in the form `Level - EXP/Needed`, and the rest is unchanged:
+
+```text
+Current Level & EXP: 250 - 1234/2438097
+Starting Level & EXP: 248 - 8110/2394027
+```
+
+`Needed` comes from the same EXP curve the HUD uses (`AICUI.neededExp`), so it always
+matches the bar on screen. Both the level and the EXP are captured when the session
+starts, so the starting line keeps the numbers it had before levelling up.
+
+`Time` is spelled out in minutes and seconds — `23 Minutes, 10 Seconds` — with hours
+added in front for a longer run: `2 Hours, 15 Minutes, 42 Seconds`.
 
 - The start time is **US Eastern** (`EST`, or `EDT` while daylight saving is on — the clock is correct either way).
 - **Sending does not restart the session**, so repeated reports keep the same start and starting numbers and only the current ones move; press **Reset Session** to start a new one.

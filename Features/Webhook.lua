@@ -33,6 +33,9 @@ return {
                 --// is the value before the grind rather than the value now.
                 StartCurrency = nil,
                 StartLevel = nil,
+                --// The progress inside the starting level's bar, so the
+                --// starting line keeps its EXP after levelling up.
+                StartExp = nil,
                 LastLabelUpdate = 0,
             },
         }
@@ -63,6 +66,29 @@ return {
             return tonumber(Stat.Value) or 0
         end
 
+        --// The progress inside the current level's bar, and how big that
+        --// bar is (the same curve the HUD prints).
+        local function ReadExp()
+            local PlayerStats = GetPlayerStats()
+            local Stat = PlayerStats and PlayerStats:FindFirstChild("EXP")
+
+            if not Stat then
+                return nil
+            end
+
+            return tonumber(Stat.Value) or 0
+        end
+
+        local function NeededExp(Level)
+            local Needed = AICUI.neededExp
+
+            if type(Needed) ~= "function" or not Level or Level <= 0 then
+                return nil
+            end
+
+            return math.max(0, math.floor(tonumber(Needed(Level)) or 0))
+        end
+
         local function ReadCurrency()
             local PlayerStats = GetPlayerStats()
             local Inventory = PlayerStats and PlayerStats:FindFirstChild("Inventory")
@@ -81,17 +107,29 @@ return {
             return tonumber(Amount) or 0
         end
 
-        --// "2h 05m" for an hour or more, otherwise "42 min".
+        --// "23 Minutes, 10 Seconds"; hours are added above that.
         local function FormatDuration(Seconds)
             local Total = math.max(0, math.floor(tonumber(Seconds) or 0))
             local Hours = math.floor(Total / 3600)
             local Minutes = math.floor((Total % 3600) / 60)
+            local Rest = Total % 60
+            local Parts = {}
 
-            if Hours > 0 then
-                return string.format("%dh %02dm", Hours, Minutes)
+            local function Add(Value, Singular, Plural)
+                table.insert(Parts, string.format("%d %s", Value, Value == 1 and Singular or Plural))
             end
 
-            return string.format("%d min", Minutes)
+            if Hours > 0 then
+                Add(Hours, "Hour", "Hours")
+            end
+
+            if Hours > 0 or Minutes > 0 then
+                Add(Minutes, "Minute", "Minutes")
+            end
+
+            Add(Rest, "Second", "Seconds")
+
+            return table.concat(Parts, ", ")
         end
 
         --// United States Eastern time for the header. os.date is the
@@ -205,6 +243,7 @@ return {
             self.S.StartedClock = EasternTime()
             self.S.StartCurrency = ReadCurrency()
             self.S.StartLevel = ReadLevel()
+            self.S.StartExp = ReadExp()
             self.S.LastLabelUpdate = 0
         end
 
@@ -220,6 +259,10 @@ return {
             if self.S.StartLevel == nil then
                 self.S.StartLevel = ReadLevel()
             end
+
+            if self.S.StartExp == nil then
+                self.S.StartExp = ReadExp()
+            end
         end
 
         --// The message body, in the order Discord shows it.
@@ -230,6 +273,7 @@ return {
 
             local Currency = ReadCurrency()
             local Level = ReadLevel()
+            local Exp = ReadExp()
             local Duo = Trim(CONFIG.DISCORD_DUO)
             local Account = Player.Name
 
@@ -244,8 +288,22 @@ return {
             }
 
             if CONFIG.DISCORD_FORMAT == FORMAT_EXP then
-                table.insert(Lines, "Current Level: " .. tostring(Level or 0))
-                table.insert(Lines, "Starting Level: " .. tostring(self.S.StartLevel or Level or 0))
+                --// Level, then the progress inside its bar and that bar's
+                --// size: "250 - 1234/2438097".
+                table.insert(Lines, string.format(
+                    "Current Level & EXP: %s - %s/%s",
+                    tostring(Level or 0),
+                    tostring(Exp or 0),
+                    tostring(NeededExp(Level) or 0)
+                ))
+
+                local StartLevel = self.S.StartLevel or Level or 0
+                table.insert(Lines, string.format(
+                    "Starting Level & EXP: %s - %s/%s",
+                    tostring(StartLevel),
+                    tostring(self.S.StartExp or Exp or 0),
+                    tostring(NeededExp(StartLevel) or 0)
+                ))
             else
                 table.insert(Lines, "Current EC: " .. tostring(Currency or 0))
                 table.insert(Lines, "Starting EC: " .. tostring(self.S.StartCurrency or Currency or 0))
