@@ -271,8 +271,9 @@ return {
             end
         end
 
-        --// The message body, in the order Discord shows it.
-        function Feature:BuildReport()
+        --// The message body, in the order Discord shows it. Leaving says so:
+        --// the report posted on the way out is the one that turns the run off.
+        function Feature:BuildReport(Leaving)
             --// A report built before the first update still gets the session's
             --// starting numbers rather than today's.
             self:CaptureStart()
@@ -288,7 +289,8 @@ return {
             end
 
             local Lines = {
-                "# Macro Started at " .. tostring(self.S.StartedClock or EasternTime()),
+                (Leaving and "# Macro Turned off at " or "# Macro Started at ")
+                    .. tostring(self.S.StartedClock or EasternTime()),
                 "Account: " .. Account,
                 string.format("Floor: %s (%s)", GetPlaceName(game.PlaceId), tostring(game.PlaceId)),
             }
@@ -296,7 +298,7 @@ return {
             if CONFIG.DISCORD_FORMAT == FORMAT_EXP then
                 --// One number per line: the level on its own, then the
                 --// progress inside that level's bar as "exp/needed".
-                table.insert(Lines, "Current Level: " .. tostring(Level or 0))
+                table.insert(Lines, "**Current Level:** " .. tostring(Level or 0))
                 table.insert(Lines, string.format(
                     "Current EXP: %s/%s",
                     tostring(Exp or 0),
@@ -304,7 +306,7 @@ return {
                 ))
 
                 local StartLevel = self.S.StartLevel or Level or 0
-                table.insert(Lines, "Starting Level: " .. tostring(StartLevel))
+                table.insert(Lines, "**Starting Level:** " .. tostring(StartLevel))
                 table.insert(Lines, string.format(
                     "Starting EXP: %s/%s",
                     tostring(self.S.StartExp or Exp or 0),
@@ -400,7 +402,7 @@ return {
 
         --// Everything a report needs, or nil and why it cannot be made. The
         --// URL is checked first so an unconfigured hop stays silent.
-        local function BuildPayload()
+        local function BuildPayload(Leaving)
             local Url = Trim(CONFIG.DISCORD_WEBHOOK)
 
             if Url == "" then
@@ -426,7 +428,7 @@ return {
             end
 
             local Prefix = table.concat(Mentions, " ")
-            local Text = Feature:BuildReport()
+            local Text = Feature:BuildReport(Leaving == true)
             local Content = Prefix ~= "" and (Prefix .. "\n" .. Text) or Text
 
             local Ok, Body = pcall(function()
@@ -489,7 +491,7 @@ return {
             self.S.LeaveSentAt = Now
             self:CaptureStart()
 
-            local Payload = BuildPayload()
+            local Payload = BuildPayload(true)
 
             if not Payload then
                 return false

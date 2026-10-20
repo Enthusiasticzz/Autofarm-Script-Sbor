@@ -49,7 +49,9 @@ that matches usually ends the frame:
 8. **Retreat.** An enemy skill makes it retreat until the skill ends; health below
    **Retreat At HP%** makes it retreat until health recovers (or, on the route, keeps
    walking). **Execute Charge at HP%** overrides retreat to finish a low-health
-   target. Retreating skips everything below.
+   target. Retreating skips everything below, with one exception: at a Boss Route
+   stop whose boss is already down, the retreat yields, because the reset it is owed
+   refills health anyway and healing first only held that reset back.
 9. Drink a potion when **Auto Heal at HP%** is met (and not mid-dodge). A mob
    already in reach no longer blocks the drink while health is also below
    **Retreat At HP%**: standing in the fight that is taking the health was
@@ -581,6 +583,18 @@ the route started on the stop are still walked.
    the corpse while a mob hits it is what killed the character before the
    reset it was waiting for. The borrowed sprint speed is put back when the
    hold ends.
+
+   **A boss killed while you were dead still counts.** If the character dies at
+   a stop it was fighting, the walk back watches the spot instead of assuming:
+   a boss that is still there is walked to and fought as usual, and a spot that
+   stays empty for a second is this stop's kill — the duo (or another player)
+   finished it while you were down. The status says `BOSS DOWN WHILE AWAY` and
+   the toast `Boss at stop #n died while away; counted as this stop's kill`, and
+   the route runs the ordinary **Reset After Kill** flow from step 5, EXP hold
+   included, instead of walking to an empty spot and moving on without one. The
+   check needs a boss that had been engaged at the stop before the death; a stop
+   whose boss was never seen is still treated as not spawned rather than killed,
+   so a wrong spot cannot reset the character over and over.
    The protection is a property of the bar, not of the level, so a level where
    a reset was free is still held once the EXP climbs past it. Then the
    character is reset (health set to 0, the same reset Party System uses). That
@@ -822,7 +836,7 @@ starts, so the starting line keeps the numbers it had before levelling up.
 `Time` is spelled out in minutes and seconds — `23 Minutes, 10 Seconds` — with hours
 added in front for a longer run: `2 Hours, 15 Minutes, 42 Seconds`.
 
-- The start time is **US Eastern** (`EST`, or `EDT` while daylight saving is on — the clock is correct either way). Only the clock is shown — no date — so the header stays short.
+- The start time is **US Eastern** (`EST`, or `EDT` while daylight saving is on — the clock is correct either way). Only the clock is shown — no date — so the header stays short. A report posted on the way out (see below) reads `# Macro Turned off at` instead of `# Macro Started at`, so a leave is distinguishable from a manual **Send Report** at a glance.
 - **Sending does not restart the session**, so repeated reports keep the same start and starting numbers and only the current ones move; press **Reset Session** to start a new one.
 - **A report is posted every time the script leaves a server**, before the client moves: Auto Block after the block goes through, **Leave Instead Of Block**, the server-age hop, the Danger Group hop, **Rejoin** / **Server Hop** / **Join Job ID**, and Follower Guard's kick. The post is synchronous, so the teleport or kick cannot cut the request off. Two calls within a few seconds count as one departure, so the hop and the teleport it starts post once.
 - A teleport the script did not start — a door in the game, the game's own party teleport, another script — is caught from `Player.OnTeleport` and reports too. Leaving by hand with Roblox's own menu cannot be caught reliably, because the client stops running the script as it closes; it reports when the executor fires `PlayerRemoving` for you before shutting the client down.

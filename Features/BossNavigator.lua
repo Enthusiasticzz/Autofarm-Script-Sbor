@@ -242,6 +242,13 @@ return {
                 --// Something matching the stop was engaged on this visit, which
                 --// is what a reset after the kill is owed for.
                 FoughtThisVisit = false,
+                --// The character died at this stop, which had a boss when it
+                --// did: the walk back watches the spot, and a boss that is
+                --// gone is counted as this stop's kill (the duo finished it).
+                ReturnKill = false,
+                --// First frame the return walk found no boss at the spot, so a
+                --// single missed scan is not taken for a kill.
+                ReturnMissAt = nil,
                 --// The mob this stop was last fighting. A scan can lose a live
                 --// boss (out of the engage radius, a model swap, a root that
                 --// is gone for a moment) and that is not a kill, so this one
@@ -998,6 +1005,10 @@ return {
             S.ResetFiredAt = nil
             S.ResetRetries = 0
             S.RestartStop = false
+            --// A new visit has not been fought yet. The return check is armed
+            --// again by FinishRecovery, after this reset.
+            S.ReturnKill = false
+            S.ReturnMissAt = nil
             S.RecoveredAt = nil
             StopFlee()
             S.HpAt = nil
@@ -1094,7 +1105,14 @@ return {
                 --// followed by the fight straight away, whatever the stop's
                 --// Wait At Spot says: nothing is being waited for.
                 S.SkipSpotWaitNext = true
+                --// A boss this stop had before the death is carried into the
+                --// walk back: if it is gone when the character returns, the
+                --// duo finished it and the stop still owes its reset.
+                local HadBoss = S.SeenTarget == true
+                    or S.FoughtThisVisit == true
+                    or S.ReturnKill == true
                 BeginStop(Now)
+                S.ReturnKill = HadBoss
             else
                 Advance(Now)
             end
@@ -1968,6 +1986,54 @@ return {
             return true
         end
 
+        --// How long a spot with no boss has to stay empty before the walk back
+        --// calls it a kill: one scan miss can be a model swap, two cannot.
+        local RETURN_KILL_MISS_SECONDS = 1
+
+        --// Back at a stop the character died at. The boss may have been killed
+        --// by the duo (or anyone else) while the character was dead, and that
+        --// kill used to be invisible: the walk back found nothing at the spot,
+        --// the stop timed out and the route moved on with no reset. The spot is
+        --// watched instead - a living boss is walked to as usual, and a spot
+        --// that stays empty is this stop's kill. The reset that follows is the
+        --// ordinary one, so its Reset After pause and its EXP hold are exactly
+        --// the ones a kill the character landed itself gets.
+        local function CheckReturnKill(Stop, Now)
+            if FindTarget(Stop, Now) then
+                S.ReturnMissAt = nil
+                return false
+            end
+
+            if not S.ReturnMissAt then
+                S.ReturnMissAt = Now
+                return false
+            end
+
+            if Now - S.ReturnMissAt < RETURN_KILL_MISS_SECONDS then
+                return false
+            end
+
+            S.ReturnMissAt = nil
+            S.ReturnKill = false
+            S.Phase = "Fight"
+            S.FightStart = Now
+            S.SeenTarget = true
+            S.FoughtThisVisit = true
+            S.LastTarget = nil
+            S.TargetSeenAt = nil
+            S.KillAt = Now
+            SetStatus(string.format(
+                "STOP %d/%d  BOSS DOWN WHILE AWAY",
+                S.Index,
+                #GetStops()
+            ))
+            Say("Boss Route", string.format(
+                "Boss at stop #%d died while away; counted as this stop's kill",
+                S.Index
+            ), 4)
+            return true
+        end
+
         local function ApproachStep(Stop, Now)
             local _, Humanoid, RootPart = Runtime:GetCharacter()
 
@@ -2037,6 +2103,14 @@ return {
 
             if S.WaitUntil and Now < S.WaitUntil then
                 Humanoid:Move(Vector3.zero)
+                return
+            end
+
+            --// Walking back from a death: a boss that is still there is walked
+            --// to, and one that is gone is the kill the character did not get
+            --// to see. Checked on the way, not only at the spot, so a kill the
+            --// duo lands during the run back does not cost the whole walk.
+            if S.ReturnKill and CheckReturnKill(Stop, Now) then
                 return
             end
 
@@ -2412,6 +2486,27 @@ return {
         --// means the route owns this frame's movement and combat.
         AICFeature.BossStep = function(Now)
             return Step(Now)
+        end
+
+        --// The stop's boss is down but the route has not acted on it yet: the
+        --// kill was stamped, or the target being fought is no longer alive.
+        --// Auto Farm's health retreat hands the frame back every frame while
+        --// it runs, so a kill landed at low health was invisible to the route:
+        --// it stayed in RETREAT (healing, and waiting to be healed) until the
+        --// health came back, and only then ran again and reset. The retreat
+        --// yields the frame instead, and the reset it is owed happens now.
+        AICFeature.BossKillPending = function()
+            if not IsEnabled() or S.Phase ~= "Fight" then
+                return false
+            end
+
+            if S.KillAt then
+                return true
+            end
+
+            return S.SeenTarget == true
+                and S.LastTarget ~= nil
+                and not IsMobAlive(S.LastTarget)
         end
 
         --// Called while the character is dead or gone, where Auto Farm

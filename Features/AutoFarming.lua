@@ -542,6 +542,19 @@ return {
                 end
             end
 
+            --// The stop's boss is already down: the reset it is owed (or the
+            --// step to the next stop) has to happen now, and the reset refills
+            --// health anyway. A health retreat owns the frame every frame it
+            --// runs, so left alone it could not see the kill at all and kept
+            --// healing until the health came back before the route ran again.
+            if AICCombat.S.RETREATING
+                and AICFeature.BossKillPending
+                and AICFeature.BossKillPending()
+            then
+                AICCombat.S.RETREATING = false
+                AICCombat.S.RetreatReason = nil
+            end
+
             if AICCombat.S.RETREATING then
                 SetFarmState("RETREAT (" .. tostring(AICCombat.S.RetreatReason or "?") .. ")")
 

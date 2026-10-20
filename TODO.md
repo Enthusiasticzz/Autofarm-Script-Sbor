@@ -2,7 +2,7 @@
 
 Status: `[ ]` not started · `[x]` done or fixed (written, not yet verified in-game)
 
-All 139 items are complete — nothing here is pending. This file is the record of
+All 141 items are complete — nothing here is pending. This file is the record of
 what was asked for and what shipped, oldest work first: `## To Do` lists requested
 features, `## To Fix` lists reported bugs. Every item names the version it shipped
 in, and the note under it explains what actually changed and which tuning constants
@@ -734,6 +734,26 @@ were added.
 > - Harness: 108 checks (was 93). New ones: the hook exists after start, posts the session report (the `Current Level` line), notifies, one post per departure (a repeat inside the window is skipped), the teleport after the hook stays silent, a foreign teleport reports, `Failed` does not, manual `PlayerRemoving` reports, another player's leave does not, and a blank URL posts and notifies nothing. `luau-compile` clean.
 
 ## To Fix
+
+### [x] Boss Route: a boss the duo kills while you are dead is not counted
+
+- Dying at a boss stop while the duo finishes the boss leaves the stop uncounted: the walk back finds nothing, times out and moves on with no reset.
+- While running back, the route should keep checking whether the boss is alive: alive means keep running, gone means reset (or wait to reset, by the EXP hold).
+
+> **Done (v3.65):** `Features/BossNavigator.lua`, `USAGE.md`.
+> - A death at a stop that had a boss arms `S.ReturnKill` for the walk back (carried across a second death). In `ApproachStep`, `CheckReturnKill` scans the stop while the character runs back: a living boss clears the check and the walk continues, and a spot that stays empty for **1 s** (one missed scan can be a model swap) is stamped as this stop's kill.
+> - That stamp goes through the ordinary kill branch, so `S.KillAt`, the kill grace and the **Reset After Kill** hold are the same ones a kill the character landed gets — the EXP hold included. The status reads `BOSS DOWN WHILE AWAY` and the toast says the kill was counted.
+> - Only a stop where a boss was actually engaged before the death arms the check, so a stop whose boss simply has not spawned is still not treated as a kill and cannot reset the character repeatedly.
+> - Harness: Boss Route suite **201 checks** (was 190). New ones: the return walk watches the spot, the duo's kill is counted and the route resets for it, the route moves on afterwards, and with EXP to lose the reset is held for the stop's Reset (s) before firing. `luau-compile` clean.
+
+### [x] Boss Route: a low-health kill sits in the heal retreat until health comes back
+
+- With health really low, when the boss dies the route gets stuck in a "I need to heal" loop, trying to heal again and again until it finally can, and only then resets.
+
+> **Done (v3.64):** `Features/BossNavigator.lua`, `Features/AutoFarming.lua`, `USAGE.md`.
+> - The cause was frame order: Auto Farm's health retreat runs before `AICFeature.BossStep` and returns every frame while it runs, so a kill landed at low health was never seen by the route. It stayed in `RETREAT (Health)` until health climbed back to the recovery line (70–95%), and the reset only happened after that — healing that the reset immediately throws away.
+> - `AICFeature.BossKillPending` reports that the stop's boss is already down: the kill is stamped (`S.KillAt`) or the target that was being fought is no longer alive. Auto Farm clears `RETREATING` on that, so the route takes the frame at once and does the reset (or moves on when Reset After Kill is off). Healing and skill dodges are untouched while the boss is alive.
+> - Harness: Boss Route suite **190 checks** (was 186). New ones: the hook exists, no kill pending while the boss stands, a dead boss is a pending kill, and the flag clears once the reset is done. `luau-compile` clean.
 
 ### [x] Webhook: "Request failed: This function has been disabled/blacklisted", and a ping for the duo
 
