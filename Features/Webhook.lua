@@ -12,6 +12,7 @@ return {
         local MarketplaceService = Services.MarketplaceService
         local Player = Context.Player
         local CONFIG = Context.CONFIG
+        local AICFeature = Context.AICFeature
         local AICProfile = Context.AICProfile
         local AICUI = Context.AICUI
         local UIRef = Context.UIRef
@@ -36,6 +37,9 @@ return {
                 --// The progress inside the starting level's bar, so the
                 --// starting line keeps its EXP after levelling up.
                 StartExp = nil,
+                --// os.clock() of the last departure report, so the hook and
+                --// the teleport after it post once.
+                LeaveSentAt = nil,
                 LastLabelUpdate = 0,
             },
         }
@@ -171,13 +175,15 @@ return {
             return true
         end
 
-        --// "10/20/2026 03:41 PM EST", or EDT in summer.
+        --// "03:41 PM EST", or EDT in summer. The date is left out: the
+        --// report is about this session, and "Started at" only needs the
+        --// clock.
         local function EasternTime()
             local Now = os.time()
             local Utc = os.date("!*t", Now)
             local DST = IsEasternDST(Utc.year, Utc.month, Utc.day)
             local Offset = DST and 4 or 5
-            local Stamp = os.date("!%m/%d/%Y %I:%M %p", Now - Offset * 3600)
+            local Stamp = os.date("!%I:%M %p", Now - Offset * 3600)
 
             return Stamp .. (DST and " EDT" or " EST")
         end
@@ -288,19 +294,19 @@ return {
             }
 
             if CONFIG.DISCORD_FORMAT == FORMAT_EXP then
-                --// Level, then the progress inside its bar and that bar's
-                --// size: "250 - 1234/2438097".
+                --// One number per line: the level on its own, then the
+                --// progress inside that level's bar as "exp/needed".
+                table.insert(Lines, "Current Level: " .. tostring(Level or 0))
                 table.insert(Lines, string.format(
-                    "Current Level & EXP: %s - %s/%s",
-                    tostring(Level or 0),
+                    "Current EXP: %s/%s",
                     tostring(Exp or 0),
                     tostring(NeededExp(Level) or 0)
                 ))
 
                 local StartLevel = self.S.StartLevel or Level or 0
+                table.insert(Lines, "Starting Level: " .. tostring(StartLevel))
                 table.insert(Lines, string.format(
-                    "Starting Level & EXP: %s - %s/%s",
-                    tostring(StartLevel),
+                    "Starting EXP: %s/%s",
                     tostring(self.S.StartExp or Exp or 0),
                     tostring(NeededExp(StartLevel) or 0)
                 ))
@@ -392,19 +398,17 @@ return {
             return false, "Request failed: " .. tostring(LastError or Response)
         end
 
-        --// Posts the report. The HTTP call runs in the background so the
-        --// window does not stall on it, and the result is reported either way.
-        function Feature:Send()
+        --// Everything a report needs, or nil and why it cannot be made. The
+        --// URL is checked first so an unconfigured hop stays silent.
+        local function BuildPayload()
             local Url = Trim(CONFIG.DISCORD_WEBHOOK)
 
             if Url == "" then
-                NotifyAction("Webhook", "Paste a Discord webhook URL first", 4)
-                return false
+                return nil, "Paste a Discord webhook URL first"
             end
 
             if not string.match(Url, "^https?://%S+$") then
-                NotifyAction("Webhook", "That does not look like a webhook URL", 4)
-                return false
+                return nil, "That does not look like a webhook URL"
             end
 
             --// The duo is mentioned separately, so both accounts get the
@@ -422,28 +426,39 @@ return {
             end
 
             local Prefix = table.concat(Mentions, " ")
-            local Text = self:BuildReport()
+            local Text = Feature:BuildReport()
             local Content = Prefix ~= "" and (Prefix .. "\n" .. Text) or Text
-            local Payload = {
-                content = Content,
-                --// Both, so a UserId ping and @everyone both actually mention.
-                allowed_mentions = { parse = { "users", "everyone" } },
-            }
+
+            local Ok, Body = pcall(function()
+                return HttpService:JSONEncode({
+                    content = Content,
+                    --// Both, so a UserId ping and @everyone both mention.
+                    allowed_mentions = { parse = { "users", "everyone" } },
+                })
+            end)
+
+            if not Ok then
+                return nil, "Could not build the report"
+            end
+
+            return { Url = Url, Body = Body }
+        end
+
+        --// Posts the report. The HTTP call runs in the background so the
+        --// window does not stall on it, and the result is reported either way.
+        function Feature:Send()
+            local Payload, Reason = BuildPayload()
+
+            if not Payload then
+                NotifyAction("Webhook", tostring(Reason), 4)
+                return false
+            end
 
             task.spawn(function()
-                local Ok, Body = pcall(function()
-                    return HttpService:JSONEncode(Payload)
-                end)
-
-                if not Ok then
-                    NotifyAction("Webhook", "Could not build the report", 5)
-                    return
-                end
-
-                local Delivered, Reason = PostJSON(Url, Body)
+                local Delivered, Error = PostJSON(Payload.Url, Payload.Body)
 
                 if not Delivered then
-                    NotifyAction("Webhook", tostring(Reason), 6)
+                    NotifyAction("Webhook", tostring(Error), 6)
                     return
                 end
 
@@ -451,6 +466,50 @@ return {
             end)
 
             return true
+        end
+
+        --// The report posted on the way out: every leave the script starts
+        --// calls this before the teleport or kick, so the client cannot
+        --// vanish mid-request. The leave hook and the teleport it starts are
+        --// one departure, so only the first of them posts.
+        local LEAVE_REPORT_WINDOW = 8
+
+        function Feature:SendOnLeave()
+            --// Nothing configured: a hop must stay silent, not notify.
+            if Trim(CONFIG.DISCORD_WEBHOOK) == "" then
+                return false
+            end
+
+            local Now = os.clock()
+
+            if self.S.LeaveSentAt and Now - self.S.LeaveSentAt < LEAVE_REPORT_WINDOW then
+                return false
+            end
+
+            self.S.LeaveSentAt = Now
+            self:CaptureStart()
+
+            local Payload = BuildPayload()
+
+            if not Payload then
+                return false
+            end
+
+            local Delivered, Reason = PostJSON(Payload.Url, Payload.Body)
+
+            if Delivered then
+                NotifyAction("Webhook", "Report sent before leaving", 3)
+            else
+                NotifyAction("Webhook", tostring(Reason), 6)
+            end
+
+            return Delivered
+        end
+
+        --// Auto Block, Server Hop, Danger Group and Follower Guard call this
+        --// before they leave, so the report is already on its way out.
+        AICFeature.ReportBeforeLeave = function()
+            return Feature:SendOnLeave()
         end
 
         local SessionLabel
@@ -541,6 +600,28 @@ return {
                 RefreshLabel()
             end
         end
+
+        --// A teleport the script did not start (a door in the game, another
+        --// script, the game's own party teleport) still reports first. The
+        --// leave hook does not fire for it, so this is the only notice.
+        if Player.OnTeleport then
+            Context.Connect(Player.OnTeleport, function(State)
+                if State == Enum.TeleportState.Started then
+                    Feature:SendOnLeave()
+                end
+            end)
+        end
+
+        --// A manual leave is not signalled in time to post reliably, but the
+        --// client does fire this in many executors before it closes, so the
+        --// report goes then. A leave the script started already sent its own.
+        local Players = Services.Players or game:GetService("Players")
+
+        Context.Connect(Players.PlayerRemoving, function(Who)
+            if Who == Player then
+                Feature:SendOnLeave()
+            end
+        end)
 
         Feature:ResetSession()
         --// Warm the floor lookup now, so the first report already has the

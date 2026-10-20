@@ -2,7 +2,7 @@
 
 Status: `[ ]` not started · `[x]` done or fixed (written, not yet verified in-game)
 
-All 137 items are complete — nothing here is pending. This file is the record of
+All 139 items are complete — nothing here is pending. This file is the record of
 what was asked for and what shipped, oldest work first: `## To Do` lists requested
 features, `## To Fix` lists reported bugs. Every item names the version it shipped
 in, and the note under it explains what actually changed and which tuning constants
@@ -712,6 +712,26 @@ were added.
 > - `StartExp` is captured with `StartLevel` (and retried alongside it until PlayerStats loads), so the starting line keeps the EXP it had before the session levelled up.
 > - `Time` is now `23 Minutes, 10 Seconds`, with hours in front when there are any — `2 Hours, 15 Minutes, 42 Seconds`. Singular units read `1 Minute` / `1 Second`, and the live **SESSION STARTED** line uses the same format, so it ticks in seconds.
 > - Harness: 89 checks (was 84). New ones: `Current Level & EXP` and `Starting Level & EXP` shapes and values, the bar size at level 250 from `AICUI.neededExp`, the starting EXP kept after a level-up and after `ResetSession`, a missing `EXP` stat reading 0, and every time string (`0 Seconds`, `10 Seconds`, `1 Minute, 5 Seconds`, `1 Hour, 2 Minutes, 5 Seconds`, `23 Minutes, 10 Seconds`). `luau-compile` clean.
+
+### [x] Webhook: level and EXP on separate lines, and no date in the header
+
+- `Current Level & EXP: 250 - 1234/190053` reads badly now that it is on screen; level and EXP should be readable on their own.
+- Drop the month/day/year from the `# Macro Started at` line, keeping the clock.
+
+> **Done (v3.62):** `Features/Webhook.lua`, `USAGE.md`.
+> - The EXP report now has four number lines instead of two: `Current Level: 250`, `Current EXP: 1234/190053`, `Starting Level: 248`, `Starting EXP: 8110/186741`, then `Time`. The level no longer shares a line with the bar, so nothing has to be parsed out of a `-`-joined string.
+> - The header is now `# Macro Started at 03:41 PM EST` — the date is gone, the clock and its `EST`/`EDT` suffix stay. `EasternTime` still works out daylight saving from the UTC date; only the printed date was removed.
+> - Harness: 93 checks (was 89): the eight-line EXP report, each of the four lines by value, `Time` still last, the starting lines kept after a level-up, and the header matching `hh:mm AM/PM EST` with no `/` anywhere in it. `luau-compile` clean.
+
+### [x] Webhook: report before every leave
+
+- The report should go out before every leave: when Auto Block blocks someone and hops, when **Leave Instead Of Block** hops, and when the user leaves by hand.
+
+> **Done (v3.63):** `Features/Webhook.lua`, `Features/AutoBlock.lua`, `Features/ServerHop.lua`, `Features/FollowerGuard.lua`, `USAGE.md`.
+> - One hook, `AICFeature.ReportBeforeLeave`, is installed by Webhook and called by every leave the script starts: `AutoBlock:TeleportToPlace` (block hop, Leave Instead Of Block hop, server-age hop), ServerHop's `TeleportToInstance` (Rejoin, Server Hop, Join Job ID), its Danger Group leave, and FollowerGuard's kick.
+> - Those calls post synchronously, so the HTTP request finishes before `Teleport`/`Kick` runs and the client cannot disappear with the report in flight. A blank URL returns immediately, so a hop with no webhook configured stays silent.
+> - One departure posts once: the hook and the teleport it starts arrive within a second of each other, and an 8-second window keeps the second silent. `Player.OnTeleport` (`Started` only) catches teleports the script did not start; `Players.PlayerRemoving` for the local player is the best-effort signal for a manual leave.
+> - Harness: 108 checks (was 93). New ones: the hook exists after start, posts the session report (the `Current Level` line), notifies, one post per departure (a repeat inside the window is skipped), the teleport after the hook stays silent, a foreign teleport reports, `Failed` does not, manual `PlayerRemoving` reports, another player's leave does not, and a blank URL posts and notifies nothing. `luau-compile` clean.
 
 ## To Fix
 

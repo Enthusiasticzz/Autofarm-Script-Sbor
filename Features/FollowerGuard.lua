@@ -279,6 +279,11 @@ return {
         --// thing that always gets us away from a follower. True when the kick
         --// was accepted; the error comes back when it was not.
         local function LeaveGame()
+            --// The kick ends the client, so the report has to be posted first.
+            if AICFeature.ReportBeforeLeave then
+                AICFeature.ReportBeforeLeave()
+            end
+
             local Success, Error = pcall(function()
                 Player:Kick("Follower Guard: someone keeps joining your servers")
             end)

@@ -209,6 +209,11 @@ return {
             SetStatus(Status)
 
             task.spawn(function()
+                --// The Webhook report goes while the client is still here.
+                if AICFeature.ReportBeforeLeave then
+                    AICFeature.ReportBeforeLeave()
+                end
+
                 local Success, Error = pcall(function()
                     TeleportService:TeleportToPlaceInstance(game.PlaceId, JobId, Player)
                 end)
@@ -470,6 +475,11 @@ return {
                 end
 
                 SetStatus("LEAVING (DANGER GROUP)")
+
+                --// Report before the hop, like every other leave.
+                if AICFeature.ReportBeforeLeave then
+                    AICFeature.ReportBeforeLeave()
+                end
 
                 local Target = FindOtherServer()
 

@@ -797,7 +797,7 @@ in `AutoFarmProfiles/Global.json`, so every profile and place reports to the sam
 The report is plain message text, in this exact shape:
 
 ```text
-# Macro Started at 10/20/2026 03:41 PM EST
+# Macro Started at 03:41 PM EST
 Account: YourName and DuoName
 Floor: Floor Name (10299594856)
 Current EC: 1204
@@ -805,12 +805,14 @@ Starting EC: 900
 Time: 2 Hours, 15 Minutes, 42 Seconds
 ```
 
-With **EXP Grind** picked, the two number lines become level and progress inside that
-level's EXP bar, in the form `Level - EXP/Needed`, and the rest is unchanged:
+With **EXP Grind** picked, the two number lines become four — the level on its own,
+then the progress inside that level's EXP bar as `exp/needed` — and the rest is unchanged:
 
 ```text
-Current Level & EXP: 250 - 1234/2438097
-Starting Level & EXP: 248 - 8110/2394027
+Current Level: 250
+Current EXP: 1234/2438097
+Starting Level: 248
+Starting EXP: 8110/2394027
 ```
 
 `Needed` comes from the same EXP curve the HUD uses (`AICUI.neededExp`), so it always
@@ -820,8 +822,11 @@ starts, so the starting line keeps the numbers it had before levelling up.
 `Time` is spelled out in minutes and seconds — `23 Minutes, 10 Seconds` — with hours
 added in front for a longer run: `2 Hours, 15 Minutes, 42 Seconds`.
 
-- The start time is **US Eastern** (`EST`, or `EDT` while daylight saving is on — the clock is correct either way).
+- The start time is **US Eastern** (`EST`, or `EDT` while daylight saving is on — the clock is correct either way). Only the clock is shown — no date — so the header stays short.
 - **Sending does not restart the session**, so repeated reports keep the same start and starting numbers and only the current ones move; press **Reset Session** to start a new one.
+- **A report is posted every time the script leaves a server**, before the client moves: Auto Block after the block goes through, **Leave Instead Of Block**, the server-age hop, the Danger Group hop, **Rejoin** / **Server Hop** / **Join Job ID**, and Follower Guard's kick. The post is synchronous, so the teleport or kick cannot cut the request off. Two calls within a few seconds count as one departure, so the hop and the teleport it starts post once.
+- A teleport the script did not start — a door in the game, the game's own party teleport, another script — is caught from `Player.OnTeleport` and reports too. Leaving by hand with Roblox's own menu cannot be caught reliably, because the client stops running the script as it closes; it reports when the executor fires `PlayerRemoving` for you before shutting the client down.
+- With **Webhook URL** blank, a hop posts nothing and shows no notice.
 - The floor name is looked up from the PlaceId; until that answers (or if it cannot), the report uses the server's own name.
 - Some executors blacklist `HttpService:RequestAsync` (the `disabled/blacklisted` notice). The report goes through the executor's own request function when it has one — `syn.request`, `http.request`, `http_request`, `request` — and only falls back to `HttpService` when none does, so it sends either way. If every route fails, the notification carries the reason.
 

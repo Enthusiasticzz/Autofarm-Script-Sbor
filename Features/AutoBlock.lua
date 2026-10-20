@@ -57,7 +57,14 @@ return {
             end
         end
 
+        --// Every hop in the farm (block, leave instead of block, server age)
+        --// goes through here, so the Webhook report is posted before the
+        --// client is moved and cannot be cut off by the teleport.
         function AutoBlock:TeleportToPlace(PlaceId)
+            if AICFeature.ReportBeforeLeave then
+                AICFeature.ReportBeforeLeave()
+            end
+
             game:GetService("TeleportService"):Teleport(PlaceId or game.PlaceId, Player)
         end
 
