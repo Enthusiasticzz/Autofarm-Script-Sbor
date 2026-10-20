@@ -12,6 +12,7 @@ return {
         local MarketplaceService = Services.MarketplaceService
         local Player = Context.Player
         local CONFIG = Context.CONFIG
+        local FeatureState = Context.Feature
         local AICFeature = Context.AICFeature
         local AICProfile = Context.AICProfile
         local AICUI = Context.AICUI
@@ -37,9 +38,9 @@ return {
                 --// The progress inside the starting level's bar, so the
                 --// starting line keeps its EXP after levelling up.
                 StartExp = nil,
-                --// os.clock() of the last departure report, so the hook and
-                --// the teleport after it post once.
-                LeaveSentAt = nil,
+                --// os.clock() of the last report, so a departure and the
+                --// teleport that follows it (or a toggle and a hop) post once.
+                LastReportAt = nil,
                 LastLabelUpdate = 0,
             },
         }
@@ -273,7 +274,7 @@ return {
 
         --// The message body, in the order Discord shows it. Leaving says so:
         --// the report posted on the way out is the one that turns the run off.
-        function Feature:BuildReport(Leaving)
+        function Feature:BuildReport(Leaving, OtherPlayer)
             --// A report built before the first update still gets the session's
             --// starting numbers rather than today's.
             self:CaptureStart()
@@ -288,12 +289,29 @@ return {
                 Account = Account .. " and " .. Duo
             end
 
+            --// A leaving report says when it is leaving; a running one says
+            --// when this session started.
+            local HeaderTime = Leaving
+                and EasternTime()
+                or tostring(self.S.StartedClock or EasternTime())
+
             local Lines = {
                 (Leaving and "# Macro Turned off at " or "# Macro Started at ")
-                    .. tostring(self.S.StartedClock or EasternTime()),
+                    .. HeaderTime,
                 "Account: " .. Account,
                 string.format("Floor: %s (%s)", GetPlaceName(game.PlaceId), tostring(game.PlaceId)),
             }
+
+            --// A leave started because of a player names them, so the log says
+            --// who joined and made us go. A report with no culprit (server
+            --// age, a manual leave) has no such line at all.
+            if OtherPlayer then
+                local OtherName = tostring(OtherPlayer.Name or "?")
+                local OtherId = tonumber(OtherPlayer.UserId)
+
+                table.insert(Lines, "Left because of: @" .. OtherName
+                    .. (OtherId and string.format(" (%d)", OtherId) or ""))
+            end
 
             if CONFIG.DISCORD_FORMAT == FORMAT_EXP then
                 --// One number per line: the level on its own, then the
@@ -402,7 +420,7 @@ return {
 
         --// Everything a report needs, or nil and why it cannot be made. The
         --// URL is checked first so an unconfigured hop stays silent.
-        local function BuildPayload(Leaving)
+        local function BuildPayload(Leaving, OtherPlayer)
             local Url = Trim(CONFIG.DISCORD_WEBHOOK)
 
             if Url == "" then
@@ -428,7 +446,7 @@ return {
             end
 
             local Prefix = table.concat(Mentions, " ")
-            local Text = Feature:BuildReport(Leaving == true)
+            local Text = Feature:BuildReport(Leaving == true, OtherPlayer)
             local Content = Prefix ~= "" and (Prefix .. "\n" .. Text) or Text
 
             local Ok, Body = pcall(function()
@@ -446,10 +464,15 @@ return {
             return { Url = Url, Body = Body }
         end
 
-        --// Posts the report. The HTTP call runs in the background so the
-        --// window does not stall on it, and the result is reported either way.
+        --// Posts the report from the button. The HTTP call runs in the
+        --// background so the window does not stall on it.
         function Feature:Send()
-            local Payload, Reason = BuildPayload()
+            if CONFIG.DISCORD_ENABLED == false then
+                NotifyAction("Webhook", "Discord logging is off", 4)
+                return false
+            end
+
+            local Payload, Reason = BuildPayload(false)
 
             if not Payload then
                 NotifyAction("Webhook", tostring(Reason), 4)
@@ -470,13 +493,18 @@ return {
             return true
         end
 
-        --// The report posted on the way out: every leave the script starts
-        --// calls this before the teleport or kick, so the client cannot
-        --// vanish mid-request. The leave hook and the teleport it starts are
-        --// one departure, so only the first of them posts.
-        local LEAVE_REPORT_WINDOW = 8
+        --// One report for a start or an end, posted synchronously so it is
+        --// out before a teleport, a kick or the client going away. A repeat
+        --// inside REPORT_DEDUPE is the same event seen twice - the Auto Farm
+        --// toggle and the hop it leads to, or the leave hook and the teleport
+        --// after it - so only the first one posts.
+        local REPORT_DEDUPE = 8
 
-        function Feature:SendOnLeave()
+        function Feature:PostReport(Leaving, Force, OtherPlayer)
+            if CONFIG.DISCORD_ENABLED == false then
+                return false
+            end
+
             --// Nothing configured: a hop must stay silent, not notify.
             if Trim(CONFIG.DISCORD_WEBHOOK) == "" then
                 return false
@@ -484,14 +512,16 @@ return {
 
             local Now = os.clock()
 
-            if self.S.LeaveSentAt and Now - self.S.LeaveSentAt < LEAVE_REPORT_WINDOW then
+            if not Force
+                and self.S.LastReportAt
+                and Now - self.S.LastReportAt < REPORT_DEDUPE
+            then
                 return false
             end
 
-            self.S.LeaveSentAt = Now
             self:CaptureStart()
 
-            local Payload = BuildPayload(true)
+            local Payload = BuildPayload(Leaving == true, OtherPlayer)
 
             if not Payload then
                 return false
@@ -499,19 +529,36 @@ return {
 
             local Delivered, Reason = PostJSON(Payload.Url, Payload.Body)
 
-            if Delivered then
-                NotifyAction("Webhook", "Report sent before leaving", 3)
-            else
+            if not Delivered then
                 NotifyAction("Webhook", tostring(Reason), 6)
+                return false
             end
 
-            return Delivered
+            self.S.LastReportAt = Now
+            NotifyAction(
+                "Webhook",
+                Leaving and "Macro ended report sent" or "Macro started report sent",
+                3
+            )
+            return true
+        end
+
+        --// The run is over: a leave, or Auto Farm switched off.
+        function Feature:AnnounceEnd(OtherPlayer)
+            return self:PostReport(true, false, OtherPlayer)
+        end
+
+        --// A new run: the session clock and its starting numbers restart with
+        --// it, so the reports that follow measure this run.
+        function Feature:AnnounceStart()
+            self:ResetSession()
+            return self:PostReport(false, true)
         end
 
         --// Auto Block, Server Hop, Danger Group and Follower Guard call this
         --// before they leave, so the report is already on its way out.
-        AICFeature.ReportBeforeLeave = function()
-            return Feature:SendOnLeave()
+        AICFeature.ReportBeforeLeave = function(OtherPlayer)
+            return Feature:AnnounceEnd(OtherPlayer)
         end
 
         local SessionLabel
@@ -539,6 +586,12 @@ return {
             if not Section then
                 return
             end
+
+            --// The master switch, first in the section: off means no report
+            --// goes out at all - not on a start, an end or the button.
+            Section:AddToggle("Discord Logging", CONFIG.DISCORD_ENABLED ~= false, function(Value)
+                Save("DISCORD_ENABLED", Value == true)
+            end)
 
             Section:AddTextbox("Webhook URL", Trim(CONFIG.DISCORD_WEBHOOK), function(Value)
                 Save("DISCORD_WEBHOOK", Trim(Value))
@@ -590,10 +643,29 @@ return {
             Section:AddLabel("Sending does not restart the session; Reset Session does")
         end
 
+        --// The Auto Farm flag the last frame saw. The start and end reports
+        --// follow the farm itself, so a toggle, a profile load or Follower
+        --// Guard's hold all produce the same pair of messages.
+        local FarmingWas = false
+
         --// The elapsed time in the label, and the Starting EC/Level that
         --// PlayerStats was not ready for when the session began.
         function Feature:Update(DeltaTime)
             self:CaptureStart()
+
+            local Farming = FeatureState ~= nil
+                and FeatureState.AutoFarm ~= nil
+                and FeatureState.AutoFarm.Enabled == true
+
+            if Farming ~= FarmingWas then
+                FarmingWas = Farming
+
+                if Farming then
+                    self:AnnounceStart()
+                else
+                    self:AnnounceEnd()
+                end
+            end
 
             local Now = os.clock()
 
@@ -609,7 +681,7 @@ return {
         if Player.OnTeleport then
             Context.Connect(Player.OnTeleport, function(State)
                 if State == Enum.TeleportState.Started then
-                    Feature:SendOnLeave()
+                    Feature:AnnounceEnd()
                 end
             end)
         end
@@ -621,8 +693,27 @@ return {
 
         Context.Connect(Players.PlayerRemoving, function(Who)
             if Who == Player then
-                Feature:SendOnLeave()
+                Feature:AnnounceEnd()
             end
+        end)
+
+        --// The local player taken out of the game is the closest a manual
+        --// leave comes to a signal before the client goes. The parent is nil
+        --// when the player is destroyed, not on a respawn.
+        if Player.AncestryChanged then
+            Context.Connect(Player.AncestryChanged, function(_, Parent)
+                if Parent == nil then
+                    Feature:AnnounceEnd()
+                end
+            end)
+        end
+
+        --// Roblox refuses BindToClose on the client, but some executors allow
+        --// it to fire on leave. Wrapped, so a refusal changes nothing.
+        pcall(function()
+            game:BindToClose(function()
+                Feature:AnnounceEnd()
+            end)
         end)
 
         Feature:ResetSession()

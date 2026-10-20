@@ -476,9 +476,10 @@ return {
 
                 SetStatus("LEAVING (DANGER GROUP)")
 
-                --// Report before the hop, like every other leave.
+                --// Report before the hop, like every other leave, naming the
+                --// player whose group made us leave.
                 if AICFeature.ReportBeforeLeave then
-                    AICFeature.ReportBeforeLeave()
+                    AICFeature.ReportBeforeLeave(OtherPlayer)
                 end
 
                 local Target = FindOtherServer()

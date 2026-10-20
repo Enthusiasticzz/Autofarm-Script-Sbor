@@ -160,7 +160,7 @@ The main switch and the ways the farm decides where to go. The toggles appear in
 modules start, so the exact order can differ between versions; each one writes its saved value
 straight away.
 
-- **Auto Farm** (default on) — the main loop. Useful only once the Targeting section has at least one entry, or the farm zone the character is in has Zone Targets; with none it stands still on `IDLE (NO TARGET)`.
+- **Auto Farm** (default on) — the main loop. Useful only once the Targeting section has at least one entry, or the farm zone the character is in has Zone Targets; with none it stands still on `IDLE (NO TARGET)`. Switching it **off also switches Boss Route off**: the route is part of a farming session, and left on it would run a boss loop with no farm behind it. Turning Auto Farm back on does not turn the route back on.
 - **Auto Find** (off) — ignores the waypoint route and goes straight for targets; needs a target list to find anything.
 - **Auto Patrol** (off) — walks around the farm zone looking for targets when none are near. Needs at least one farm zone, otherwise there is nowhere to patrol.
 - **Return To Farm Zone** (on) — walks back inside the farm zone after leaving it, or after the route ends outside it. Needs farm zones.
@@ -206,15 +206,16 @@ while the character is inside it, so the same mobs can be fought in a different 
 #### Auto Block
 
 Handles players who are not on the whitelist, and the list itself. Above **Auto Block**, set apart
-by a divider, **Leave Instead Of Block** (off, global) skips the block entirely and only leaves
-the server. **Auto Block** (on) blocks strangers and leaves the server, delayed by
+by a divider, **Leave Instead Of Block** (off, global) skips the block entirely and instead closes
+the game — you drop out of the server to the Roblox app, not to another server (its help line says
+so). **Auto Block** (on) blocks strangers and leaves the server, delayed by
 **Block Delay (s)**; **Auto Confirm Block** (off), directly under it, presses Block in Roblox's
 block dialog for you so it needs no manual press — executor only, since it reads CoreGui. The
 whitelist, Whitelist Skips Safety and Leave Instead Of Block are shared by every profile and
 every place, unlike the rest of this tab.
 
-- **Leave Instead Of Block** (off, global) — instead of blocking an intruder, leave the server as soon as their Block Delay runs out. Nobody is added to Roblox's block list, so the same player can be met again on the next server.
-- **Block Delay (s)** (0, 0–120) — how long a stranger may stay before being blocked (or, with Leave Instead Of Block, simply left) and the server left. 0 acts at once; each player's delay starts when they are first seen.
+- **Leave Instead Of Block** (off, global) — instead of blocking an intruder, close the game as soon as their Block Delay runs out: the client is kicked out to the Roblox app (the connection closes and the run ends), leaving the home screen in front of you rather than another server. A kick is the one thing a client script can use to get out of the game — it cannot return you to the app's menus on its own — so the kick screen is what you see on the way out, with the intruder named. Nobody is added to Roblox's block list, so the same player can be met again next time.
+- **Block Delay (s)** (0, 0–120) — how long a stranger may stay before being blocked (or, with Leave Instead Of Block, closing the game) and the server left. 0 acts at once; each player's delay starts when they are first seen.
 - **Whitelist Skips Safety** (on, global) — players on the Block Whitelist never make Auto Block or Leave On Danger Group leave the server, even if already blocked.
 - **Block Whitelist** — the UserIds Auto Block never touches. Entries show as `UserId  ·  @name` once the name is known; drag to reorder.
 - **Add Player In Server** — dropdown of the players in this server, listed as `DisplayName (@name)  UserId`. Picking one whitelists them.
@@ -798,6 +799,9 @@ Everything here is shared by every profile and PlaceId, so none of it is part of
 One place for the Discord webhook and what goes into its report. Paste the URL once; it is kept
 in `AutoFarmProfiles/Global.json`, so every profile and place reports to the same hook.
 
+- **Discord Logging** (on, global) — the master switch, first in the section. Off means nothing
+  is posted at all: no start, no end, and **Send Report** does nothing but say logging is off.
+  The URL and the rest of the settings are kept, so turning it back on needs no re-typing.
 - **Webhook URL** — the Discord webhook URL (`https://discord.com/api/webhooks/...`). Blank sends nothing.
 - **Ping User ID** — a UserId to mention with the report, `everyone` for `@everyone`, or blank to mention nobody. A hand-typed `@name` is passed through.
 - **Ping Duo User ID** — your duo's UserId, mentioned alongside yours so both accounts get the ping. Blank mentions nobody extra; the same id in both boxes is only mentioned once.
@@ -838,9 +842,11 @@ added in front for a longer run: `2 Hours, 15 Minutes, 42 Seconds`.
 
 - The start time is **US Eastern** (`EST`, or `EDT` while daylight saving is on — the clock is correct either way). Only the clock is shown — no date — so the header stays short. A report posted on the way out (see below) reads `# Macro Turned off at` instead of `# Macro Started at`, so a leave is distinguishable from a manual **Send Report** at a glance.
 - **Sending does not restart the session**, so repeated reports keep the same start and starting numbers and only the current ones move; press **Reset Session** to start a new one.
-- **A report is posted every time the script leaves a server**, before the client moves: Auto Block after the block goes through, **Leave Instead Of Block**, the server-age hop, the Danger Group hop, **Rejoin** / **Server Hop** / **Join Job ID**, and Follower Guard's kick. The post is synchronous, so the teleport or kick cannot cut the request off. Two calls within a few seconds count as one departure, so the hop and the teleport it starts post once.
-- A teleport the script did not start — a door in the game, the game's own party teleport, another script — is caught from `Player.OnTeleport` and reports too. Leaving by hand with Roblox's own menu cannot be caught reliably, because the client stops running the script as it closes; it reports when the executor fires `PlayerRemoving` for you before shutting the client down.
-- With **Webhook URL** blank, a hop posts nothing and shows no notice.
+- **The macro reports its own start and end.** A report headed `# Macro Started at` goes out when Auto Farm comes on — at the first load where the saved profile has it on, and every time the toggle is switched on — and the session clock and starting EC/level restart with it. A report headed `# Macro Turned off at` goes out when Auto Farm is switched off, and on every leave below. So a hop produces an ended report, and the next server's load produces a started one.
+- **A report is posted every time the script leaves a server**, before the client moves: Auto Block after the block goes through, **Leave Instead Of Block** closing the game, the server-age hop, the Danger Group hop, **Rejoin** / **Server Hop** / **Join Job ID**, and Follower Guard's kick. The post is synchronous, so the teleport or kick cannot cut the request off. Two reports within **8 s** count as one event, so the toggle-off and the hop it leads to (or a hop and the teleport it starts) post once.
+- **A leave caused by a player names them**, on the line `Left because of: @name (UserId)` under the floor: the intruder Auto Block blocked or left for, the whitelisted player you had blocked, the Danger Group player, and Follower Guard's follower. A leave with nobody behind it — the server-age hop, a Rejoin or Server Hop, a hand-leave, Auto Farm switched off — has no such line at all, rather than an empty one. The same follower or intruder is named in the kick text, so the closed client says who it was on the way out.
+- A teleport the script did not start — a door in the game, the game's own party teleport, another script — is caught from `Player.OnTeleport` and reports too. A manual leave through Roblox's own menu is caught by three best-effort signals: `Players.PlayerRemoving` for you, the local player being destroyed (`AncestryChanged` with no parent), and `game:BindToClose` where the executor allows it on the client. None of them is guaranteed — the client can be gone before the request finishes — so an occasional missing end report on a hand-leave is expected; the script's own leaves always report.
+- With **Webhook URL** blank (or **Discord Logging** off), nothing is posted and no notice is shown.
 - The floor name is looked up from the PlaceId; until that answers (or if it cannot), the report uses the server's own name.
 - Some executors blacklist `HttpService:RequestAsync` (the `disabled/blacklisted` notice). The report goes through the executor's own request function when it has one — `syn.request`, `http.request`, `http_request`, `request` — and only falls back to `HttpService` when none does, so it sends either way. If every route fails, the notification carries the reason.
 

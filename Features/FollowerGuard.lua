@@ -278,14 +278,22 @@ return {
         --// client to the Roblox app, which ends the run with it. It is the one
         --// thing that always gets us away from a follower. True when the kick
         --// was accepted; the error comes back when it was not.
-        local function LeaveGame()
+        local function LeaveGame(OtherPlayer)
             --// The kick ends the client, so the report has to be posted first.
+            --// The follower who tripped it is named, in the report and in the
+            --// kick text shown as the client closes.
             if AICFeature.ReportBeforeLeave then
-                AICFeature.ReportBeforeLeave()
+                AICFeature.ReportBeforeLeave(OtherPlayer)
+            end
+
+            local Text = "Follower Guard: someone keeps joining your servers"
+
+            if OtherPlayer and OtherPlayer.Name then
+                Text = "Follower Guard: @" .. OtherPlayer.Name .. " keeps joining your servers"
             end
 
             local Success, Error = pcall(function()
-                Player:Kick("Follower Guard: someone keeps joining your servers")
+                Player:Kick(Text)
             end)
 
             return Success, Error
@@ -315,7 +323,7 @@ return {
             --// disconnects and the run goes with it. Only a kick that could
             --// not be carried out falls back to the hold, so a follower is
             --// never farmed in front of.
-            local Left, Error = LeaveGame()
+            local Left, Error = LeaveGame(OtherPlayer)
 
             if not Left then
                 HoldInstead(OtherPlayer, "kick failed: " .. tostring(Error))

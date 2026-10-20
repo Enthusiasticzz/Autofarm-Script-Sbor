@@ -950,6 +950,8 @@ return {
 
         local function StopRoute(StatusText)
             S.Phase = "Idle"
+            S.ReturnKill = false
+            S.ReturnMissAt = nil
             S.SeenTarget = false
             S.LastTarget = nil
             S.TargetSeenAt = nil
@@ -2529,6 +2531,12 @@ return {
             end
 
             return RecoverStep(Now)
+        end
+
+        --// Turned off from outside the module - Auto Farm off takes the route
+        --// with it - so the run stops here rather than at the next frame.
+        AICFeature.StopBossRoute = function()
+            StopRoute("OFF")
         end
 
         --// A profile load brings another place's stops with it.

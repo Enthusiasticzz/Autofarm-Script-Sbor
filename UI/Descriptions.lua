@@ -78,7 +78,7 @@ return {
             ["Gather Radius"] = "How close together mobs must be to count as a pack",
 
             --// Auto Block
-            ["Leave Instead Of Block"] = "Never blocks the stranger; leaves the server once Block Delay runs out",
+            ["Leave Instead Of Block"] = "Never blocks the stranger; closes the game once Block Delay runs out",
             ["Block Delay (s)"] = "Seconds a stranger may stay before being blocked or left",
             ["Block Whitelist"] = "Players Auto Block leaves alone",
             ["Add Player In Server"] = "Adds someone in this server to the list above",
@@ -89,6 +89,7 @@ return {
             ["Clear Whitelist"] = "Removes everyone from the Block Whitelist",
 
             --// Webhook
+            ["Discord Logging"] = "Sends the start and end reports; off sends nothing at all",
             ["Webhook URL"] = "Discord webhook the report is posted to",
             ["Ping User ID"] = "UserId to mention, everyone, or blank for none",
             ["Ping Duo User ID"] = "Duo's UserId to mention too, or blank for none",

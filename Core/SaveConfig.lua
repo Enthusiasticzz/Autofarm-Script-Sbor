@@ -299,9 +299,10 @@ return {
             --// Shared by every profile and PlaceId.
             { Key = "BLOCK_WHITELIST", Default = {}, Normalize = NormalizeIdList },
 
-            --// Discord webhook reporting (Webhook). The URL, the mention
-            --// sent with it, the duo's name and the report format are the
-            --// same on every profile and PlaceId, like the whitelist.
+            --// Discord webhook reporting (Webhook). The switch, the URL, the
+            --// mention sent with it, the duo's name and the report format
+            --// are the same on every profile and PlaceId, like the whitelist.
+            { Key = "DISCORD_ENABLED", Default = true },
             { Key = "DISCORD_WEBHOOK", Default = "", Normalize = function(Value)
                 return type(Value) == "string" and Value:gsub("^%s*(.-)%s*$", "%1") or ""
             end },

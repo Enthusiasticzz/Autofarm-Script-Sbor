@@ -57,15 +57,36 @@ return {
             end
         end
 
-        --// Every hop in the farm (block, leave instead of block, server age)
-        --// goes through here, so the Webhook report is posted before the
-        --// client is moved and cannot be cut off by the teleport.
-        function AutoBlock:TeleportToPlace(PlaceId)
+        --// Every hop in the farm (block, server age) goes through here, so the
+        --// Webhook report is posted before the client is moved and cannot be
+        --// cut off by the teleport. A hop caused by a player names them in the
+        --// report, so the log says who it was.
+        function AutoBlock:TeleportToPlace(PlaceId, OtherPlayer)
             if AICFeature.ReportBeforeLeave then
-                AICFeature.ReportBeforeLeave()
+                AICFeature.ReportBeforeLeave(OtherPlayer)
             end
 
             game:GetService("TeleportService"):Teleport(PlaceId or game.PlaceId, Player)
+        end
+
+        --// Leave Instead Of Block's way out: not another server, the game
+        --// itself. A kick is the only thing a client script can use to get
+        --// back out to the Roblox app, and it reports first, naming whoever
+        --// made us leave.
+        function AutoBlock:LeaveGame(Reason, OtherPlayer)
+            if AICFeature.ReportBeforeLeave then
+                AICFeature.ReportBeforeLeave(OtherPlayer)
+            end
+
+            local Text = Reason or "Auto Block: leaving the game"
+
+            if OtherPlayer and OtherPlayer.Name then
+                Text = Text .. " (@" .. OtherPlayer.Name .. ")"
+            end
+
+            pcall(function()
+                Player:Kick(Text)
+            end)
         end
 
         function AutoBlock:NormalizeUserId(Value)
@@ -271,9 +292,10 @@ return {
             end
 
             --// The alternative to blocking, kept above Auto Block and set
-            --// apart by a divider: the same Block Delay, then the server is
-            --// left without a block at all.
+            --// apart by a divider: the same Block Delay, then the game is
+            --// closed to the Roblox app without a block at all.
             AICUI.BindFeatureToggle("AutoBlockLeaveOnly", "Leave Instead Of Block", nil, BlockSection)
+            BlockSection:AddLabel("On: the game is closed to the Roblox app once Block Delay (s) runs out")
 
             BlockSection:AddDivider()
 
@@ -413,8 +435,11 @@ return {
             end)
 
             -- Compatibility hooks for older combat/profile code.
-            AICFeature.TeleportToPlace = function(PlaceId)
-                return AutoBlock:TeleportToPlace(PlaceId)
+            AICFeature.TeleportToPlace = function(PlaceId, OtherPlayer)
+                return AutoBlock:TeleportToPlace(PlaceId, OtherPlayer)
+            end
+            AICFeature.LeaveGame = function(Reason, OtherPlayer)
+                return AutoBlock:LeaveGame(Reason, OtherPlayer)
             end
             AICFeature.NormalizeUserId = function(Value)
                 return AutoBlock:NormalizeUserId(Value)

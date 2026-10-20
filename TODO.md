@@ -2,7 +2,7 @@
 
 Status: `[ ]` not started · `[x]` done or fixed (written, not yet verified in-game)
 
-All 141 items are complete — nothing here is pending. This file is the record of
+All 142 items are complete — nothing here is pending. This file is the record of
 what was asked for and what shipped, oldest work first: `## To Do` lists requested
 features, `## To Fix` lists reported bugs. Every item names the version it shipped
 in, and the note under it explains what actually changed and which tuning constants
@@ -697,7 +697,7 @@ were added.
 
 > **Done (v3.59):** `Features/AutoBlock.lua`, `Features/AutoBlockConfirm.lua`, `Features/AutoFarming.lua`, `Core/SaveConfig.lua`, `UI/Utils.lua` (`AddDivider`).
 > - The Auto Block section now reads **Leave Instead Of Block** (off, global), its help line, a divider, **Auto Block**, **Auto Confirm Block**, **Block Delay (s)**, then the whitelist.
-> - **Leave Instead Of Block** on skips `PromptBlockPlayer` entirely: once the Block Delay has run out, the farm reports `AUTO BLOCK  HOP FROM @name` and hops, so nobody is added to Roblox's block list and the same player can be met again on the next server. The delay is still per player and still starts when they are first seen.
+> - **Leave Instead Of Block** on skips `PromptBlockPlayer` entirely: once the Block Delay has run out, the farm reports `AUTO BLOCK  HOP FROM @name` and hops, so nobody is added to Roblox's block list and the same player can be met again on the next server. The delay is still per player and still starts when they are first seen. (v3.67 closes the game instead of hopping; see that entry below.)
 > - **Auto Confirm Block** had to be made by AutoBlock rather than AutoBlockConfirm: that module starts after it, so its toggle used to land past the whitelist at the end of the section. AutoBlock now makes the toggle in place and calls `AICFeature.OnAutoBlockConfirmChanged`, which AutoBlockConfirm sets with the old on/off behaviour (warn when the executor cannot reach CoreGui, disarm when switched off).
 > - `UI/Utils.lua` gained `Section:AddDivider()`: a LayoutOrder component, so later controls still land in the right place.
 > - Harness: 16 checks over the section order (leave toggle above the divider, the divider above Auto Block, Auto Confirm Block directly below it and above the delay), both toggles bound as saved features, and the confirm hook reaching the module. `luau-compile` clean on every touched file.
@@ -733,7 +733,33 @@ were added.
 > - One departure posts once: the hook and the teleport it starts arrive within a second of each other, and an 8-second window keeps the second silent. `Player.OnTeleport` (`Started` only) catches teleports the script did not start; `Players.PlayerRemoving` for the local player is the best-effort signal for a manual leave.
 > - Harness: 108 checks (was 93). New ones: the hook exists after start, posts the session report (the `Current Level` line), notifies, one post per departure (a repeat inside the window is skipped), the teleport after the hook stays silent, a foreign teleport reports, `Failed` does not, manual `PlayerRemoving` reports, another player's leave does not, and a blank URL posts and notifies nothing. `luau-compile` clean.
 
+### [x] Webhook: start/end reports on the farm toggle, a master switch, and Auto Farm off turning Boss Route off
+
+- A manual leave through the Roblox menu does not send the end report.
+- Turning Auto Farm off should turn Boss Route off with it.
+- Joining/loading the script or turning Auto Farm on should report the macro started; leaving, turning Auto Farm off, or being hopped by Auto Block should report it ended.
+- A toggle to switch Discord logging off, at the top of the Webhook section.
+
+> **Done (v3.66):** `Features/Webhook.lua`, `Features/AutoFarming.lua`, `Features/BossNavigator.lua`, `Core/SaveConfig.lua` (`DISCORD_ENABLED`), `UI/Descriptions.lua`, `USAGE.md`.
+> - Start and end now follow the Auto Farm flag itself: a rising edge sends `# Macro Started at` (after restarting the session clock and its starting numbers) and a falling edge sends `# Macro Turned off at`, so the toggle, a profile load and Follower Guard's hold all report. An end report carries the time it ended, not the session's start time.
+> - **Discord Logging** is the first control in the section and a global setting. Off, nothing posts — no start, no end, and **Send Report** only says logging is off.
+> - One report per event: an 8 s window stops the Auto Farm toggle's end and the hop it leads to from posting twice, and stops a leave hook and the teleport after it from doubling up.
+> - **Auto Farm off now turns Boss Route off** (`FeatureState.BossRoute.Enabled = false`, the toggle updated, and `AICFeature.StopBossRoute` stopping the run) while still saving the profile. Turning Auto Farm on again does not switch the route back on.
+> - A manual leave gained two more best-effort signals besides `PlayerRemoving`: `LocalPlayer.AncestryChanged` with no parent, and `game:BindToClose` where the executor allows it on the client. None is guaranteed, and USAGE says so.
+> - Harness: Webhook suite **133 checks** (was 110). New ones: the master switch in first place and its save, start on a rising edge, end on a falling edge, the end header carrying the current time, the 8 s window, and logging off posting nothing for starts, ends and the button. Boss Route suite **205 checks** (was 201): `StopBossRoute` exists and parks a running fight when Auto Farm switches it off. `luau-compile` clean.
+
 ## To Fix
+
+### [x] Auto Block: Leave Instead Of Block should close the game, and a leave caused by a player should name them
+
+- **Leave Instead Of Block** was hopping to another server; it was meant to get out of the game altogether — back to the home screen.
+- When that happens, and on every other Auto Block leave, the report should say who joined and made us leave. A leave with nobody behind it has no player to name, so it must not print an empty one.
+
+> **Done (v3.67):** `Features/AutoBlock.lua`, `Features/AutoFarming.lua`, `Features/Webhook.lua`, `Features/ServerHop.lua`, `Features/FollowerGuard.lua`, `UI/Descriptions.lua`, `USAGE.md`.
+> - **Leave Instead Of Block** now calls `AutoBlock:LeaveGame`, which kicks the local player: the client disconnects and drops out of the game to the Roblox app, so the run ends there instead of continuing on another server. A kick is the only exit a client script has — it cannot open the app's own menus — and the kick text says why, naming the intruder: `Auto Block: leaving instead of blocking (@name)`. The toggle's help line and its description now say the game is closed rather than the server being left.
+> - `AICFeature.ReportBeforeLeave(OtherPlayer)` takes the player a leave was caused by, and the report prints `Left because of: @name (UserId)` under the floor. Named: the Auto Block intruder, the whitelisted player you had blocked, the Danger Group player, and Follower Guard's follower (whose kick text names them too). Unnamed — server age, Rejoin / Server Hop / Join Job ID, Auto Farm switched off, a hand-leave — prints the same report with no such line, not an empty one.
+> - `AutoBlock:TeleportToPlace(PlaceId, OtherPlayer)` lost its unused `Reason` argument now that the reason lives only in the kick text; AutoFarming passes `(nil, Intruder)` at the two hop sites.
+> - Harness: AutoBlock suite (new) **20 checks** — the section order (leave toggle, its help line, the divider, Auto Block), the kick text with and without a culprit, a kick the executor refuses not taking the script down, the hop report naming the player while still teleporting the local player to the same place, and the server-age hop naming nobody. Webhook suite **140 checks** (was 133): the culprit line's text and position, exactly one added line, and no line at all when there is nobody to name. `luau-compile` clean.
 
 ### [x] Boss Route: a boss the duo kills while you are dead is not counted
 

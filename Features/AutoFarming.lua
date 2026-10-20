@@ -669,16 +669,21 @@ return {
 
                 if not Intruder and BlockedWhitelisted then
                     SetFarmState("AUTO BLOCK  HOP FROM @" .. BlockedWhitelisted.Name)
-                    AICFeature.TeleportToPlace()
+                    AICFeature.TeleportToPlace(nil, BlockedWhitelisted)
                     return
                 end
 
                 if Intruder then
                     --// Leave Instead Of Block: the delay has run out, so
-                    --// drop the server without touching the block list.
+                    --// drop out of the game without touching the block list.
+                    --// Not another server: a kick is what a client script can
+                    --// do, and it lands back in the Roblox app.
                     if FeatureState.AutoBlockLeaveOnly.Enabled then
-                        SetFarmState("AUTO BLOCK  HOP FROM @" .. Intruder.Name)
-                        AICFeature.TeleportToPlace()
+                        SetFarmState("AUTO BLOCK  LEAVING GAME FROM @" .. Intruder.Name)
+                        AICFeature.LeaveGame(
+                            "Auto Block: leaving instead of blocking",
+                            Intruder
+                        )
                         return
                     end
 
@@ -698,7 +703,7 @@ return {
                     end
 
                     AICFeature.S.BlockCache[Intruder.UserId] = nil
-                    AICFeature.TeleportToPlace()
+                    AICFeature.TeleportToPlace(nil, Intruder)
                     return
                 end
             end
@@ -1069,6 +1074,24 @@ return {
                 self.Button = AICUI.CreateFeature("Auto Farm", AICFeature.S.Enabled, function(Value)
                     AICFeature.S.Enabled = Value
                     FeatureState.AutoFarm.Enabled = Value
+
+                    --// Auto Farm off takes Boss Route with it: the route is
+                    --// part of a farming session, and left on it ran a boss
+                    --// loop with no farm behind it.
+                    if not Value
+                        and FeatureState.BossRoute
+                        and FeatureState.BossRoute.Enabled == true
+                    then
+                        FeatureState.BossRoute.Enabled = false
+
+                        if AICUI.SetFeatureComponent then
+                            AICUI.SetFeatureComponent("BossRoute", false)
+                        end
+
+                        if AICFeature.StopBossRoute then
+                            AICFeature.StopBossRoute()
+                        end
+                    end
 
                     --// Only a real click on the toggle comes through here
                     --// (a profile load and FollowerGuard set the flag
