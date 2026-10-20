@@ -313,6 +313,9 @@ return {
                     .. (OtherId and string.format(" (%d)", OtherId) or ""))
             end
 
+            --// A running report carries only where the run is now; the
+            --// starting numbers are what an end report adds, so both ends of
+            --// the pair can be compared. A leave (or Send Report) reads both.
             if CONFIG.DISCORD_FORMAT == FORMAT_EXP then
                 --// One number per line: the level on its own, then the
                 --// progress inside that level's bar as "exp/needed".
@@ -323,16 +326,24 @@ return {
                     tostring(NeededExp(Level) or 0)
                 ))
 
-                local StartLevel = self.S.StartLevel or Level or 0
-                table.insert(Lines, "**Starting Level:** " .. tostring(StartLevel))
-                table.insert(Lines, string.format(
-                    "Starting EXP: %s/%s",
-                    tostring(self.S.StartExp or Exp or 0),
-                    tostring(NeededExp(StartLevel) or 0)
-                ))
+                if Leaving then
+                    local StartLevel = self.S.StartLevel or Level or 0
+                    table.insert(Lines, "**Starting Level:** " .. tostring(StartLevel))
+                    table.insert(Lines, string.format(
+                        "Starting EXP: %s/%s",
+                        tostring(self.S.StartExp or Exp or 0),
+                        tostring(NeededExp(StartLevel) or 0)
+                    ))
+                end
             else
                 table.insert(Lines, "Current EC: " .. tostring(Currency or 0))
-                table.insert(Lines, "Starting EC: " .. tostring(self.S.StartCurrency or Currency or 0))
+
+                if Leaving then
+                    table.insert(
+                        Lines,
+                        "Starting EC: " .. tostring(self.S.StartCurrency or Currency or 0)
+                    )
+                end
             end
 
             table.insert(Lines, "Time: " .. FormatDuration(self:GetElapsed()))
@@ -648,24 +659,46 @@ return {
         --// Guard's hold all produce the same pair of messages.
         local FarmingWas = false
 
+        --// One report per change of the farm flag, whoever reports it: the
+        --// toggle calls this as it flips, and the heartbeat calls it with the
+        --// flag it just read, so the edge is seen even when the frame after
+        --// the click never runs. The state is updated here, so the second
+        --// signal for the same edge posts nothing.
+        function Feature:SetFarming(Farming)
+            Farming = Farming == true
+
+            if Farming == FarmingWas then
+                return false
+            end
+
+            FarmingWas = Farming
+
+            --// Both edges post for certain: this is the event itself, not a
+            --// second sighting of one. The leave paths keep their window, so
+            --// the hop that a toggle-off leads to does not post again.
+            if Farming then
+                return self:AnnounceStart()
+            end
+
+            return self:PostReport(true, true)
+        end
+
+        --// The Auto Farm toggle, which knows the moment it was flipped. It
+        --// posts even if the farm loop stops before the next heartbeat.
+        AICFeature.NotifyAutoFarmChanged = function(Value)
+            return Feature:SetFarming(Value)
+        end
+
         --// The elapsed time in the label, and the Starting EC/Level that
         --// PlayerStats was not ready for when the session began.
         function Feature:Update(DeltaTime)
             self:CaptureStart()
 
-            local Farming = FeatureState ~= nil
-                and FeatureState.AutoFarm ~= nil
-                and FeatureState.AutoFarm.Enabled == true
-
-            if Farming ~= FarmingWas then
-                FarmingWas = Farming
-
-                if Farming then
-                    self:AnnounceStart()
-                else
-                    self:AnnounceEnd()
-                end
-            end
+            self:SetFarming(
+                FeatureState ~= nil
+                    and FeatureState.AutoFarm ~= nil
+                    and FeatureState.AutoFarm.Enabled == true
+            )
 
             local Now = os.clock()
 

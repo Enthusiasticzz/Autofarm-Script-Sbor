@@ -667,10 +667,27 @@ return {
                     end
                 end
 
+                --// Nobody on the Block Whitelist is ever an intruder, whatever
+                --// a stale selection says. Leave Instead Of Block closes the
+                --// game, so the list has to win before any leave is decided.
+                if Intruder and AICFeature.IsWhitelisted(Intruder.UserId) then
+                    Intruder = nil
+                end
+
+                local LeavingGame = FeatureState.AutoBlockLeaveOnly.Enabled == true
+
                 if not Intruder and BlockedWhitelisted then
-                    SetFarmState("AUTO BLOCK  HOP FROM @" .. BlockedWhitelisted.Name)
-                    AICFeature.TeleportToPlace(nil, BlockedWhitelisted)
-                    return
+                    if LeavingGame then
+                        --// A whitelisted player who is also blocked would
+                        --// normally be hopped away; with the leave setting on
+                        --// they are ignored instead, so nothing closes the
+                        --// game for someone on the list.
+                        SetFarmState("AUTO BLOCK  @" .. BlockedWhitelisted.Name .. " IS WHITELISTED, STAYING")
+                    else
+                        SetFarmState("AUTO BLOCK  HOP FROM @" .. BlockedWhitelisted.Name)
+                        AICFeature.TeleportToPlace(nil, BlockedWhitelisted)
+                        return
+                    end
                 end
 
                 if Intruder then
@@ -678,7 +695,7 @@ return {
                     --// drop out of the game without touching the block list.
                     --// Not another server: a kick is what a client script can
                     --// do, and it lands back in the Roblox app.
-                    if FeatureState.AutoBlockLeaveOnly.Enabled then
+                    if LeavingGame then
                         SetFarmState("AUTO BLOCK  LEAVING GAME FROM @" .. Intruder.Name)
                         AICFeature.LeaveGame(
                             "Auto Block: leaving instead of blocking",
@@ -1074,6 +1091,13 @@ return {
                 self.Button = AICUI.CreateFeature("Auto Farm", AICFeature.S.Enabled, function(Value)
                     AICFeature.S.Enabled = Value
                     FeatureState.AutoFarm.Enabled = Value
+
+                    --// The toggle is the moment the macro starts or stops, so
+                    --// the Discord report goes now rather than on the next
+                    --// heartbeat, which may never come with the farm off.
+                    if AICFeature.NotifyAutoFarmChanged then
+                        AICFeature.NotifyAutoFarmChanged(Value)
+                    end
 
                     --// Auto Farm off takes Boss Route with it: the route is
                     --// part of a farming session, and left on it ran a boss

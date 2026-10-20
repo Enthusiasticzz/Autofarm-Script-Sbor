@@ -69,11 +69,28 @@ return {
             game:GetService("TeleportService"):Teleport(PlaceId or game.PlaceId, Player)
         end
 
+        --// Someone on the Block Whitelist is never the reason the game is
+        --// closed. Their presence is what the list is for, so Leave Instead
+        --// Of Block leaves them alone even if they sit on Roblox's block
+        --// list as well: it is the escape from a stranger, not from a name
+        --// you chose to keep.
+        function AutoBlock:IsLeaveExempt(OtherPlayer)
+            return OtherPlayer ~= nil
+                and OtherPlayer.UserId ~= nil
+                and self:IsWhitelisted(OtherPlayer.UserId) == true
+        end
+
         --// Leave Instead Of Block's way out: not another server, the game
         --// itself. A kick is the only thing a client script can use to get
         --// back out to the Roblox app, and it reports first, naming whoever
         --// made us leave.
         function AutoBlock:LeaveGame(Reason, OtherPlayer)
+            --// Refused silently: a caller that asks every frame must not be
+            --// answered with a notification every frame.
+            if self:IsLeaveExempt(OtherPlayer) then
+                return false
+            end
+
             if AICFeature.ReportBeforeLeave then
                 AICFeature.ReportBeforeLeave(OtherPlayer)
             end

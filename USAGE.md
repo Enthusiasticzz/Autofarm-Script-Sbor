@@ -214,7 +214,8 @@ block dialog for you so it needs no manual press — executor only, since it rea
 whitelist, Whitelist Skips Safety and Leave Instead Of Block are shared by every profile and
 every place, unlike the rest of this tab.
 
-- **Leave Instead Of Block** (off, global) — instead of blocking an intruder, close the game as soon as their Block Delay runs out: the client is kicked out to the Roblox app (the connection closes and the run ends), leaving the home screen in front of you rather than another server. A kick is the one thing a client script can use to get out of the game — it cannot return you to the app's menus on its own — so the kick screen is what you see on the way out, with the intruder named. Nobody is added to Roblox's block list, so the same player can be met again next time.
+- **Leave Instead Of Block** (off, global) — instead of blocking an intruder, close the game as soon as their Block Delay runs out. The client is kicked out to the Roblox app (the connection closes and the run ends), so you are back at the home screen rather than on another server; a kick is the one thing a client script can use to get out of the game, and it cannot return you to the app's menus on its own, so the kick screen is what you see on the way out, with the intruder named. Nobody is added to Roblox's block list, so the same player can be met again next time.
+- **Nobody on the Block Whitelist ever causes it.** Whitelisted players are already skipped by the intruder check, and Leave Instead Of Block refuses them a second time inside `LeaveGame`, so the list is who the setting leaves alone — including a whitelisted player who also sits on Roblox's block list, which a normal Auto Block would still hop for. With the setting on, that player is ignored and the status reads `IS WHITELISTED, STAYING`.
 - **Block Delay (s)** (0, 0–120) — how long a stranger may stay before being blocked (or, with Leave Instead Of Block, closing the game) and the server left. 0 acts at once; each player's delay starts when they are first seen.
 - **Whitelist Skips Safety** (on, global) — players on the Block Whitelist never make Auto Block or Leave On Danger Group leave the server, even if already blocked.
 - **Block Whitelist** — the UserIds Auto Block never touches. Entries show as `UserId  ·  @name` once the name is known; drag to reorder.
@@ -812,10 +813,21 @@ in `AutoFarmProfiles/Global.json`, so every profile and place reports to the sam
 - **Reset Session** — stamps a new start time and takes today's EC/Level as the starting numbers, for a new run or a new floor.
 - The **SESSION STARTED** line under the buttons shows the report's start time and how long it has been going.
 
-The report is plain message text, in this exact shape:
+The report is plain message text. A **started** report says only where the run is now:
 
 ```text
 # Macro Started at 03:41 PM EST
+Account: YourName and DuoName
+Floor: Floor Name (10299594856)
+Current EC: 1204
+Time: 2 Hours, 15 Minutes, 42 Seconds
+```
+
+An **ended** report (`# Macro Turned off at …`) adds the numbers the run started from, so
+the two messages read as a before and after:
+
+```text
+# Macro Turned off at 05:56 PM EST
 Account: YourName and DuoName
 Floor: Floor Name (10299594856)
 Current EC: 1204
@@ -824,7 +836,8 @@ Time: 2 Hours, 15 Minutes, 42 Seconds
 ```
 
 With **EXP Grind** picked, the two number lines become four — the level on its own,
-then the progress inside that level's EXP bar as `exp/needed` — and the rest is unchanged:
+then the progress inside that level's EXP bar as `exp/needed`. A started report has the
+first pair, an ended one has both:
 
 ```text
 Current Level: 250
@@ -841,8 +854,10 @@ starts, so the starting line keeps the numbers it had before levelling up.
 added in front for a longer run: `2 Hours, 15 Minutes, 42 Seconds`.
 
 - The start time is **US Eastern** (`EST`, or `EDT` while daylight saving is on — the clock is correct either way). Only the clock is shown — no date — so the header stays short. A report posted on the way out (see below) reads `# Macro Turned off at` instead of `# Macro Started at`, so a leave is distinguishable from a manual **Send Report** at a glance.
-- **Sending does not restart the session**, so repeated reports keep the same start and starting numbers and only the current ones move; press **Reset Session** to start a new one.
+- **Sending does not restart the session**, so repeated reports keep the same start and starting numbers (an ended report prints them) and only the current ones move; press **Reset Session** to start a new one. Because the shape follows the header, **Send Report** reads like a started message: current numbers only.
 - **The macro reports its own start and end.** A report headed `# Macro Started at` goes out when Auto Farm comes on — at the first load where the saved profile has it on, and every time the toggle is switched on — and the session clock and starting EC/level restart with it. A report headed `# Macro Turned off at` goes out when Auto Farm is switched off, and on every leave below. So a hop produces an ended report, and the next server's load produces a started one.
+- **The toggle reports the moment it is clicked**, not on the next frame: the Auto Farm toggle tells the Webhook which way it went, so switching the farm off posts the ended report even though the farm loop has already stopped, and the heartbeat that follows does not post it a second time. A profile load still reports through the flag, so the same pair appears whichever way the farm was switched.
+- **A started report carries only the current numbers; an ended report carries both** — the starting EC/level and the current ones — so the pair shows exactly what the run gained.
 - **A report is posted every time the script leaves a server**, before the client moves: Auto Block after the block goes through, **Leave Instead Of Block** closing the game, the server-age hop, the Danger Group hop, **Rejoin** / **Server Hop** / **Join Job ID**, and Follower Guard's kick. The post is synchronous, so the teleport or kick cannot cut the request off. Two reports within **8 s** count as one event, so the toggle-off and the hop it leads to (or a hop and the teleport it starts) post once.
 - **A leave caused by a player names them**, on the line `Left because of: @name (UserId)` under the floor: the intruder Auto Block blocked or left for, the whitelisted player you had blocked, the Danger Group player, and Follower Guard's follower. A leave with nobody behind it — the server-age hop, a Rejoin or Server Hop, a hand-leave, Auto Farm switched off — has no such line at all, rather than an empty one. The same follower or intruder is named in the kick text, so the closed client says who it was on the way out.
 - A teleport the script did not start — a door in the game, the game's own party teleport, another script — is caught from `Player.OnTeleport` and reports too. A manual leave through Roblox's own menu is caught by three best-effort signals: `Players.PlayerRemoving` for you, the local player being destroyed (`AncestryChanged` with no parent), and `game:BindToClose` where the executor allows it on the client. None of them is guaranteed — the client can be gone before the request finishes — so an occasional missing end report on a hand-leave is expected; the script's own leaves always report.

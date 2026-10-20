@@ -750,6 +750,18 @@ were added.
 
 ## To Fix
 
+### [x] Webhook: no end report when Auto Farm is switched off, the whitelist ignored by Leave Instead Of Block, and the started report carrying the starting numbers
+
+- Switching Auto Farm off did not post the macro-ended message to Discord.
+- **Leave Instead Of Block** left the game for people on the Block Whitelist.
+- The started message should carry only the current level and EXP (or EC); the ended message should carry both, so the pair reads as a before and after.
+
+> **Done (v3.68):** `Features/Webhook.lua`, `Features/AutoFarming.lua`, `Features/AutoBlock.lua`, `USAGE.md`.
+> - The edge is now reported from the toggle itself: `AICFeature.NotifyAutoFarmChanged` (installed by Webhook) is called from the Auto Farm toggle as it flips, and both edges post through `Feature:SetFarming`, which records the state so the heartbeat that follows cannot post the same edge again. A profile load still reports through the flag read in `Update`, so `SetFarming` is the one place an edge is turned into a message. Both edges post with the dedupe window bypassed — the toggle is the event, not a second sighting of one — while the leave paths keep the window, so the hop a toggle-off leads to still posts once.
+> - **Leave Instead Of Block** honours the Block Whitelist twice: the whitelisted-but-blocked player no longer makes it hop (that branch is skipped while the setting is on, with the status `IS WHITELISTED, STAYING`), and `AutoBlock:LeaveGame` refuses a whitelisted culprit outright through the new `IsLeaveExempt`, returning `false` without a notification — a caller that asks every frame must not be answered every frame.
+> - The started report now carries only `Current EC` (or `Current Level` + `Current EXP`); the ended report adds `Starting EC` (or `Starting Level` + `Starting EXP`). The shape follows the header, so **Send Report** reads like a started message: current numbers only.
+> - Harness: Webhook suite **152 checks** (was 140): the started report's five lines and no `Starting` line, the started EXP report's six lines, the ended report carrying both pairs, the toggle's start and end posting without a heartbeat, the heartbeat after each posting nothing, and the same state twice posting nothing. AutoBlock suite **27 checks** (was 20): the whitelist exemption by string and by numeric UserId, no kick and no report for a whitelisted player, and no exemption for anyone else or for no player. `luau-compile` clean.
+
 ### [x] Auto Block: Leave Instead Of Block should close the game, and a leave caused by a player should name them
 
 - **Leave Instead Of Block** was hopping to another server; it was meant to get out of the game altogether — back to the home screen.
