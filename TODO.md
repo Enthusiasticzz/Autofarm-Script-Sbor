@@ -2,7 +2,7 @@
 
 Status: `[ ]` not started · `[x]` done or fixed (written, not yet verified in-game)
 
-All 102 items are complete — nothing here is pending. This file is the record of
+All 135 items are complete — nothing here is pending. This file is the record of
 what was asked for and what shipped, oldest work first: `## To Do` lists requested
 features, `## To Fix` lists reported bugs. Every item names the version it shipped
 in, and the note under it explains what actually changed and which tuning constants
@@ -672,6 +672,35 @@ were added.
 > - The fight deliberately keeps the mob it was already fighting when a scan loses it, because a live boss can step out of **Engage Radius**, have its model swapped for a phase, or lose its root for a frame — and counting those as kills reset the stop in the middle of a fight. That keep had no end: it ran on the mob's health alone (`IsMobAlive`). When another player landed the kill and the game took the body out of the `Mobs` folder without ever zeroing its Humanoid, the route held **FIGHT** on a reference the scan could never see again and the character stood at the stop — at low health, so it looked like the route was waiting for the heal — until the game finally dropped the model and the stop reset.
 > - The keep now lapses: `S.TargetSeenAt` records the last scan that actually found the mob, and a target the scan has not found for `TARGET_KEEP_TIME` (**4 s** — the folder is read every 0.2 s) is not the stop's boss any more. The same window guards the "a living boss is never a kill" check, so a body the game has taken away cannot pin the stop there either. A boss that comes back inside the window is the same fight, with no reset on the way.
 > - Harness: 186 checks (was 178). New ones: a boss engaged and then removed from the `Mobs` folder while its Humanoid still reads alive (the character at 20 health, no heal available) resets the stop inside the window and moves on; a boss out of reach for 3 s inside the window keeps the same fight, no reset. Mutations caught: the keep never lapses (3 failures), one missed scan is a kill again (13), the kept target refreshing the clock that should run out (3).
+
+### [x] Utility: Discord webhook reports (Event Currency / EXP Grind)
+
+- A spot to paste a Discord webhook.
+- Below it, a UserId to ping, `everyone`, or blank for no ping.
+- Below that, who you are duoing with, or blank when solo.
+- A dropdown picks the report: Event Currency or EXP Grind.
+- Event Currency: start time in EST, account (and duo), floor name and PlaceId, current EC, starting EC, time.
+- EXP Grind: the same header, with current and starting level instead of EC.
+
+> **Done (v3.59):** `Features/Webhook.lua` (new), the **Webhook** section on the **Utility** tab (`Core/Runtime.lua`), the `DISCORD_*` global settings (`Core/SaveConfig.lua`), and `Init.lua` loads the module.
+> - Everything lives in that one section: **Webhook URL**, **Ping User ID**, **Duo Username**, **Report Format**, **EC Item Name**, **Send Report**, **Reset Session**, and a session line with the start time and elapsed time.
+> - The URL, ping, duo and format are global (`AutoFarmProfiles/Global.json`), so every profile and place reports to the same hook; none of it is part of a profile export.
+> - The report is sent as one Discord message: the ping first (if any), then the five lines. `# Macro Started at` carries US Eastern time (`EST`, or `EDT` in summer), the floor name is looked up from `game.PlaceId` with the server name as fallback, and `Time` is `Nh NNm` after an hour and `N min` before it.
+> - **Send Report** does not restart the session; **Reset Session** stamps a new start and takes the current EC/level as the starting numbers. PlayerStats may not exist yet when the script loads, so the starting values are captured on the first frame that has them.
+> - Blank **EC Item Name** counts the event currency the script already tracks (`AICUI.S.TargetCurrency`), so a new event does not need the name typed in again.
+> - Harness: 53 checks over the report lines (both formats, duo and solo, hours/minutes, missing inventory), the ping forms (UserId, `everyone`, blank), the request (URL, POST, JSON body, sent notice), the refusal without a URL, session reset keeping the starting numbers, and the section's controls and their saves. `luau-compile` clean.
+
+### [x] Auto Block: leave instead of blocking, and the confirm toggle next to Auto Block
+
+- Add a toggle above Auto Block, separated by a divider, that leaves the server after the Block Delay instead of blocking the player.
+- Move Auto Confirm Block directly below Auto Block.
+
+> **Done (v3.59):** `Features/AutoBlock.lua`, `Features/AutoBlockConfirm.lua`, `Features/AutoFarming.lua`, `Core/SaveConfig.lua`, `UI/Utils.lua` (`AddDivider`).
+> - The Auto Block section now reads **Leave Instead Of Block** (off, global), its help line, a divider, **Auto Block**, **Auto Confirm Block**, **Block Delay (s)**, then the whitelist.
+> - **Leave Instead Of Block** on skips `PromptBlockPlayer` entirely: once the Block Delay has run out, the farm reports `AUTO BLOCK  HOP FROM @name` and hops, so nobody is added to Roblox's block list and the same player can be met again on the next server. The delay is still per player and still starts when they are first seen.
+> - **Auto Confirm Block** had to be made by AutoBlock rather than AutoBlockConfirm: that module starts after it, so its toggle used to land past the whitelist at the end of the section. AutoBlock now makes the toggle in place and calls `AICFeature.OnAutoBlockConfirmChanged`, which AutoBlockConfirm sets with the old on/off behaviour (warn when the executor cannot reach CoreGui, disarm when switched off).
+> - `UI/Utils.lua` gained `Section:AddDivider()`: a LayoutOrder component, so later controls still land in the right place.
+> - Harness: 16 checks over the section order (leave toggle above the divider, the divider above Auto Block, Auto Confirm Block directly below it and above the delay), both toggles bound as saved features, and the confirm hook reaching the module. `luau-compile` clean on every touched file.
 
 ## To Fix
 

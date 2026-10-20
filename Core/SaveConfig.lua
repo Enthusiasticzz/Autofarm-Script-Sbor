@@ -62,6 +62,11 @@ return {
             --// blocked) or Leave On Danger Group leave. Owned by AutoBlock;
             --// shared by every profile, like the Block Whitelist.
             { Name = "WhitelistSkipsSafety", Default = true, Key = "v", Global = true },
+            --// Auto Block's other half: instead of blocking an intruder, leave
+            --// the server once the Block Delay has run out. Shared by every
+            --// profile, like the whitelist that decides who counts.
+            { Name = "AutoBlockLeaveOnly", Default = false, Global = true },
+
             --// Turns off shadows, effects and particles for frames (FpsBoost).
             --// Shared by every profile: it is about the machine, not the farm.
             { Name = "FpsBoost",          Default = false, Key = "w", Global = true },
@@ -293,6 +298,25 @@ return {
             --// UserIds allowed to share the server. Auto Block ignores these.
             --// Shared by every profile and PlaceId.
             { Key = "BLOCK_WHITELIST", Default = {}, Normalize = NormalizeIdList },
+
+            --// Discord webhook reporting (Webhook). The URL, the mention
+            --// sent with it, the duo's name and the report format are the
+            --// same on every profile and PlaceId, like the whitelist.
+            { Key = "DISCORD_WEBHOOK", Default = "", Normalize = function(Value)
+                return type(Value) == "string" and Value:gsub("^%s*(.-)%s*$", "%1") or ""
+            end },
+            { Key = "DISCORD_PING", Default = "", Normalize = function(Value)
+                return type(Value) == "string" and Value:gsub("^%s*(.-)%s*$", "%1") or ""
+            end },
+            { Key = "DISCORD_DUO", Default = "", Normalize = function(Value)
+                return type(Value) == "string" and Value:gsub("^%s*(.-)%s*$", "%1") or ""
+            end },
+            --// Blank means the currency the script already tracks for the
+            --// current event (AICUI.S.TargetCurrency).
+            { Key = "DISCORD_EC_ITEM", Default = "", Normalize = function(Value)
+                return type(Value) == "string" and Value:gsub("^%s*(.-)%s*$", "%1") or ""
+            end },
+            { Key = "DISCORD_FORMAT", Default = "Event Currency", Options = { "Event Currency", "EXP Grind" } },
 
             --// Group IDs Leave On Danger Group leaves for.
             { Key = "DANGER_GROUP_IDS", Default = { "5928691" }, Normalize = NormalizeIdList },

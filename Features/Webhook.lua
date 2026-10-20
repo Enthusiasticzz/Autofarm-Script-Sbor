@@ -1,0 +1,412 @@
+-- Webhook posts a summary of the run to a Discord webhook: event currency or
+-- EXP, the account (and duo), the floor, and how long the session has been
+-- going. Everything it needs lives in one section on the Utility tab.
+return {
+    Name = "Webhook",
+    IsFeature = true,
+    Dependencies = {"Runtime", "SaveConfig", "ProfileManager", "Components"},
+
+    Start = function(Context)
+        local Services = Context.Services
+        local HttpService = Services.HttpService
+        local MarketplaceService = Services.MarketplaceService
+        local Player = Context.Player
+        local CONFIG = Context.CONFIG
+        local AICProfile = Context.AICProfile
+        local AICUI = Context.AICUI
+        local UIRef = Context.UIRef
+        local NotifyAction = Context.NotifyAction
+
+        local FORMAT_CURRENCY = "Event Currency"
+        local FORMAT_EXP = "EXP Grind"
+        local FORMATS = { FORMAT_CURRENCY, FORMAT_EXP }
+
+        local Feature = {
+            Name = "Webhook",
+            IsFeature = true,
+            S = {
+                --// When this report started, as os.clock() for the elapsed
+                --// time and as Eastern text for the header.
+                StartedAt = os.clock(),
+                StartedClock = nil,
+                --// Read once when the session starts, so Starting EC/Level
+                --// is the value before the grind rather than the value now.
+                StartCurrency = nil,
+                StartLevel = nil,
+                LastLabelUpdate = 0,
+            },
+        }
+
+        local S = Feature.S
+
+        --// PlaceId -> its name, looked up once. The product lookup yields, so
+        --// it runs in the background and the report falls back to the game's
+        --// own name until it answers.
+        local PlaceNames = {}
+
+        local function Trim(Value)
+            return tostring(Value or ""):gsub("^%s*(.-)%s*$", "%1")
+        end
+
+        local function GetPlayerStats()
+            return Player:FindFirstChild("PlayerStats")
+        end
+
+        local function ReadLevel()
+            local PlayerStats = GetPlayerStats()
+            local Stat = PlayerStats and PlayerStats:FindFirstChild("Level")
+
+            if not Stat then
+                return nil
+            end
+
+            return tonumber(Stat.Value) or 0
+        end
+
+        local function ReadCurrency()
+            local PlayerStats = GetPlayerStats()
+            local Inventory = PlayerStats and PlayerStats:FindFirstChild("Inventory")
+
+            if not Inventory then
+                return nil
+            end
+
+            local ItemName = Trim(CONFIG.DISCORD_EC_ITEM)
+
+            if ItemName == "" then
+                ItemName = AICUI.S.TargetCurrency
+            end
+
+            local _, Amount = AICUI.GetItem(tostring(Inventory.Value or ""), ItemName)
+            return tonumber(Amount) or 0
+        end
+
+        --// "2h 05m" for an hour or more, otherwise "42 min".
+        local function FormatDuration(Seconds)
+            local Total = math.max(0, math.floor(tonumber(Seconds) or 0))
+            local Hours = math.floor(Total / 3600)
+            local Minutes = math.floor((Total % 3600) / 60)
+
+            if Hours > 0 then
+                return string.format("%dh %02dm", Hours, Minutes)
+            end
+
+            return string.format("%d min", Minutes)
+        end
+
+        --// United States Eastern time for the header. os.date is the
+        --// machine's own zone, so the UTC clock is shifted instead: UTC-4
+        --// while daylight saving is on, UTC-5 otherwise. DST starts on the
+        --// second Sunday in March and ends on the first Sunday in November.
+        local function Weekday(Year, Month, Day)
+            if Month < 3 then
+                Year -= 1
+                Month += 12
+            end
+
+            local K = Year % 100
+            local J = math.floor(Year / 100)
+
+            --// Zeller: 0 = Saturday, 1 = Sunday, ...
+            return (Day + math.floor(13 * (Month + 1) / 5) + K
+                + math.floor(K / 4) + math.floor(J / 4) + 5 * J) % 7
+        end
+
+        local function NthSunday(Year, Month, N)
+            local First = 1 + (7 - Weekday(Year, Month, 1)) % 7
+            return First + (N - 1) * 7
+        end
+
+        local function IsEasternDST(Year, Month, Day)
+            if Month < 3 or Month > 11 then
+                return false
+            end
+
+            if Month == 3 then
+                return Day >= NthSunday(Year, 3, 2)
+            end
+
+            if Month == 11 then
+                return Day < NthSunday(Year, 11, 1)
+            end
+
+            return true
+        end
+
+        --// "10/20/2026 03:41 PM EST", or EDT in summer.
+        local function EasternTime()
+            local Now = os.time()
+            local Utc = os.date("!*t", Now)
+            local DST = IsEasternDST(Utc.year, Utc.month, Utc.day)
+            local Offset = DST and 4 or 5
+            local Stamp = os.date("!%m/%d/%Y %I:%M %p", Now - Offset * 3600)
+
+            return Stamp .. (DST and " EDT" or " EST")
+        end
+
+        --// A UserId, "everyone", or nothing at all. A hand-typed @name is
+        --// passed through, so a mention copied from Discord also works.
+        local function FormatPing(Value)
+            local Text = Trim(Value)
+
+            if Text == "" then
+                return ""
+            end
+
+            local Lower = string.lower(Text)
+
+            if Lower == "everyone" or Lower == "@everyone" then
+                return "@everyone"
+            end
+
+            local Id = string.match(Text, "^<@!?(%d+)>$") or string.match(Text, "^@?(%d+)$")
+
+            if Id then
+                return "<@" .. Id .. ">"
+            end
+
+            return string.sub(Text, 1, 1) == "@" and Text or ("@" .. Text)
+        end
+
+        --// The floor's display name, or the server's own name until the
+        --// product lookup has answered (or if it cannot).
+        local function GetPlaceName(PlaceId)
+            local Cached = PlaceNames[PlaceId]
+
+            if Cached then
+                return Cached
+            end
+
+            local Fallback = game.Name
+            Fallback = (Fallback ~= nil and Fallback ~= "" and Fallback)
+                or ("Place " .. tostring(PlaceId))
+
+            PlaceNames[PlaceId] = Fallback
+
+            task.spawn(function()
+                local Ok, Info = pcall(function()
+                    return MarketplaceService:GetProductInfo(PlaceId, Enum.InfoType.Asset)
+                end)
+
+                if Ok and type(Info) == "table" and type(Info.Name) == "string" and Info.Name ~= "" then
+                    PlaceNames[PlaceId] = Info.Name
+                end
+            end)
+
+            return Fallback
+        end
+
+        --// Starts a fresh report: the header time, the elapsed clock and
+        --// the Starting EC/Level all come from this moment. Stat reads can
+        --// be missing before PlayerStats loads, so they are tried again on
+        --// the first update that has them.
+        function Feature:ResetSession()
+            self.S.StartedAt = os.clock()
+            self.S.StartedClock = EasternTime()
+            self.S.StartCurrency = ReadCurrency()
+            self.S.StartLevel = ReadLevel()
+            self.S.LastLabelUpdate = 0
+        end
+
+        function Feature:GetElapsed()
+            return math.max(0, os.clock() - (self.S.StartedAt or os.clock()))
+        end
+
+        function Feature:CaptureStart()
+            if self.S.StartCurrency == nil then
+                self.S.StartCurrency = ReadCurrency()
+            end
+
+            if self.S.StartLevel == nil then
+                self.S.StartLevel = ReadLevel()
+            end
+        end
+
+        --// The message body, in the order Discord shows it.
+        function Feature:BuildReport()
+            --// A report built before the first update still gets the session's
+            --// starting numbers rather than today's.
+            self:CaptureStart()
+
+            local Currency = ReadCurrency()
+            local Level = ReadLevel()
+            local Duo = Trim(CONFIG.DISCORD_DUO)
+            local Account = Player.Name
+
+            if Duo ~= "" then
+                Account = Account .. " and " .. Duo
+            end
+
+            local Lines = {
+                "# Macro Started at " .. tostring(self.S.StartedClock or EasternTime()),
+                "Account: " .. Account,
+                string.format("Floor: %s (%s)", GetPlaceName(game.PlaceId), tostring(game.PlaceId)),
+            }
+
+            if CONFIG.DISCORD_FORMAT == FORMAT_EXP then
+                table.insert(Lines, "Current Level: " .. tostring(Level or 0))
+                table.insert(Lines, "Starting Level: " .. tostring(self.S.StartLevel or Level or 0))
+            else
+                table.insert(Lines, "Current EC: " .. tostring(Currency or 0))
+                table.insert(Lines, "Starting EC: " .. tostring(self.S.StartCurrency or Currency or 0))
+            end
+
+            table.insert(Lines, "Time: " .. FormatDuration(self:GetElapsed()))
+
+            return table.concat(Lines, "\n")
+        end
+
+        --// Posts the report. The HTTP call runs in the background so the
+        --// window does not stall on it, and the result is reported either way.
+        function Feature:Send()
+            local Url = Trim(CONFIG.DISCORD_WEBHOOK)
+
+            if Url == "" then
+                NotifyAction("Webhook", "Paste a Discord webhook URL first", 4)
+                return false
+            end
+
+            if not string.match(Url, "^https?://%S+$") then
+                NotifyAction("Webhook", "That does not look like a webhook URL", 4)
+                return false
+            end
+
+            local Ping = FormatPing(CONFIG.DISCORD_PING)
+            local Text = self:BuildReport()
+            local Content = Ping ~= "" and (Ping .. "\n" .. Text) or Text
+            local Payload = {
+                content = Content,
+                --// Both, so a UserId ping and @everyone both actually mention.
+                allowed_mentions = { parse = { "users", "everyone" } },
+            }
+
+            task.spawn(function()
+                local Ok, Body = pcall(function()
+                    return HttpService:JSONEncode(Payload)
+                end)
+
+                if not Ok then
+                    NotifyAction("Webhook", "Could not build the report", 5)
+                    return
+                end
+
+                local RequestOk, Response = pcall(function()
+                    return HttpService:RequestAsync({
+                        Url = Url,
+                        Method = "POST",
+                        Headers = { ["Content-Type"] = "application/json" },
+                        Body = Body,
+                    })
+                end)
+
+                if not RequestOk then
+                    NotifyAction("Webhook", "Request failed: " .. tostring(Response), 6)
+                    return
+                end
+
+                if type(Response) ~= "table" or not Response.Success then
+                    local Status = type(Response) == "table" and Response.StatusCode or "?"
+                    NotifyAction("Webhook", "Discord rejected the report (HTTP " .. tostring(Status) .. ")", 6)
+                    return
+                end
+
+                NotifyAction("Webhook", "Report sent", 3)
+            end)
+
+            return true
+        end
+
+        local SessionLabel
+
+        local function Save(Key, Value)
+            CONFIG[Key] = Value
+            AICProfile.WriteGlobalStore()
+        end
+
+        local function RefreshLabel()
+            if not SessionLabel then
+                return
+            end
+
+            SessionLabel.Text = string.format(
+                "SESSION STARTED  %s   ·   %s",
+                tostring(S.StartedClock or "--"),
+                FormatDuration(Feature:GetElapsed())
+            )
+        end
+
+        function Feature:CreateUI()
+            local Section = UIRef.WebhookSection
+
+            if not Section then
+                return
+            end
+
+            Section:AddTextbox("Webhook URL", Trim(CONFIG.DISCORD_WEBHOOK), function(Value)
+                Save("DISCORD_WEBHOOK", Trim(Value))
+            end)
+
+            Section:AddTextbox("Ping User ID", Trim(CONFIG.DISCORD_PING), function(Value)
+                Save("DISCORD_PING", Trim(Value))
+            end)
+            Section:AddLabel("UserId to ping, everyone, or blank for no ping")
+
+            Section:AddTextbox("Duo Username", Trim(CONFIG.DISCORD_DUO), function(Value)
+                Save("DISCORD_DUO", Trim(Value))
+            end)
+            Section:AddLabel("Blank when not duoing")
+
+            local FormatPicker = Section:AddDropdown("Report Format", FORMATS, function(Value)
+                Save("DISCORD_FORMAT", Value)
+            end)
+
+            if CONFIG.DISCORD_FORMAT ~= FORMAT_CURRENCY and CONFIG.DISCORD_FORMAT ~= FORMAT_EXP then
+                CONFIG.DISCORD_FORMAT = FORMAT_CURRENCY
+            end
+
+            FormatPicker:Set(CONFIG.DISCORD_FORMAT, false)
+
+            Section:AddTextbox("EC Item Name", Trim(CONFIG.DISCORD_EC_ITEM), function(Value)
+                Save("DISCORD_EC_ITEM", Trim(Value))
+            end)
+            Section:AddLabel("Only used by Event Currency; blank uses the event currency the script tracks")
+
+            Section:AddButton("Send Report", function()
+                Feature:CaptureStart()
+                Feature:Send()
+            end)
+
+            Section:AddButton("Reset Session", function()
+                Feature:ResetSession()
+                RefreshLabel()
+                NotifyAction("Webhook", "Session restarted", 3)
+            end)
+
+            SessionLabel = Section:AddLabel("")
+            RefreshLabel()
+
+            Section:AddLabel("Sending does not restart the session; Reset Session does")
+        end
+
+        --// The elapsed time in the label, and the Starting EC/Level that
+        --// PlayerStats was not ready for when the session began.
+        function Feature:Update(DeltaTime)
+            self:CaptureStart()
+
+            local Now = os.clock()
+
+            if Now - (self.S.LastLabelUpdate or 0) >= 1 then
+                self.S.LastLabelUpdate = Now
+                RefreshLabel()
+            end
+        end
+
+        Feature:ResetSession()
+        --// Warm the floor lookup now, so the first report already has the
+        --// product name instead of the server's own.
+        GetPlaceName(game.PlaceId)
+        Feature:CreateUI()
+
+        return Feature
+    end,
+}

@@ -78,7 +78,8 @@ return {
             ["Gather Radius"] = "How close together mobs must be to count as a pack",
 
             --// Auto Block
-            ["Block Delay (s)"] = "Seconds a stranger may stay before being blocked",
+            ["Leave Instead Of Block"] = "Never blocks the stranger; leaves the server once Block Delay runs out",
+            ["Block Delay (s)"] = "Seconds a stranger may stay before being blocked or left",
             ["Block Whitelist"] = "Players Auto Block leaves alone",
             ["Add Player In Server"] = "Adds someone in this server to the list above",
             ["User ID"] = "A Roblox UserId to add to the list",
@@ -86,6 +87,15 @@ return {
             ["Add Everyone Here"] = "Whitelists every player in this server",
             ["Refresh Player List"] = "Reloads the players in the dropdown",
             ["Clear Whitelist"] = "Removes everyone from the Block Whitelist",
+
+            --// Webhook
+            ["Webhook URL"] = "Discord webhook the report is posted to",
+            ["Ping User ID"] = "UserId to mention, everyone, or blank for none",
+            ["Duo Username"] = "Name reported next to yours; blank when solo",
+            ["Report Format"] = "Which report to post: Event Currency or EXP Grind",
+            ["EC Item Name"] = "Inventory item counted as EC; blank uses the tracked currency",
+            ["Send Report"] = "Posts the report for this session now",
+            ["Reset Session"] = "Starts a new report: new start time and starting numbers",
 
             --// Server
             ["Rejoin"] = "Joins this same server again",

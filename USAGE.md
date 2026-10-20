@@ -203,13 +203,16 @@ while the character is inside it, so the same mobs can be fought in a different 
 
 #### Auto Block
 
-Handles players who are not on the whitelist, and the list itself. **Auto Block** (on) blocks
-strangers and leaves the server, delayed by **Block Delay (s)**; **Auto Confirm Block** (off)
-presses Block in Roblox's block dialog for you so it needs no manual press — executor only, since
-it reads CoreGui. The whitelist and Whitelist Skips Safety are shared by every profile and every
-place, unlike the rest of this tab.
+Handles players who are not on the whitelist, and the list itself. Above **Auto Block**, set apart
+by a divider, **Leave Instead Of Block** (off, global) skips the block entirely and only leaves
+the server. **Auto Block** (on) blocks strangers and leaves the server, delayed by
+**Block Delay (s)**; **Auto Confirm Block** (off), directly under it, presses Block in Roblox's
+block dialog for you so it needs no manual press — executor only, since it reads CoreGui. The
+whitelist, Whitelist Skips Safety and Leave Instead Of Block are shared by every profile and
+every place, unlike the rest of this tab.
 
-- **Block Delay (s)** (0, 0–120) — how long a stranger may stay before being blocked and the server left. 0 acts at once; each player's delay starts when they are first seen.
+- **Leave Instead Of Block** (off, global) — instead of blocking an intruder, leave the server as soon as their Block Delay runs out. Nobody is added to Roblox's block list, so the same player can be met again on the next server.
+- **Block Delay (s)** (0, 0–120) — how long a stranger may stay before being blocked (or, with Leave Instead Of Block, simply left) and the server left. 0 acts at once; each player's delay starts when they are first seen.
 - **Whitelist Skips Safety** (on, global) — players on the Block Whitelist never make Auto Block or Leave On Danger Group leave the server, even if already blocked.
 - **Block Whitelist** — the UserIds Auto Block never touches. Entries show as `UserId  ·  @name` once the name is known; drag to reorder.
 - **Add Player In Server** — dropdown of the players in this server, listed as `DisplayName (@name)  UserId`. Picking one whitelists them.
@@ -770,11 +773,43 @@ on.
 
 ### Utility tab
 
-Two global switches that are about the client rather than the farm loop. Both are shared by every
-profile and PlaceId, so they are not part of a profile export.
+Global controls that are about the client rather than the farm loop, plus the Discord report.
+Everything here is shared by every profile and PlaceId, so none of it is part of a profile export.
 
 - **Auto Start Game** (off, global) — clicks through the title screen into the game. Shared by every profile: it runs before a profile has been loaded.
 - **FPS Boost** (off, global) — turns off shadows, post effects, particles, lights and water waves for frames. Shared by every profile; it is about the machine, not the farm.
+
+#### Webhook
+
+One place for the Discord webhook and what goes into its report. Paste the URL once; it is kept
+in `AutoFarmProfiles/Global.json`, so every profile and place reports to the same hook.
+
+- **Webhook URL** — the Discord webhook URL (`https://discord.com/api/webhooks/...`). Blank sends nothing.
+- **Ping User ID** — a UserId to mention with the report, `everyone` for `@everyone`, or blank to mention nobody. A hand-typed `@name` is passed through.
+- **Duo Username** — who you are duoing with. Blank reports only your account; filled in, the Account line reads `You and Them`.
+- **Report Format** — **Event Currency** or **EXP Grind**; it chooses which two numbers the report carries (see below).
+- **EC Item Name** — the inventory item counted as event currency. Blank uses the currency the script already tracks for the current event (`Fallen Camellia` now).
+- **Send Report** — posts the report for the current session.
+- **Reset Session** — stamps a new start time and takes today's EC/Level as the starting numbers, for a new run or a new floor.
+- The **SESSION STARTED** line under the buttons shows the report's start time and how long it has been going.
+
+The report is plain message text, in this exact shape:
+
+```text
+# Macro Started at 10/20/2026 03:41 PM EST
+Account: YourName and DuoName
+Floor: Floor Name (10299594856)
+Current EC: 1204
+Starting EC: 900
+Time: 2h 15m
+```
+
+With **EXP Grind** picked, `Current EC` / `Starting EC` become `Current Level` / `Starting Level`
+and the rest is unchanged. `Time` is `Nh NNm` after an hour and `N min` before it.
+
+- The start time is **US Eastern** (`EST`, or `EDT` while daylight saving is on — the clock is correct either way).
+- **Sending does not restart the session**, so repeated reports keep the same start and starting numbers and only the current ones move; press **Reset Session** to start a new one.
+- The floor name is looked up from the PlaceId; until that answers (or if it cannot), the report uses the server's own name.
 
 ### Configuration panel
 

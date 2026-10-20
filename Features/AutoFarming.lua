@@ -661,6 +661,14 @@ return {
                 end
 
                 if Intruder then
+                    --// Leave Instead Of Block: the delay has run out, so
+                    --// drop the server without touching the block list.
+                    if FeatureState.AutoBlockLeaveOnly.Enabled then
+                        SetFarmState("AUTO BLOCK  HOP FROM @" .. Intruder.Name)
+                        AICFeature.TeleportToPlace()
+                        return
+                    end
+
                     SetFarmState("AUTO BLOCK  @" .. Intruder.Name)
 
                     if not AICFeature.isBlocked(Intruder.UserId) then

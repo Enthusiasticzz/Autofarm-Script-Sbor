@@ -107,6 +107,9 @@ return {
         UIRef.DebugTab = UI:AddTab("Debug")
         UIRef.UtilityTab = UI:AddTab("Utility")
         UIRef.UtilitySection = UIRef.UtilityTab:AddSection("Utilities")
+        --// Discord reports (Webhook): URL, mention, duo and format in one
+        --// place, on the tab about the machine rather than the farm.
+        UIRef.WebhookSection = UIRef.UtilityTab:AddSection("Webhook")
         UIRef.FeatureSection = UIRef.FarmTab:AddSection("Core")
         UIRef.CoreSection = UIRef.FeatureSection
         UIRef.CombatSection = UIRef.FarmTab:AddSection("Combat")

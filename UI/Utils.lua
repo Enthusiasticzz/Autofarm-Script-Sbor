@@ -3107,6 +3107,35 @@ end
 --// Button
 --//==============================================================
 
+--// A thin line between two groups of controls. Section elements are laid
+--// out by LayoutOrder, so a divider is just another component in the list.
+function Library.SectionMethods:AddDivider()
+    local divider = New("Frame", {
+        Parent = self.Holder,
+
+        BackgroundTransparency = 1,
+
+        BorderSizePixel = 0,
+
+        Size = UDim2.new(1, 0, 0, 7),
+
+        LayoutOrder = #self.Components + 1,
+
+        ZIndex = 15,
+    })
+
+    AddLine(
+        divider,
+        UDim2.new(0, 0, 0.5, 0),
+        UDim2.new(1, 0, 0, 1),
+        self.Library.Theme.Border
+    )
+
+    table.insert(self.Components, divider)
+
+    return divider
+end
+
 function Library.SectionMethods:AddButton(name: string, callback, description: string?)
     local descriptionText = self.Library:_GetDescription(name, description)
     local height = descriptionText and 42 + DESCRIPTION_EXTRA or 42

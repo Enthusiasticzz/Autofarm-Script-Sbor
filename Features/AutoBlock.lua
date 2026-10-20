@@ -259,21 +259,41 @@ return {
         function AutoBlock:CreateUI()
             local BlockSection = UIRef.BlockSection
 
-            if BlockSection then
-                self.Button = BlockSection:AddToggle(
-                    "Auto Block",
-                    self.Enabled,
-                    function(Value)
-                        self:SetEnabled(Value)
-                    end
-                )
-
-                Feature.AutoBlock.Button = self.Button
-            end
-
             if not BlockSection then
                 return
             end
+
+            --// The alternative to blocking, kept above Auto Block and set
+            --// apart by a divider: the same Block Delay, then the server is
+            --// left without a block at all.
+            AICUI.BindFeatureToggle("AutoBlockLeaveOnly", "Leave Instead Of Block", nil, BlockSection)
+
+            BlockSection:AddDivider()
+
+            self.Button = BlockSection:AddToggle(
+                "Auto Block",
+                self.Enabled,
+                function(Value)
+                    self:SetEnabled(Value)
+                end
+            )
+
+            Feature.AutoBlock.Button = self.Button
+
+            --// Auto Confirm Block belongs directly under Auto Block. Its own
+            --// module starts after this one and would otherwise append its
+            --// toggle to the end of the section, past the whitelist; the
+            --// toggle is made here and that module supplies the behaviour.
+            self.ConfirmButton = AICUI.BindFeatureToggle(
+                "AutoBlockConfirm",
+                "Auto Confirm Block",
+                function(Value)
+                    if AICFeature.OnAutoBlockConfirmChanged then
+                        AICFeature.OnAutoBlockConfirmChanged(Value)
+                    end
+                end,
+                BlockSection
+            )
 
             UIRef.BlockDelaySlider = AICUI.AddSettingSlider(
                 BlockSection, "Block Delay (s)", "AUTO_BLOCK_DELAY", true

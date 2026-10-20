@@ -12,8 +12,6 @@ return {
         local GuiClick = Context.GuiClick
         local FeatureState = Context.Feature
         local AICFeature = Context.AICFeature
-        local AICUI = Context.AICUI
-        local UIRef = Context.UIRef
         local NotifyAction = Context.NotifyAction
 
         --// How long to look for the dialog after a prompt.
@@ -305,7 +303,10 @@ return {
             return Feature:IsConfirming(OtherPlayer)
         end
 
-        AICUI.BindFeatureToggle("AutoBlockConfirm", "Auto Confirm Block", function(Enabled)
+        --// AutoBlock makes the toggle itself, directly under Auto Block in its
+        --// section: this module starts after it, so a toggle added here would
+        --// land past the whitelist instead. It calls this when it changes.
+        AICFeature.OnAutoBlockConfirmChanged = function(Enabled)
             if Enabled and not Available then
                 NotifyAction("Auto Confirm Block", "Executor only: Roblox's Block dialog cannot be reached here.", 5)
             end
@@ -313,7 +314,7 @@ return {
             if not Enabled then
                 Feature:Disarm()
             end
-        end, UIRef.BlockSection)
+        end
 
         return Feature
     end,
