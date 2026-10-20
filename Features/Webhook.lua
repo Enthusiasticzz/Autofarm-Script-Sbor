@@ -486,13 +486,12 @@ return {
             Section:AddTextbox("Ping User ID", Trim(CONFIG.DISCORD_PING), function(Value)
                 Save("DISCORD_PING", Trim(Value))
             end)
-            Section:AddLabel("UserId to ping, everyone, or blank for no ping")
 
             Section:AddTextbox("Ping Duo User ID", Trim(CONFIG.DISCORD_DUO_PING), function(Value)
                 Save("DISCORD_DUO_PING", Trim(Value))
             end)
-            Section:AddLabel("Duo's UserId to ping as well, or blank for none")
-
+            Section:AddLabel("UserId to ping, everyone, or blank for no ping")
+            
             Section:AddTextbox("Duo Username", Trim(CONFIG.DISCORD_DUO), function(Value)
                 Save("DISCORD_DUO", Trim(Value))
             end)
