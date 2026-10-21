@@ -323,11 +323,36 @@ return {
             --// disconnects and the run goes with it. Only a kick that could
             --// not be carried out falls back to the hold, so a follower is
             --// never farmed in front of.
-            local Left, Error = LeaveGame(OtherPlayer)
+            local function KickFor()
+                local Left, Error = LeaveGame(OtherPlayer)
 
-            if not Left then
-                HoldInstead(OtherPlayer, "kick failed: " .. tostring(Error))
+                if not Left then
+                    HoldInstead(OtherPlayer, "kick failed: " .. tostring(Error))
+                end
             end
+
+            --// Nothing leaves the instant a follower is spotted: the trip
+            --// takes the same random 2-4 s pause every other leave does
+            --// (Random Leave Delay). It waits in its own task, so the join
+            --// that tripped it is not held up by it.
+            local Wait = AICFeature.LeaveDelay and AICFeature.LeaveDelay() or 0
+
+            if Wait > 0 then
+                task.spawn(function()
+                    task.wait(Wait)
+
+                    --// Turned off during the pause: the trip is off with it.
+                    if Feature.FollowerGuard.Enabled ~= true then
+                        return
+                    end
+
+                    KickFor()
+                end)
+
+                return
+            end
+
+            KickFor()
         end
 
         local function Evaluate(OtherPlayer, Now)

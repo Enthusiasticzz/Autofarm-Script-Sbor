@@ -76,6 +76,13 @@ return {
         --// Seconds before a refused teleport is tried once more.
         local LEAVE_RETRY_DELAY = 10
 
+        --// A leave the script starts on its own pauses a random 2-4 s first,
+        --// so the client never drops the server the same instant a stranger
+        --// appeared: short enough not to be noticed, long enough not to look
+        --// like a machine answering a join. Random Leave Delay turns it off.
+        local RANDOM_LEAVE_MIN = 2
+        local RANDOM_LEAVE_MAX = 4
+
         --// A teleport that never happens leaves the client where it was. If
         --// this timer still runs, the hop did not take, so the latch is freed
         --// and the farm may try again - with no second report, because
@@ -168,26 +175,41 @@ return {
                 and self:IsWhitelisted(OtherPlayer.UserId) == true
         end
 
-        --// The rest of a Block Delay nobody has to wait on in a frame loop.
-        --// When it runs out the leave is asked for again, so the game still
-        --// closes even if the caller was the only one who wanted it. A
-        --// player who left, or is exempt by then, is left alone: there is
-        --// nobody to close the game for.
-        function AutoBlock:WaitForBlockDelay(Reason, OtherPlayer, Remaining)
+        --// How long a leave the script starts should wait before it happens:
+        --// the random 2-4 s pause while Random Leave Delay is on, nothing at
+        --// all while it is off. Every leave path reads it, so nothing leaves
+        --// the instant a stranger is noticed.
+        function AutoBlock:LeaveDelay()
+            if not Feature.RandomLeaveDelay or Feature.RandomLeaveDelay.Enabled ~= true then
+                return 0
+            end
+
+            return RANDOM_LEAVE_MIN + math.random() * (RANDOM_LEAVE_MAX - RANDOM_LEAVE_MIN)
+        end
+
+        --// The rest of a wait nobody has to spend in a frame loop. When it
+        --// runs out the leave is asked for again, so the game still closes
+        --// even if the caller was the only one who wanted it, and it is the
+        --// only ask that skips the wait (`Ready`): one pause per leave, not
+        --// one per re-ask. A player who left, or is exempt by then, is left
+        --// alone: there is nobody to leave for.
+        function AutoBlock:WaitThenLeave(Reason, OtherPlayer, Wait)
             if AICFeature.S.LeaveWaiting then
                 return false
             end
 
             AICFeature.S.LeaveWaiting = true
 
-            task.delay(Remaining, function()
+            task.delay(Wait, function()
                 AICFeature.S.LeaveWaiting = false
 
-                if OtherPlayer.Parent ~= Players or self:IsLeaveExempt(OtherPlayer) then
+                if OtherPlayer ~= nil
+                    and (OtherPlayer.Parent ~= Players or self:IsLeaveExempt(OtherPlayer))
+                then
                     return
                 end
 
-                self:LeaveGame(Reason, OtherPlayer)
+                self:LeaveGame(Reason, OtherPlayer, true)
             end)
 
             return true
@@ -197,7 +219,7 @@ return {
         --// itself. A kick is the only thing a client script can use to get
         --// back out to the Roblox app, and it reports first, naming whoever
         --// made us leave.
-        function AutoBlock:LeaveGame(Reason, OtherPlayer)
+        function AutoBlock:LeaveGame(Reason, OtherPlayer, Ready)
             --// Refused silently: a caller that asks every frame must not be
             --// answered with a notification every frame.
             if self:IsLeaveExempt(OtherPlayer) then
@@ -208,16 +230,21 @@ return {
                 return false
             end
 
-            --// The Block Delay belongs to the setting, not to the caller:
-            --// whoever asks, the game is closed only once the stranger has
-            --// been here that long. An ask that comes early waits out the
-            --// rest on one timer instead of kicking at once, and looks
-            --// again before it does.
-            if OtherPlayer ~= nil then
-                local Remaining = self:BlockDelayRemaining(OtherPlayer)
+            --// Nothing leaves instantly. The wait is whichever is longer: the
+            --// Block Delay still owed to the stranger, so the setting is
+            --// honoured wherever the ask came from, or the random pause that
+            --// keeps a leave from landing on the very frame they joined. An
+            --// ask inside it waits on one timer and looks again when it runs
+            --// out; `Ready` is that second look, and waits on nothing more.
+            if Ready ~= true then
+                local Wait = self:LeaveDelay()
 
-                if Remaining > 0 then
-                    self:WaitForBlockDelay(Reason, OtherPlayer, Remaining)
+                if OtherPlayer ~= nil then
+                    Wait = math.max(Wait, self:BlockDelayRemaining(OtherPlayer))
+                end
+
+                if Wait > 0 then
+                    self:WaitThenLeave(Reason, OtherPlayer, Wait)
                     return false
                 end
             end
@@ -502,6 +529,12 @@ return {
                 BlockSection, "Block Delay (s)", "AUTO_BLOCK_DELAY", true
             )
 
+            --// The pause every leave takes first, right under the delay it
+            --// is added to. On by default: nothing the script does on its own
+            --// should drop the server the moment a stranger appears.
+            AICUI.BindFeatureToggle("RandomLeaveDelay", "Random Leave Delay", nil, BlockSection)
+            BlockSection:AddLabel("On: every leave waits a random 2-4 s first, Follower Guard included")
+
             AICUI.BindFeatureToggle("WhitelistSkipsSafety", "Whitelist Skips Safety", nil, BlockSection)
             BlockSection:AddLabel("On: whitelisted players never make Auto Block or Leave On Danger Group leave, even if blocked")
             BlockSection:AddLabel("Whitelist and Whitelist Skips Safety are shared by every profile")
@@ -642,6 +675,14 @@ return {
             end
             AICFeature.IsBlockDelayOver = function(OtherPlayer)
                 return AutoBlock:IsBlockDelayOver(OtherPlayer)
+            end
+            AICFeature.BlockDelayRemaining = function(OtherPlayer)
+                return AutoBlock:BlockDelayRemaining(OtherPlayer)
+            end
+            --// The random pause a leave takes first, for the other features
+            --// that leave on their own (FollowerGuard, the Danger Group hop).
+            AICFeature.LeaveDelay = function()
+                return AutoBlock:LeaveDelay()
             end
 
             AICUI.RefreshWhitelistPlayerDropdown = function()

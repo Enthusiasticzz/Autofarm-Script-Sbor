@@ -458,6 +458,24 @@ return {
             end
 
             task.spawn(function()
+                --// Nothing leaves the instant a Danger Group member is
+                --// spotted: the same random 2-4 s pause every other leave
+                --// takes runs first (Random Leave Delay), and what was
+                --// decided before it is looked at again after it.
+                local Wait = AICFeature.LeaveDelay and AICFeature.LeaveDelay() or 0
+
+                if Wait > 0 then
+                    task.wait(Wait)
+
+                    if OtherPlayer.Parent ~= Players or not ShouldLeaveFor(OtherPlayer) then
+                        S.DangerHopAttempts = math.max(S.DangerHopAttempts - 1, 0)
+                        S.DangerHopStarted = false
+                        S.Teleporting = false
+                        SetStatus("IDLE")
+                        return
+                    end
+                end
+
                 local Blocked = BlockBeforeLeaving(OtherPlayer)
 
                 --// They left while we waited: nothing to leave for any more.

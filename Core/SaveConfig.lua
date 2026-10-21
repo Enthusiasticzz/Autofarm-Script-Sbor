@@ -66,6 +66,12 @@ return {
             --// the server once the Block Delay has run out. Shared by every
             --// profile, like the whitelist that decides who counts.
             { Name = "AutoBlockLeaveOnly", Default = false, Global = true },
+            --// A leave the script starts on its own (Leave Instead Of Block,
+            --// the Follower Guard kick, the Danger Group hop) pauses a random
+            --// 2-4 s first, so the client never drops the server the same
+            --// instant a stranger appeared. Owned by AutoBlock; shared by
+            --// every profile, like the toggles around it.
+            { Name = "RandomLeaveDelay", Default = true, Global = true },
 
             --// Turns off shadows, effects and particles for frames (FpsBoost).
             --// Shared by every profile: it is about the machine, not the farm.

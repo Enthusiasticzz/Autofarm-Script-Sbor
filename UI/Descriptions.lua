@@ -80,6 +80,7 @@ return {
             --// Auto Block
             ["Leave Instead Of Block"] = "Never blocks the stranger; closes the game once Block Delay runs out",
             ["Block Delay (s)"] = "Seconds a stranger may stay before being blocked or left",
+            ["Random Leave Delay"] = "Every leave waits a random 2-4 s first, so nothing leaves the instant someone joins",
             ["Block Whitelist"] = "Players Auto Block leaves alone",
             ["Add Player In Server"] = "Adds someone in this server to the list above",
             ["User ID"] = "A Roblox UserId to add to the list",
