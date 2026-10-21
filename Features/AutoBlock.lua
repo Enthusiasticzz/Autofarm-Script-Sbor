@@ -69,6 +69,9 @@ return {
         AICFeature.S.Departing = false
         AICFeature.S.LeaveStarted = false
         AICFeature.S.LeaveAttempts = 0
+        --// A leave asked for before the Block Delay ran out is waiting on
+        --// its timer; only one such timer is ever scheduled.
+        AICFeature.S.LeaveWaiting = false
 
         --// Seconds before a refused teleport is tried once more.
         local LEAVE_RETRY_DELAY = 10
@@ -165,6 +168,31 @@ return {
                 and self:IsWhitelisted(OtherPlayer.UserId) == true
         end
 
+        --// The rest of a Block Delay nobody has to wait on in a frame loop.
+        --// When it runs out the leave is asked for again, so the game still
+        --// closes even if the caller was the only one who wanted it. A
+        --// player who left, or is exempt by then, is left alone: there is
+        --// nobody to close the game for.
+        function AutoBlock:WaitForBlockDelay(Reason, OtherPlayer, Remaining)
+            if AICFeature.S.LeaveWaiting then
+                return false
+            end
+
+            AICFeature.S.LeaveWaiting = true
+
+            task.delay(Remaining, function()
+                AICFeature.S.LeaveWaiting = false
+
+                if OtherPlayer.Parent ~= Players or self:IsLeaveExempt(OtherPlayer) then
+                    return
+                end
+
+                self:LeaveGame(Reason, OtherPlayer)
+            end)
+
+            return true
+        end
+
         --// Leave Instead Of Block's way out: not another server, the game
         --// itself. A kick is the only thing a client script can use to get
         --// back out to the Roblox app, and it reports first, naming whoever
@@ -178,6 +206,20 @@ return {
 
             if self:IsLeaving() then
                 return false
+            end
+
+            --// The Block Delay belongs to the setting, not to the caller:
+            --// whoever asks, the game is closed only once the stranger has
+            --// been here that long. An ask that comes early waits out the
+            --// rest on one timer instead of kicking at once, and looks
+            --// again before it does.
+            if OtherPlayer ~= nil then
+                local Remaining = self:BlockDelayRemaining(OtherPlayer)
+
+                if Remaining > 0 then
+                    self:WaitForBlockDelay(Reason, OtherPlayer, Remaining)
+                    return false
+                end
             end
 
             AICFeature.S.Departing = true
@@ -281,20 +323,39 @@ return {
             return now - Since >= BLOCK_SETTLE_SECONDS
         end
 
-        --// Block Delay: an intruder is acted on only once they have been
-        --// seen for AUTO_BLOCK_DELAY seconds. The clock starts the first
-        --// time this is asked about them and stops when they leave.
-        function AutoBlock:IsBlockDelayOver(OtherPlayer)
-            local Delay = math.max(tonumber(CONFIG.AUTO_BLOCK_DELAY) or 0, 0)
-            local now = os.clock()
-            local SeenAt = AICFeature.S.IntruderSeenAt[OtherPlayer.UserId]
+        --// When Auto Block first saw this player: stamped the moment they
+        --// arrived (Players.PlayerAdded in CreateUI), and on the first look
+        --// at them for someone already here when the script loaded. One
+        --// stamp per player per server, cleared when they leave.
+        local function SeenAt(UserId)
+            local Seen = AICFeature.S.IntruderSeenAt[UserId]
 
-            if not SeenAt then
-                SeenAt = now
-                AICFeature.S.IntruderSeenAt[OtherPlayer.UserId] = now
+            if not Seen then
+                Seen = os.clock()
+                AICFeature.S.IntruderSeenAt[UserId] = Seen
             end
 
-            return now - SeenAt >= Delay
+            return Seen
+        end
+
+        function AutoBlock:BlockDelay()
+            return math.max(tonumber(CONFIG.AUTO_BLOCK_DELAY) or 0, 0)
+        end
+
+        --// Seconds of Block Delay still owed to this player. Zero or less
+        --// means it has run out and they may be blocked or left for.
+        function AutoBlock:BlockDelayRemaining(OtherPlayer)
+            local Since = SeenAt(OtherPlayer.UserId)
+
+            return self:BlockDelay() - (os.clock() - Since)
+        end
+
+        --// Block Delay: an intruder is acted on only once they have been
+        --// here for AUTO_BLOCK_DELAY seconds. The clock starts on arrival,
+        --// not on the decision, so a stranger is not rushed because the
+        --// block or the leave was only asked about later.
+        function AutoBlock:IsBlockDelayOver(OtherPlayer)
+            return self:BlockDelayRemaining(OtherPlayer) <= 0
         end
 
         function AutoBlock:PromptBlockPlayer(OtherPlayer)
@@ -533,7 +594,14 @@ return {
 
             self:RefreshWhitelistPlayerDropdown()
 
-            Context.Connect(Players.PlayerAdded, function()
+            Context.Connect(Players.PlayerAdded, function(OtherPlayer)
+                --// The Block Delay is counted from the moment they walk in,
+                --// not from the next look at them, so a stranger is never
+                --// acted on before the delay because the scan was late.
+                if OtherPlayer ~= nil and OtherPlayer.UserId ~= nil then
+                    SeenAt(OtherPlayer.UserId)
+                end
+
                 self:RefreshWhitelistPlayerDropdown()
             end)
 
@@ -585,6 +653,22 @@ return {
             --// The player check runs inside the AutoFarming loop, after the
             --// Auto Farm and retreat gates, as it did in AFV2. Running it here
             --// too prompted twice and teleported with Auto Farm switched off.
+            --//
+            --// What is done here is dropping the stamps of players who are no
+            --// longer in the server: a departure the script missed would
+            --// otherwise be inherited by the same player coming back, and
+            --// the Block Delay would count from the old visit - the leave
+            --// then fires the moment they rejoin.
+            if next(AICFeature.S.IntruderSeenAt) == nil then
+                return
+            end
+
+            for UserId in pairs(AICFeature.S.IntruderSeenAt) do
+                if Players:GetPlayerByUserId(UserId) == nil then
+                    AICFeature.S.IntruderSeenAt[UserId] = nil
+                    AICFeature.S.BlockedSince[UserId] = nil
+                end
+            end
         end
 
         AutoBlock:CreateUI()
