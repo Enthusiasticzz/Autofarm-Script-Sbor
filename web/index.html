@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gilded Archive</title>
+<meta name="description" content="Gilded Archive — an item and equipment database, an anonymous crosstrading market, and the Automated Industry Complex script guide with a community gains wall.">
+<meta name="theme-color" content="#050505">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Gilded Archive">
+<meta property="og:description" content="Every item, every trade. Database, crosstrading market and script guide for the Automated Industry Complex.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23050505'/%3E%3Cpath d='M6 7h20v11l-10 7-10-7z' fill='none' stroke='%23f5a524' stroke-width='1.6'/%3E%3Ctext x='16' y='17' font-family='Georgia,serif' font-size='8' fill='%23f5a524' text-anchor='middle'%3EGA%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Source+Serif+4:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="head">
+  <div class="head-in">
+    <a class="brand" href="#home"><span class="mark">GA</span>Gilded Archive</a>
+    <nav id="nav">
+      <a href="#home">Home</a>
+      <a href="#market">Trading</a>
+      <a href="#database">Database</a>
+      <a href="#script">Gilded Archive Script</a>
+      <!-- ADD A PAGE: add a link here, then a <section class="view" id="..."> below, then a link in the footer -->
+    </nav>
+    <button class="btn" id="loginBtn">Login</button>
+  </div>
+</header>
+
+<main class="page">
+  <section class="view" id="home">
+    <div class="hero" data-ghost="GILDED">
+      <i class="rail"></i>
+      <span class="gl gl-a">The Hub</span><span class="gl gl-b">Database · Trading · Tools</span><span class="gl gl-c">Every item, every trade.</span>
+      <p class="eyebrow">Community Hub</p>
+      <h1>Gilded<span>Archive</span></h1>
+      <p class="sub">Database · Trading · Tools</p>
+      <p class="quote" id="quote"></p>
+      <div class="acts"><a class="btn" href="#database">Browse the Database</a><a class="btn g" href="#market">Open the Market</a></div>
+      <span class="scroll">Scroll</span>
+    </div>
+    <div class="phead">
+      <p class="eyebrow">Search</p>
+      <h1>Find Anything</h1>
+      <div class="search"><input id="gs" type="search" placeholder="Search items, equipment, overlays and floors..." autocomplete="off"><div class="sr" id="sr"></div></div>
+    </div>
+    <div class="summary">
+      <a href="#market"><b data-n="listings"></b><span>Open Trades</span><small>Crosstrading and exchange</small></a>
+      <a href="#database" data-jump="items"><b data-n="items"></b><span>Items</span><small>Consumables and materials</small></a>
+      <a href="#database" data-jump="equipment"><b data-n="equipment"></b><span>Equipment</span><small>Weapons, armor, helmets, capes</small></a>
+      <a href="#script"><b data-n="gains"></b><span>Community Gains</span><small>Posted with the Gilded Archive Script</small></a>
+    </div>
+    <div class="cols">
+      <div class="panel"><h3>Latest Trades <a href="#market">View all</a></h3><div class="tw click" id="tHome"></div></div>
+      <div class="panel"><h3>Community Gains <a href="#script">View all</a></h3><ul class="feed" id="fHome"></ul></div>
+    </div>
+  </section>
+
+  <section class="view" id="market">
+    <div class="phead">
+      <h1>Trading</h1>
+      <p class="lede">Find a player to trade with. Click a listing for details, then message the trader in-game. No account needed to post.</p>
+      <div class="acts"><button class="btn" id="postBtn">Post a listing</button></div>
+    </div>
+    <div class="seg bar tabs"><button class="on" data-tab="pCross">Crosstrading</button><button data-tab="pExch">In-game exchange</button></div>
+  <div class="pane on" id="pCross">
+    <div class="phead">
+      <div class="search"><input class="f" data-t="tCross" placeholder="Search crosstrading listings by item or trader..."></div>
+      <p class="count" data-for="tCross" data-u="listings"></p>
+    </div>
+    <div class="chips" data-t="tCross" data-k="side" data-label="Listing type"></div>
+    <div class="tw click" id="tCross"></div>
+  </div>
+  <div class="pane" id="pExch">
+    <div class="phead">
+      <div class="search"><input class="f" data-t="tExch" placeholder="Search exchange listings by item or trader..."></div>
+      <p class="count" data-for="tExch" data-u="listings"></p>
+    </div>
+    <div class="chips" data-t="tExch" data-k="side" data-label="Listing type"></div>
+    <div class="tw click" id="tExch"></div>
+  </div>
+  <p class="note local-note">Listings are stored in this browser. There is no server yet, so other visitors cannot see them.</p>
+  </section>
+
+  <section class="view" id="database">
+    <div class="phead">
+      <h1>Database</h1>
+      <p class="lede">Items, equipment and overlays. Search, filter by category, or sort by any column. Click a row for details.</p>
+      <div class="legend" id="legend"></div>
+    </div>
+    <div class="seg bar tabs"><button class="on" data-tab="pItems">Items</button><button data-tab="pEquip">Equipment</button><button data-tab="pOver">Overlays</button></div>
+  <div class="pane on" id="pItems">
+    <div class="phead">
+      <div class="search"><input class="f" data-t="tItems" placeholder="Search items by name, stat or description..."></div>
+      <p class="count" data-for="tItems" data-u="items"></p>
+    </div>
+    <div class="chips" data-t="tItems" data-k="category" data-label="Category"></div>
+    <div class="chips sm" data-t="tItems" data-k="rarity" data-label="Rarity"></div>
+    <div class="tw click" id="tItems"></div>
+  </div>
+  <div class="pane" id="pEquip">
+    <div class="phead">
+      <div class="search"><input class="f" data-t="tEquip" placeholder="Search equipment by name, slot or effect..."></div>
+      <p class="count" data-for="tEquip" data-u="pieces"></p>
+    </div>
+    <div class="chips" data-t="tEquip" data-k="slot" data-label="Slot"></div>
+    <div class="chips sm" data-t="tEquip" data-k="rarity" data-label="Rarity"></div>
+    <div class="chips sm" data-t="tEquip" data-k="source" data-label="Source"></div>
+    <div class="tw click" id="tEquip"></div>
+  </div>
+  <div class="pane" id="pOver">
+    <div class="phead">
+      <p class="lede">Overlays are cosmetic. They go on top of any equipment and give no stats or advantages.</p>
+      <div class="search"><input class="f" data-t="tOver" placeholder="Search overlays by name or description..."></div>
+      <p class="count" data-for="tOver" data-u="overlays"></p>
+    </div>
+    <div class="chips" data-t="tOver" data-k="source" data-label="Source"></div>
+    <div class="chips sm" data-t="tOver" data-k="rarity" data-label="Rarity"></div>
+    <div class="tw click" id="tOver"></div>
+  </div>
+  </section>
+
+  <section class="view" id="script">
+    <div class="phead">
+      <h1>Gilded Archive Script</h1>
+      <p class="lede">The Automated Industry Complex, loaded in one line. Pick a floor for its targets, then share what you gained.</p>
+    </div>
+    <div class="cols">
+      <div class="panel pad">
+        <p class="eyebrow">The whole script</p>
+        <div class="code"><code id="loadCode">loading…</code><button class="btn g s" id="copyCode" type="button">Copy</button></div>
+        <div class="acts start">
+          <a class="btn" id="downloadScript" href="#" download>Download Script</a>
+          <a class="btn g" href="https://github.com/Enthusiasticzz/Autofarm-Script-Sbor" target="_blank" rel="noopener">Source on GitHub</a>
+        </div>
+        <p class="muted small">An executor with <code>loadstring</code> and <code>game:HttpGet</code> is required. It pulls every module from the repository, so updates are live the moment they are pushed.</p>
+
+        <p class="eyebrow spaced">First run</p>
+        <ol class="steps">
+          <li><b>Create a profile.</b> Profile Settings → type a name → Create New Profile. Nothing else works until a profile is loaded.</li>
+          <li><b>Add targets.</b> Farming → Targeting → Add Mob Target, and pick every mob you want it to fight.</li>
+          <li><b>Leave Auto Farm on.</b> Status → FARM STATE should change from <code>IDLE (NO TARGET)</code> to <code>CHASE</code>.</li>
+          <li><b>Tune three settings.</b> Safe Combat on, Retreat At HP% 40, Auto Find only if you do not want a route.</li>
+        </ol>
+
+        <p class="eyebrow spaced">Floor guide</p>
+        <div class="seg bar" id="floorTabs"></div>
+        <div id="floorPanel" class="floor"></div>
+      </div>
+      <div class="panel">
+        <h3>Gains Wall</h3>
+        <p class="note local-note">Gains are stored in this browser. There is no server yet, so other visitors cannot see them.</p>
+        <form class="pad" id="gForm">
+          <div class="frow">
+            <div class="fld"><label for="gLvl">Levels gained</label><input id="gLvl" type="number" min="0" placeholder="0"></div>
+            <div class="fld"><label for="gEc">EC gained</label><input id="gEc" type="number" min="0" placeholder="0"></div>
+          </div>
+          <div class="fld"><label for="gFl">Floor</label><input id="gFl" list="floorList" placeholder="Floor 16" required><datalist id="floorList"></datalist></div>
+          <div class="fld"><label for="gMsg">Message (optional)</label><input id="gMsg" maxlength="80" placeholder="Settings, luck, anything useful"></div>
+          <p class="count err" id="gErr" hidden>Add a level or EC amount.</p>
+          <button class="btn">Post My Gains</button>
+        </form>
+        <ul class="feed" id="fWall"></ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="view" id="signup">
+    <div class="phead"><h1>Sign Up</h1><p class="lede">Create your Gilded Archive account.</p></div>
+    <div class="note">Accounts are not live yet. Posting a listing or a gain needs no sign-in, and no email is collected.</div>
+    <form class="panel pad" id="suForm" style="max-width:440px;margin:0 auto">
+      <div class="fld"><label for="suUser">Username</label><input id="suUser" required autocomplete="username"></div>
+      <div class="fld"><label for="suMail">Email</label><input id="suMail" type="email" required autocomplete="email"></div>
+      <div class="fld"><label for="suPw">Password</label><input id="suPw" type="password" required minlength="8" autocomplete="new-password"></div>
+      <div class="fld"><label for="suPw2">Confirm password</label><input id="suPw2" type="password" required autocomplete="new-password"></div>
+      <button class="btn">Create Account</button>
+      <p class="formnote" id="suMsg" hidden></p>
+      <p class="muted">Already have an account? <a href="#signup" data-login>Log in</a></p>
+    </form>
+  </section>
+
+  <section class="view" id="staff">
+    <div class="phead"><p class="eyebrow">Restricted</p><h1>Staff Panel</h1></div>
+
+    <div class="panel pad gate" id="gate">
+      <p class="muted">Enter the staff passcode to edit the databases, floors, listings, gains and quotes.</p>
+      <form id="gateForm">
+        <div class="fld"><label for="gatePw">Passcode</label><input id="gatePw" type="password" autocomplete="current-password" required></div>
+        <button class="btn">Unlock</button>
+      </form>
+      <p class="formnote" id="gateMsg" hidden></p>
+      <p class="muted small">Prototype gate: the passcode lives in <code>data.js</code>, so it stops a visitor, not a developer. Real deployment needs server-side auth.</p>
+    </div>
+
+    <div id="staffPanel" hidden>
+      <div class="note">Changes save to this browser only, and are what the public pages read. Reset restores the sample records from <code>data.js</code>.</div>
+      <div class="bar"><label class="muted" for="qRot">Homepage quote rotation</label>
+        <select id="qRot" style="max-width:220px"><option value="0">Off (first quote)</option><option value="1">Every hour</option><option value="6">Every 6 hours</option><option value="12">Every 12 hours</option><option value="24" selected>Every 24 hours</option><option value="72">Every 3 days</option><option value="168">Every 7 days</option></select></div>
+      <div class="note" id="qNow"></div>
+      <div class="bar">
+        <div class="seg" id="kinds"></div>
+        <input class="f" data-t="tAdmin" id="adminF" placeholder="Filter entries" style="max-width:260px">
+        <button class="btn" id="addBtn">Add Entry</button>
+        <button class="btn d" id="resetBtn">Reset</button>
+      </div>
+      <div class="tw" id="tAdmin"></div>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <span class="mark">GA</span>
+  <h4>Gilded Archive</h4>
+  <p class="tag-l">Database · Trading · Tools</p>
+  <nav><a href="#home">Home</a><a href="#market">Trading</a><a href="#database">Database</a><a href="#script">Gilded Archive Script</a><a href="#staff">Staff</a></nav>
+  <small>© 2026 Gilded Archive. All rights reserved.</small>
+</footer>
+
+<aside id="drawer" role="dialog" aria-modal="true" aria-label="Details"></aside>
+<dialog id="dlg"></dialog>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

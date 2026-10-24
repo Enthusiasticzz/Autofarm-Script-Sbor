@@ -7,6 +7,7 @@
 --   Title, Subtitle, Width, Height, MinWidth, MinHeight
 --   SearchPlaceholder
 --   ReloadText, OnReload()     a button right of the search box (optional)
+--   FooterText, OnFooter()     a button across the bottom of the window (optional)
 --   GetItems()                 the list, in order; each item has a Name
 --   GetChips(Items)            { { Key, Text } ... }; the first is selected
 --                              when the selected one goes away
@@ -37,6 +38,9 @@ return {
         local BAR_HEIGHT = 36
         local CHIP_HEIGHT = 30
         local RELOAD_WIDTH = 112
+        --// The optional footer button, and the gap above it.
+        local FOOTER_HEIGHT = 30
+        local FOOTER_GAP = 8
         --// Row text: name over info, stacked by a layout and centred; the
         --// row grows past ROW_HEIGHT when the text does (Text Scale).
         local ROW_TEXT_X = 12
@@ -341,12 +345,14 @@ return {
 
                 BuildFilterBar(Window.Body)
 
+                local HasFooter = type(Options.FooterText) == "string" and Options.FooterText ~= ""
+                local FooterHeight = HasFooter and (FOOTER_HEIGHT + FOOTER_GAP) or 0
                 local Top = BAR_HEIGHT + CHIP_HEIGHT + 24
                 local Lists = New("Frame", {
                     Parent = Window.Body,
                     BackgroundTransparency = 1,
                     Position = UDim2.fromOffset(0, Top),
-                    Size = UDim2.new(1, 0, 1, -Top),
+                    Size = UDim2.new(1, 0, 1, -(Top + FooterHeight)),
                 })
 
                 ListScroll = Floating.Scroller(Lists, UDim2.new(), UDim2.new(LIST_WIDTH_SCALE, -6, 1, 0), 6, 6)
@@ -370,6 +376,20 @@ return {
                     UDim2.new(1 - LIST_WIDTH_SCALE, -4, 1, 0),
                     10, 10, 10
                 )
+
+                if HasFooter then
+                    local Footer = Button(Window.Body, Options.FooterText, Theme.Cyan, {
+                        AnchorPoint = Vector2.new(0, 1),
+                        Position = UDim2.new(0, 0, 1, 0),
+                        Size = UDim2.new(1, 0, 0, FOOTER_HEIGHT),
+                    })
+
+                    UI:_Connect(Footer.Activated, function()
+                        if Options.OnFooter then
+                            Options.OnFooter()
+                        end
+                    end)
+                end
 
                 Browser.Built = true
             end

@@ -8,10 +8,12 @@
 --     lock, how many you have, its stats with their rank, buy and sell
 --     price, the recipe that makes it and the mobs that drop it, and the
 --     recipes that use it.
+--   * DUMP DATABASE, across the bottom, writes every item, recipe and mob
+--     the script can read to a JSON file (DatabaseDump).
 return {
     Name = "AssetBrowser",
     IsFeature = true,
-    Dependencies = {"Runtime", "Components", "BrowserShell", "DetailKit", "SmithingRecipes", "AssetDictionary", "AssetDetail"},
+    Dependencies = {"Runtime", "Components", "BrowserShell", "DetailKit", "SmithingRecipes", "AssetDictionary", "AssetDetail", "DatabaseDump"},
 
     Start = function(Context)
         local UI = Context.UI
@@ -20,6 +22,7 @@ return {
         local Recipes = Context.SmithingRecipes
         local Assets = Context.AssetDictionary
         local Detail = Context.AssetDetail
+        local Dump = Context.DatabaseDump
 
         --// The inventory is read again this often while open.
         local REFRESH_INTERVAL = 2
@@ -139,6 +142,10 @@ return {
 
                 return "No items match the filters"
             end,
+            FooterText = "DUMP DATABASE",
+            OnFooter = function()
+                Browser:Dump()
+            end,
         })
 
         function Browser:Refresh()
@@ -156,6 +163,12 @@ return {
             S.Stock = Recipes:GetInventory()
             Detail:Select(Name, S.Stock)
             Browser:Refresh()
+        end
+
+        --// Writes every item, recipe and mob to a JSON file, for the site's
+        --// database to be built from (DatabaseDump).
+        function Browser:Dump()
+            Dump:Dump()
         end
 
         --// Reads the assets again, keeping the pick.

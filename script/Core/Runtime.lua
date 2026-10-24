@@ -71,7 +71,7 @@ return {
                 --// Same base as Init.lua's BASE, override included: this path
                 --// only runs when Init did not create the window, and it has to
                 --// fetch the same build rather than another repo's copy.
-                local Base = "https://raw.githubusercontent.com/Enthusiasticzz/Autofarm-Script-Sbor/refs/heads/main/"
+                local Base = "https://raw.githubusercontent.com/Enthusiasticzz/Autofarm-Script-Sbor/refs/heads/main/script/"
 
                 local Ok, Env = pcall(function()
                     return type(getgenv) == "function" and getgenv() or nil

@@ -12,8 +12,9 @@ local BRANCH = "main"
 --// Where every module is downloaded from. The default is this repository, so
 --// what runs in the executor is what was pushed here - pointing at another
 --// repo made a pushed fix invisible to it. Set getgenv().AICBaseURL before
---// loading to run from somewhere else: a fork, or
---// "https://raw.githubusercontent.com/<user>/<repo>/<sha>/" to pin one build.
+--// loading to run from somewhere else: a fork, or a pinned build at
+--// "https://raw.githubusercontent.com/<user>/<repo>/<sha>/script/" (the value
+--// points at the script folder, since every module path is relative to it).
 --// The trailing slash is added when it is missing.
 local BaseOverride = nil
 
@@ -39,7 +40,7 @@ local BASE = BaseOverride
     or (
         "https://raw.githubusercontent.com/Enthusiasticzz/Autofarm-Script-Sbor/refs/heads/"
         .. BRANCH
-        .. "/"
+        .. "/script/"
     )
 
 local ROOT =
@@ -102,6 +103,7 @@ local MODULES = {
     "Features/AssetDictionary.lua",
     "Features/AssetDetail.lua",
     "Features/AssetBrowser.lua",
+    "Features/DatabaseDump.lua",
     "Features/PartySystem.lua",
     "Features/ServerHop.lua",
     "Features/ServerUI.lua",

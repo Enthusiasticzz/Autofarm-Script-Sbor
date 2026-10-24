@@ -14,3 +14,7 @@ desktop.ini
 
 # Local editor/tool marker, not part of the tree.
 .freebuff/
+
+# Web dependencies and build output, when the web app gains a build step.
+node_modules/
+web/dist/
