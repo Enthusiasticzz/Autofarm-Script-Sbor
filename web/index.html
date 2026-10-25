@@ -48,8 +48,8 @@
     </div>
     <div class="summary">
       <a href="#market"><b data-n="listings"></b><span>Open Trades</span><small>Crosstrading and exchange</small></a>
-      <a href="#database" data-jump="items"><b data-n="items"></b><span>Items</span><small>Consumables and materials</small></a>
-      <a href="#database" data-jump="equipment"><b data-n="equipment"></b><span>Equipment</span><small>Weapons, armor, helmets, capes</small></a>
+      <a href="#database" data-jump="items"><b data-n="items"></b><span>Items</span><small>Materials and consumables</small></a>
+      <a href="#database" data-jump="equipment"><b data-n="equipment"></b><span>Equipment</span><small>Weapons, armor, headwear, accessories</small></a>
       <a href="#script"><b data-n="gains"></b><span>Community Gains</span><small>Posted with the Gilded Archive Script</small></a>
     </div>
     <div class="cols">
@@ -87,36 +87,32 @@
   <section class="view" id="database">
     <div class="phead">
       <h1>Database</h1>
-      <p class="lede">Items, equipment and overlays. Search, filter by category, or sort by any column. Click a row for details.</p>
-      <div class="legend" id="legend"></div>
     </div>
     <div class="seg bar tabs"><button class="on" data-tab="pItems">Items</button><button data-tab="pEquip">Equipment</button><button data-tab="pOver">Overlays</button></div>
   <div class="pane on" id="pItems">
     <div class="phead">
-      <div class="search"><input class="f" data-t="tItems" placeholder="Search items by name, stat or description..."></div>
+      <div class="search"><input class="f" data-t="tItems" placeholder="Search materials and consumables..."></div>
       <p class="count" data-for="tItems" data-u="items"></p>
     </div>
-    <div class="chips" data-t="tItems" data-k="category" data-label="Category"></div>
+    <div class="chips" data-t="tItems" data-k="type" data-label="Type"></div>
     <div class="chips sm" data-t="tItems" data-k="rarity" data-label="Rarity"></div>
     <div class="tw click" id="tItems"></div>
   </div>
   <div class="pane" id="pEquip">
     <div class="phead">
-      <div class="search"><input class="f" data-t="tEquip" placeholder="Search equipment by name, slot or effect..."></div>
+      <div class="search"><input class="f" data-t="tEquip" placeholder="Search weapons, armor, headwear, accessories and tools..."></div>
       <p class="count" data-for="tEquip" data-u="pieces"></p>
     </div>
     <div class="chips" data-t="tEquip" data-k="slot" data-label="Slot"></div>
     <div class="chips sm" data-t="tEquip" data-k="rarity" data-label="Rarity"></div>
-    <div class="chips sm" data-t="tEquip" data-k="source" data-label="Source"></div>
     <div class="tw click" id="tEquip"></div>
   </div>
   <div class="pane" id="pOver">
     <div class="phead">
-      <p class="lede">Overlays are cosmetic. They go on top of any equipment and give no stats or advantages.</p>
-      <div class="search"><input class="f" data-t="tOver" placeholder="Search overlays by name or description..."></div>
+      <div class="search"><input class="f" data-t="tOver" placeholder="Search 3D armor, overlays and facewear..."></div>
       <p class="count" data-for="tOver" data-u="overlays"></p>
     </div>
-    <div class="chips" data-t="tOver" data-k="source" data-label="Source"></div>
+    <div class="chips" data-t="tOver" data-k="group" data-label="Type"></div>
     <div class="chips sm" data-t="tOver" data-k="rarity" data-label="Rarity"></div>
     <div class="tw click" id="tOver"></div>
   </div>
@@ -195,7 +191,7 @@
     </div>
 
     <div id="staffPanel" hidden>
-      <div class="note">Changes save to this browser only, and are what the public pages read. Reset restores the sample records from <code>data.js</code>.</div>
+      <div class="note">Changes save to this browser only, and are what the public pages read. Reset restores the records from <code>database.js</code>.</div>
       <div class="bar"><label class="muted" for="qRot">Homepage quote rotation</label>
         <select id="qRot" style="max-width:220px"><option value="0">Off (first quote)</option><option value="1">Every hour</option><option value="6">Every 6 hours</option><option value="12">Every 12 hours</option><option value="24" selected>Every 24 hours</option><option value="72">Every 3 days</option><option value="168">Every 7 days</option></select></div>
       <div class="note" id="qNow"></div>
@@ -222,6 +218,7 @@
 <dialog id="dlg"></dialog>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
+<script src="database.js"></script>
 <script src="data.js"></script>
 <script src="app.js"></script>
 </body>

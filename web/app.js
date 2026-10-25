@@ -23,10 +23,12 @@
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
   const clone = o => (window.structuredClone ? structuredClone(o) : JSON.parse(JSON.stringify(o)));
 
-  const SKEY = 'gilded.v2';
+  // v3: the records now come from the game's own dump, so the old placeholder
+  // listings were dropped with the data they pointed at.
+  const SKEY = 'gilded.v3';
   const STAFF_KEY = 'gilded.staff';
   const SCRIPT = GA.SCRIPT || {};
-  const RAW = SCRIPT.raw || 'https://raw.githubusercontent.com/Enthusiasticzz/Autofarm-Script-Sbor/refs/heads/main/Init.lua';
+  const RAW = SCRIPT.raw || 'https://raw.githubusercontent.com/Enthusiasticzz/Autofarm-Script-Sbor/refs/heads/main/script/Init.lua';
   const LOADSTRING = `loadstring(game:HttpGet("${RAW}"))()`;
 
   /* ---------------------------------------------------------------- */
@@ -51,6 +53,14 @@
           // data.js changed: refresh the reference records, keep what people posted.
           const base = clone(GA.SEED);
           base.seedHash = hash;
+          // Rarity is the one field filled in by hand, so it survives a re-dump.
+          ['items', 'equipment', 'overlays'].forEach(k => {
+            const before = new Map((d[k] || []).map(r => [r.id, r.rarity]));
+            (base[k] || []).forEach(r => {
+              const was = before.get(r.id);
+              if (was) r.rarity = was;
+            });
+          });
           base.listings = d.listings || base.listings;
           base.gains = d.gains || base.gains;
           base.settings = Object.assign(base.settings, d.settings);
@@ -134,44 +144,39 @@
   /* ---------------------------------------------------------------- */
 
   const rar = v => `<span class="rar r-${slug(v)}"><i></i>${esc(v)}</span>`;
-  const src = v => `<span class="tag ${slug(v)}">${esc(v)}</span>`;
+  const src = v => (v ? `<span class="tag ${slug(v)}">${esc(v)}</span>` : '<span class="dim">—</span>');
   const dim = v => `<span class="dim">${esc(v)}</span>`;
   const plain = v => `<span class="nm">${esc(v)}</span>`;
-  const bySource = (v, r) => `<span class="nm ${slug(r.source || 'starter')}">${esc(v)}</span>`;
   const side = v => `<span class="tag ${slug(v)}">${esc(v)}</span>`;
   const yes = v => (v ? '<span class="tag drop">Sold</span>' : '<span class="tag quest">Open</span>');
 
+  const price = v => (Number(v) ? n(v) : '—');
+
   const C = {
     items: [
-      { k: 'category', t: 'Category', f: dim },
       { k: 'name', t: 'Name', f: plain },
-      { k: 'rarity', t: 'Rarity', f: rar },
-      { k: 'exp', t: 'EXP', num: 1, f: stat },
-      { k: 'hp', t: 'HP', num: 1, f: stat },
-      { k: 'str', t: 'STR', num: 1, f: stat },
-      { k: 'vit', t: 'VIT', num: 1, f: stat },
-      { k: 'def', t: 'DEF', num: 1, f: stat },
-      { k: 'agi', t: 'AGI', num: 1, f: stat },
-      { k: 'luck', t: 'LUCK', num: 1, f: stat },
-      { k: 'drops', t: 'Drops', num: 1, f: v => n((v || []).length), sort: v => (v || []).length },
-      { k: 'worth', t: 'Resale', num: 1, f: n }
+      { k: 'type', t: 'Type', f: dim },
+      { k: 'rarity', t: 'Rarity', f: v => (v ? rar(v) : dim('—')) },
+      { k: 'worth', t: 'Worth', num: 1, f: n },
+      { k: 'sell', t: 'Sells for', num: 1, f: price },
+      { k: 'source', t: 'Source', f: src }
     ],
     equipment: [
-      { k: 'name', t: 'Name', f: bySource },
-      { k: 'rarity', t: 'Rarity', f: rar },
-      { k: 'attack', t: 'Attack', num: 1, f: stat },
-      { k: 'crit', t: 'Crit', num: 1, f: v => (Number(v) ? v + '%' : '—') },
-      { k: 'critDamage', t: 'Crit DMG', num: 1, f: v => (Number(v) ? v + '%' : '—') },
-      { k: 'def', t: 'Defense', num: 1, f: stat },
-      { k: 'effect', t: 'Effect', f: v => `<span class="clip" title="${esc(v)}">${esc(v || 'None')}</span>` },
-      { k: 'source', t: 'Source', f: src },
-      { k: 'worth', t: 'Resale', num: 1, f: n }
+      { k: 'name', t: 'Name', f: plain },
+      { k: 'slot', t: 'Slot', f: dim },
+      { k: 'rarity', t: 'Rarity', f: v => (v ? rar(v) : dim('—')) },
+      { k: 'level', t: 'Lvl', num: 1, f: stat },
+      { k: 'dmg', t: 'DMG', num: 1, f: stat },
+      { k: 'def', t: 'DEF', num: 1, f: stat },
+      { k: 'dex', t: 'DEX', num: 1, f: stat },
+      { k: 'worth', t: 'Worth', num: 1, f: n },
+      { k: 'source', t: 'Source', f: src }
     ],
     overlays: [
-      { k: 'name', t: 'Name', f: bySource },
-      { k: 'rarity', t: 'Rarity', f: rar },
-      { k: 'desc', t: 'Description', f: dim },
-      { k: 'worth', t: 'Resale', num: 1, f: n },
+      { k: 'name', t: 'Name', f: plain },
+      { k: 'group', t: 'Type', f: dim },
+      { k: 'rarity', t: 'Rarity', f: v => (v ? rar(v) : dim('—')) },
+      { k: 'worth', t: 'Worth', num: 1, f: n },
       { k: 'source', t: 'Source', f: src }
     ],
     trades: [
@@ -196,10 +201,58 @@
 
   const T = {};
 
+  // The database is thousands of rows, so a table paints one page at a time.
+  // Filtering and sorting run over every row; only the page is in the DOM.
+  const PAGE = 50;
+
+  // One searchable string per record, built once. Tagging it on the record
+  // would put it in localStorage, so it lives beside the data.
+  const HAY = new WeakMap();
+  function hay(x) {
+    let s = HAY.get(x);
+    if (s === undefined) {
+      s = JSON.stringify(x).toLowerCase();
+      HAY.set(x, s);
+    }
+    return s;
+  }
+
   function table(id, cols, rows, onRow) {
     const prev = T[id] || {};
-    T[id] = Object.assign({ key: prev.key, dir: prev.dir, q: prev.q || '', fil: prev.fil || {}, drawn: prev.drawn }, { cols, rows, onRow });
+    T[id] = Object.assign({ key: prev.key, dir: prev.dir, q: prev.q || '', fil: prev.fil || {}, drawn: prev.drawn, page: prev.page || 1 }, { cols, rows, onRow });
     draw(id);
+  }
+
+  // The pager lives beside the table, outside its horizontal scroll frame.
+  function pagerFor(w) {
+    let p = w.nextElementSibling;
+    if (!p || !p.classList.contains('pager')) {
+      p = document.createElement('div');
+      p.className = 'pager';
+      w.after(p);
+    }
+    return p;
+  }
+
+  function drawPager(w, s, pages) {
+    const p = pagerFor(w);
+    p.dataset.pager = w.id;
+    p.hidden = pages < 2;
+    if (pages < 2) { p.innerHTML = ''; return; }
+
+    const page = s.page;
+    const at = i => `<button data-page="${i}" class="${i === page ? 'on' : ''}"${i === page ? ' aria-current="page"' : ''}>${i}</button>`;
+    const parts = [`<button class="step" data-page="${page - 1}"${page === 1 ? ' disabled' : ''} aria-label="Previous page">‹</button>`];
+    const win = [];
+    for (let i = Math.max(1, page - 2); i <= Math.min(pages, page + 2); i++) win.push(i);
+    if (win[0] > 1) { parts.push(at(1)); if (win[0] > 2) parts.push('<span class="gap">…</span>'); }
+    win.forEach(i => parts.push(at(i)));
+    if (win[win.length - 1] < pages) {
+      if (win[win.length - 1] < pages - 1) parts.push('<span class="gap">…</span>');
+      parts.push(at(pages));
+    }
+    parts.push(`<button class="step" data-page="${page + 1}"${page === pages ? ' disabled' : ''} aria-label="Next page">›</button>`);
+    p.innerHTML = parts.join('');
   }
 
   function draw(id) {
@@ -207,24 +260,39 @@
     const w = $('#' + id);
     if (!s || !w) return;
 
-    const q = (s.q || '').trim();
+    const q = (s.q || '').toLowerCase().trim();
     const rows = s.rows.filter(x =>
-      (!q || JSON.stringify(x).toLowerCase().includes(q)) &&
+      (!q || hay(x).includes(q)) &&
       Object.entries(s.fil || {}).every(([k, v]) => !v || x[k] === v));
 
     const keyOf = x => (s.key === 'rarity' ? RANK.indexOf(x.rarity) : s.cols.find(c => c.k === s.key)?.sort ? s.cols.find(c => c.k === s.key).sort(x[s.key]) : x[s.key]);
     if (s.key) rows.sort((a, b) => (keyOf(a) > keyOf(b) ? 1 : keyOf(a) < keyOf(b) ? -1 : 0) * s.dir);
 
+    const pages = Math.max(1, Math.ceil(rows.length / PAGE));
+    s.page = Math.min(Math.max(1, s.page || 1), pages);
+    const start = (s.page - 1) * PAGE;
+    const shown = rows.slice(start, start + PAGE);
+
     const head = s.cols.map(c => `<th data-k="${c.k}" tabindex="0" class="${c.num ? 'num' : ''}" aria-sort="${s.key === c.k ? (s.dir > 0 ? 'ascending' : 'descending') : 'none'}">${c.t}${s.key === c.k ? (s.dir > 0 ? ' ▲' : ' ▼') : ''}</th>`).join('');
-    const body = rows.map((x, j) => `<tr data-id="${esc(x.id || '')}" tabindex="0" style="--d:${Math.min(j, 12) * 35}ms">${s.cols.map(c => `<td class="${c.num ? 'num' : ''}">${c.f ? c.f(x[c.k], x) : esc(x[c.k])}</td>`).join('')}</tr>`).join('');
+    const body = shown.map((x, j) => `<tr data-id="${esc(x.id || '')}" tabindex="0" style="--d:${Math.min(j, 12) * 35}ms">${s.cols.map(c => `<td class="${c.num ? 'num' : ''}">${c.f ? c.f(x[c.k], x) : esc(x[c.k])}</td>`).join('')}</tr>`).join('');
 
     w.classList.toggle('settled', !!s.drawn);
     s.drawn = 1;
     w.innerHTML = `<table><thead><tr>${head}</tr></thead><tbody>${body ||
       `<tr><td class="empty" colspan="${s.cols.length}">Nothing matches. <button class="btn g s" data-clear="${id}">Clear filters</button></td></tr>`}</tbody></table>`;
 
+    drawPager(w, s, pages);
+
     const c = $(`[data-for="${id}"]`);
-    if (c) c.textContent = (rows.length === s.rows.length ? n(rows.length) : `Showing ${n(rows.length)} of ${n(s.rows.length)}`) + ' ' + c.dataset.u;
+    if (c) {
+      if (pages > 1) {
+        c.textContent = `${n(start + 1)}–${n(start + shown.length)} of ${n(rows.length)} ${rows.length === s.rows.length ? c.dataset.u : 'matches'}`;
+      } else if (rows.length === s.rows.length) {
+        c.textContent = n(rows.length) + ' ' + c.dataset.u;
+      } else {
+        c.textContent = `Showing ${n(rows.length)} of ${n(s.rows.length)} ${c.dataset.u}`;
+      }
+    }
   }
 
   function chips() {
@@ -235,6 +303,9 @@
       let vals = Array.from(new Set(s.rows.map(r => r[k]).filter(v => v !== undefined && v !== null && v !== '')));
       if (k === 'rarity') vals.sort((a, b) => RANK.indexOf(a) - RANK.indexOf(b));
       else vals.sort((a, b) => String(a).localeCompare(String(b)));
+      // A row with one choice filters nothing; it appears once there is a choice.
+      el.hidden = vals.length < 2;
+      if (el.hidden) { el.innerHTML = ''; return; }
       const cur = (s.fil || {})[k] || '';
       el.innerHTML = ['', ...vals].map(v =>
         `<button data-v="${esc(v)}" class="${v === cur ? 'on' : ''}" aria-pressed="${v === cur}">${v ? esc(v) : 'All'}</button>`).join('');
@@ -246,12 +317,19 @@
   /* ---------------------------------------------------------------- */
 
   let lastFocus = null;
+  // Set while a click is opening the drawer, so that same click does not
+  // immediately count as a click outside it.
+  let openedThisClick = false;
 
   function drawer(html, actions = '') {
     lastFocus = document.activeElement;
-    $('#drawer').innerHTML = `<div class="drawer-body">${html}</div><div class="acts">${actions}<button class="btn g" data-close>Close</button></div>`;
-    $('#drawer').classList.add('open');
-    const b = $('#drawer [data-close]');
+    const box = $('#drawer');
+    box.innerHTML = `<button class="drawer-x" data-close aria-label="Close details" title="Close">×</button>
+      <div class="drawer-scroll"><div class="drawer-body">${html}</div>${actions ? `<div class="acts">${actions}</div>` : ''}</div>`;
+    box.scrollTop = 0;
+    box.classList.add('open');
+    openedThisClick = true;
+    const b = box.querySelector('[data-close]');
     if (b) b.focus({ preventScroll: true });
   }
 
@@ -321,13 +399,65 @@
   /* Detail views                                                     */
   /* ---------------------------------------------------------------- */
 
-  const STATS = [
-    ['exp', 'EXP'], ['hp', 'HP'], ['str', 'STR'], ['vit', 'VIT'],
-    ['def', 'DEF'], ['agi', 'AGI'], ['luck', 'LUCK']
-  ];
+  // The stats the game actually stores on an item. A record only shows the
+  // ones it has, so a material is not padded with five dashes.
+  const STATS = [['level', 'LVL'], ['skill', 'SKILL'], ['dmg', 'DMG'], ['def', 'DEF'], ['dex', 'DEX']];
 
-  const statBlock = r => `<div class="statgrid">${STATS.map(([k, t]) =>
-    `<div${Number(r[k]) ? '' : ' class="off"'}><span>${t}</span><b>${stat(r[k])}</b></div>`).join('')}</div>`;
+  const statBlock = r => {
+    const rows = STATS.filter(([k]) => Number(r[k]));
+    if (!rows.length) return '';
+    return `<div class="statgrid">${rows.map(([k, t]) => `<div><span>${t}</span><b>${stat(r[k])}</b></div>`).join('')}</div>`;
+  };
+
+  const FLAGS = {
+    Bound: 'Bound — cannot be traded',
+    Unobtainable: 'No longer obtainable',
+    Pass: 'Needs a gamepass',
+    Group: 'Group members only',
+    Badge: 'Badge reward'
+  };
+
+  const flagTags = flags => (flags || [])
+    .map(f => `<span class="chip" title="${esc(FLAGS[f] || '')}">${esc(FLAGS[f] || f)}</span>`).join(' ');
+
+  const sourceTags = r => {
+    const list = r.obtained && r.obtained.length ? r.obtained : (r.source ? [r.source] : []);
+    return list.map(src).join(' ');
+  };
+
+  const descText = v => esc(v || 'No description.').replace(/\n/g, '<br>');
+
+  function recipeTable(recipe) {
+    if (!recipe) return '';
+    const rows = (recipe.materials || []).map(m =>
+      `<tr><td>${esc(m.name)}</td><td class="num">×${n(m.amount)}</td></tr>`).join('');
+    return `<p class="eyebrow spaced">Recipe${Number(recipe.skill) ? ` · skill ${n(recipe.skill)}` : ''}</p>
+      <div class="tw plain"><table class="mini"><thead><tr><th>Material</th><th class="num">Amount</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+
+  function showEntry(r) {
+    const kind = r.kind === 'equipment' ? 'equipment' : r.kind === 'overlays' ? 'overlays' : 'items';
+    const seg = kind === 'items' ? 'item' : kind === 'equipment' ? 'gear' : 'overlay';
+    if (r.id) detailUrl(seg, r.id);
+    const effect = r.effect
+      ? `<p class="eyebrow spaced">Effect</p><p>${esc(r.effect.name)}${(r.effect.props || []).map(p => ` · ${esc(p.label)} ${esc(p.value)}`).join('')}</p>`
+      : '';
+    drawer(`<h3>${esc(r.name)}</h3><span class="chip">${esc(r.type || '—')}</span>${r.slot ? ` <span class="chip">${esc(r.slot)}</span>` : ''} ${flagTags(r.flags)}
+      ${kind === 'items' ? '' : image(r.image, r.name)}
+      <p class="muted">${descText(r.desc)}</p>
+      ${statBlock(r)}
+      <dl>
+        <dt>Rarity</dt><dd>${r.rarity ? rar(r.rarity) : '<span class="dim">Not set</span>'}</dd>
+        <dt>Worth</dt><dd>${n(r.worth)}</dd>
+        <dt>Shop price</dt><dd>${Number(r.sell) ? n(r.sell) : 'Not sold in shops'}</dd>
+        ${Number(r.sellAgility) ? `<dt>With Agility pass</dt><dd>${n(r.sellAgility)}</dd>` : ''}
+        ${r.eventCurrency ? `<dt>Bought with</dt><dd>${esc(r.eventCurrency)}</dd>` : ''}
+        <dt>Source</dt><dd>${sourceTags(r) || '—'}</dd>
+      </dl>
+      ${effect}
+      ${kind === 'overlays' ? '' : `<p class="eyebrow spaced">Dropped by</p>${dropTable(r.drops)}`}
+      ${recipeTable(r.recipe)}`, openActions(r, kind));
+  }
 
   function dropTable(drops) {
     if (!drops || !drops.length) return '<p class="muted small">No known drops yet.</p>';
@@ -349,37 +479,10 @@
       `<button class="btn" data-jump="market" data-name="${esc(entry.name)}">Find listings</button>`;
   };
 
-  function showItem(r) {
-    if (r.id) detailUrl('item', r.id);
-    drawer(`<h3>${esc(r.name)}</h3><span class="chip">${esc(r.category)}</span> ${rar(r.rarity)}
-      <p class="muted">${esc(r.desc || 'No description.')}</p>
-      ${statBlock(r)}
-      <dl><dt>Resale value</dt><dd>${n(r.worth)}</dd></dl>
-      <p class="eyebrow spaced">Dropped by</p>
-      ${dropTable(r.drops)}`, openActions(r, 'items'));
-  }
-
-  function showEquip(r) {
-    if (r.id) detailUrl('gear', r.id);
-    const stats = `<div class="statgrid"><div${Number(r.attack) ? '' : ' class="off"'}><span>ATK</span><b>${stat(r.attack)}</b></div>
-      <div${Number(r.crit) ? '' : ' class="off"'}><span>CRIT</span><b>${Number(r.crit) ? r.crit + '%' : '—'}</b></div>
-      <div${Number(r.critDamage) ? '' : ' class="off"'}><span>CRIT DMG</span><b>${Number(r.critDamage) ? r.critDamage + '%' : '—'}</b></div>
-      ${STATS.slice(2).map(([k, t]) => `<div${Number(r[k]) ? '' : ' class="off"'}><span>${t}</span><b>${stat(r[k])}</b></div>`).join('')}</div>`;
-    drawer(`<h3>${esc(r.name)}</h3><span class="chip">${esc(r.slot)}</span> ${rar(r.rarity)}
-      ${image(r.image, r.name)}
-      ${stats}
-      <dl><dt>Effect</dt><dd>${esc(r.effect || 'None')}</dd><dt>Source</dt><dd>${src(r.source)}</dd><dt>Resale value</dt><dd>${n(r.worth)}</dd></dl>`,
-      openActions(r, 'equipment'));
-  }
-
-  function showOverlay(r) {
-    if (r.id) detailUrl('overlay', r.id);
-    drawer(`<h3>${esc(r.name)}</h3><span class="chip">Overlay</span> ${rar(r.rarity)}
-      ${image(r.image, r.name)}
-      <p class="muted">${esc(r.desc || 'No description.')}</p>
-      <dl><dt>Source</dt><dd>${src(r.source)}</dd><dt>Resale value</dt><dd>${n(r.worth)}</dd></dl>`,
-      openActions(r, 'overlays'));
-  }
+  // One sheet for all three tabs; the record's kind decides the header.
+  const showItem = showEntry;
+  const showEquip = showEntry;
+  const showOverlay = showEntry;
 
   function showListing(r) {
     const entry = r.itemId
@@ -513,13 +616,6 @@
     table('tOver', C.overlays, S.overlays, showOverlay);
   }
 
-  function renderLegend() {
-    $('#legend').innerHTML = RARITY.map((r, i) => {
-      const bands = ['1 in 1–4', '1 in 5–19', '1 in 20–99', '1 in 100–499', '1 in 500–4,999', '1 in 5,000+'];
-      return `<span class="rar r-${slug(r)}"><i></i>${r}<small>${bands[i]}</small></span>`;
-    }).join('');
-  }
-
   /* ---------------------------------------------------------------- */
   /* Script guide                                                     */
   /* ---------------------------------------------------------------- */
@@ -617,7 +713,7 @@
     }
     if (f.type === 'select') {
       return `<div class="fld">${label}<select id="${id}" name="${f.k}">${f.options.map(o =>
-        `<option${String(v) === o ? ' selected' : ''}>${esc(o)}</option>`).join('')}</select></div>`;
+        `<option value="${esc(o)}"${String(v) === o ? ' selected' : ''}>${o ? esc(o) : 'Not set'}</option>`).join('')}</select></div>`;
     }
     if (f.type === 'number') {
       return `<div class="fld">${label}<input id="${id}" name="${f.k}" type="number" step="1" value="${esc(v)}"></div>`;
@@ -763,7 +859,7 @@
     const sr = $('#sr');
     if (!q) { sr.classList.remove('on'); sr.innerHTML = ''; return; }
     const hits = [['items', S.items], ['equipment', S.equipment], ['overlays', S.overlays], ['floors', S.floors]]
-      .flatMap(([k, arr]) => (arr || []).filter(x => `${x.name} ${x.desc || ''} ${x.targets || ''}`.toLowerCase().includes(q)).map(x => [k, x.name]))
+      .flatMap(([k, arr]) => (arr || []).filter(x => `${x.name} ${x.type || ''} ${x.source || ''} ${x.desc || ''} ${x.targets || ''}`.toLowerCase().includes(q)).map(x => [k, x.name]))
       .slice(0, 8);
     sr.innerHTML = hits.map(([k, name]) =>
       `<button data-sec="${k}" data-name="${esc(name)}">${esc(name)}<span class="chip">${SEC[k]}</span></button>`).join('')
@@ -861,6 +957,7 @@
       if (!t) return;
       t.fil = {};
       t.q = String(name || '').toLowerCase();
+      t.page = 1;
       input.value = name || '';
       draw(input.dataset.t);
     });
@@ -877,6 +974,7 @@
     const t = T[input.dataset.t];
     if (!t) return;
     t.q = input.value.toLowerCase();
+    t.page = 1;
     draw(input.dataset.t);
   });
 
@@ -890,6 +988,7 @@
 
   document.addEventListener('click', e => {
     const t = e.target;
+    openedThisClick = false;
 
     if (!t.closest('.search')) $('#sr').classList.remove('on');
 
@@ -928,7 +1027,7 @@
     const clear = t.closest('[data-clear]');
     if (clear) {
       const id = clear.dataset.clear, s = T[id];
-      s.q = ''; s.fil = {};
+      s.q = ''; s.fil = {}; s.page = 1;
       const f = $(`.f[data-t="${id}"]`);
       if (f) f.value = '';
       draw(id); chips(); return;
@@ -969,8 +1068,24 @@
       const s = T[wrap.dataset.t];
       if (!s) return;
       s.fil = Object.assign({}, s.fil || {}, { [wrap.dataset.k]: ch.dataset.v });
+      s.page = 1;
       draw(wrap.dataset.t);
       chips();
+      return;
+    }
+
+    const pg = t.closest('.pager button');
+    if (pg && !pg.disabled) {
+      const box = pg.parentNode;
+      const s = T[box.dataset.pager];
+      if (s) {
+        s.page = Math.max(1, Number(pg.dataset.page) || 1);
+        draw(box.dataset.pager);
+        // The pager sits below a tall table, so bring the new page into view.
+        // Offset by the sticky header so the first row is not hidden under it.
+        const w = document.getElementById(box.dataset.pager);
+        if (w) scrollTo({ top: Math.max(0, w.getBoundingClientRect().top + scrollY - 84) });
+      }
       return;
     }
 
@@ -981,6 +1096,7 @@
       if (!s) return;
       s.dir = s.key === th.dataset.k ? -s.dir : 1;
       s.key = th.dataset.k;
+      s.page = 1;
       draw(id);
       return;
     }
@@ -1016,12 +1132,12 @@
   $('#copyCode').addEventListener('click', () => copy(LOADSTRING));
   $('#addBtn').addEventListener('click', () => editEntry(adminKind, null));
   $('#resetBtn').addEventListener('click', () => {
-    if (!confirm('Replace all records, listings and gains with the sample data from data.js?')) return;
+    if (!confirm('Replace all records, listings and gains with the data shipped with the site?')) return;
     S = clone(GA.SEED);
     S.seedHash = seedHash();
     save();
     renderAll();
-    toast('Sample data restored');
+    toast('Site data restored');
   });
   $('#qRot').addEventListener('change', e => {
     S.settings.quoteHours = Number(e.target.value) || 0;
@@ -1084,6 +1200,16 @@
     }
   });
 
+  // A click anywhere off the drawer closes it. Registered after the main
+  // handler, so the click that opens it has already set openedThisClick.
+  document.addEventListener('click', e => {
+    if (openedThisClick) { openedThisClick = false; return; }
+    const box = $('#drawer');
+    if (!box.classList.contains('open')) return;
+    if (e.target.closest('#drawer') || e.target.closest('dialog')) return;
+    closeDrawer();
+  });
+
   addEventListener('hashchange', route);
   addEventListener('popstate', route);
 
@@ -1097,7 +1223,6 @@
     renderQuote();
   }
 
-  renderLegend();
   renderAll();
   route();
 })();

@@ -9,8 +9,10 @@ No framework and no build step. Three files do the work:
 | --- | --- |
 | `index.html` | Page structure, one section per route |
 | `styles.css` | The whole visual system — theme tokens are at the top |
-| `data.js` | Schema and seed records |
+| `database.js` | The game's records, generated — do not edit by hand |
+| `data.js` | Schema, floors, sample listings, gains, quotes |
 | `app.js` | State, routing, tables, forms, staff panel |
+| `DatabaseDump.json` | The raw in-game dump the records are built from |
 
 Open `index.html` directly, or serve the folder while working:
 
@@ -24,9 +26,9 @@ py -m http.server 8138 --directory web
 | --- | --- |
 | `#home` | Hero, global search, counts, latest trades, gains |
 | `#market` | Crosstrading and in-game exchange listings, with posting |
-| `#database/items` | Items: EXP, HP, STR, VIT, DEF, AGI, LUCK, resale |
-| `#database/equipment` | Equipment: attack, crit, crit damage, defence, effect, source, resale, image |
-| `#database/overlays` | Cosmetics |
+| `#database/items` | Materials and consumables: type, rarity, worth, shop price, source |
+| `#database/equipment` | Weapons, armor, headwear, accessories, offhands and tools: slot, rarity, level, damage, defence, dexterity, worth, source |
+| `#database/overlays` | 3D armor, outfit/headwear/accessory/weapon overlays and facewear |
 | `#item/<id>` · `#gear/<id>` · `#overlay/<id>` | A record, opened directly — every entry is linkable |
 | `#script` | Loadstring, first run, per-floor guide, gains wall |
 | `#signup` | Account mock-up (see below) |
@@ -34,14 +36,47 @@ py -m http.server 8138 --directory web
 
 ## Data
 
-Records live in `data.js` under `GA.SEED`, shaped by `GA.SCHEMA`. Adding a
-record by hand means adding an object with an `id` you choose; the staff panel
-also creates them, and the latest state always wins.
+Every record comes from the game itself. In game, open the **Asset Explorer**
+and press **DUMP DATABASE**; the script writes `AutoFarmProfiles/DatabaseDump.json`
+in the executor's folder. Put that file here as `DatabaseDump.json` and rebuild:
 
-The site copies `SEED` into `localStorage` (`gilded.v2`) on first load. It
-re-seeds the reference records whenever `GA.SEED` changes, while keeping
-listings and gains people posted, so editing `data.js` is enough to see new rows
-after a refresh.
+```sh
+py tools/build-database.py
+```
+
+That writes `database.js` (`window.GA_DB`), which the page loads before
+`data.js`. The two are split so a re-dump never touches the hand-written parts —
+floors, sample listings, gains, quotes. `tools/build-database.py` documents the
+mapping; in short:
+
+- **items** — game type `Material` or `Consumable`
+- **equipment** — what carries stats: weapons (DMG), `Outfit` armor (DEF/DEX),
+  `UpperHeadwear` headwear (DEF/DEX), `LowerHeadwear` accessories — capes,
+  scarves, necklaces (DEF/DEX) — shields (DEF) and fishing rods. The slot comes
+  from the type, so headwear and accessories are separate slots.
+- **overlays** — cosmetics with no stats: `Armor3D` (a 3D shell worn over an
+  outfit), facewear and every `*Overlay` type. Overlays carry a friendlier
+  `group` (“3D armor”, “Outfit overlay”, “Accessory overlay”, …) for the tab's
+  type filter.
+
+Guild-locked gear and cosmetics are dropped from the build (`EXCLUDED_SOURCES`
+in the script): they cannot be traded and only clutter the lists.
+
+The record shape is `id, name, type, kind, slot, group, level, skill, dmg, def,
+dex, worth, sell, sellAgility, rarity, source, obtained, flags, eventCurrency,
+desc, effect, recipe, drops`.
+
+The game has no rarity stat. Every record gets one from the drop rate it does
+give: the tier of the record's rarest known 1-in-N drop, shown in the table, the
+filter row and the detail sheet. Anything the game never revealed a drop for
+stays blank (“—”), and the staff panel's **Rarity** field sets it by hand. Items
+with drops (31 of 408) therefore get Uncommon or Rare from the real rates.
+
+The site copies the seed into `localStorage` (`gilded.v3`) on first load. It
+re-seeds the records whenever the seed changes, while keeping listings and gains
+people posted. Tables paint **50 rows a page** with a pager under each table, so
+only a page is ever in the DOM; search, filters and sorting still run over every
+row.
 
 Drops mirror the game:
 
@@ -50,17 +85,17 @@ drops: [{ mob: 'Goblin', oneIn: 50, rolls: 2 }]
 ```
 
 `oneIn` is the "1 in N" roll and `rolls` is how many times it is rolled per
-kill. The shown chance is `1 - (1 - 1/oneIn)^rolls` and the rarity tier is
-derived from `oneIn`, so the legend and the drop table cannot disagree.
-
-The seeded records are placeholders, clearly not real game values. Replace them
-in `data.js` with the real database.
+kill. The shown chance is `1 - (1 - 1/oneIn)^rolls` and the tier is derived from
+`oneIn`, so the tier chip and the percentage always agree. Drops only exist for
+mobs the script has seen in a server, which is why most items say none are
+known.
 
 ## Script link
 
 The loadstring and the Download button both read `GA.SCRIPT.raw` at the top of
-`data.js`. It currently points at `main/Init.lua`, which is what the repository
-serves today; change it to `main/script/Init.lua` once the folder move is pushed.
+`data.js`. It points at `main/script/Init.lua` — the script lives in the
+repository's `script/` folder, so `main/Init.lua` is a 404. If the entry point
+ever moves again, this is the one line to change.
 
 ## Market and gains
 
@@ -76,8 +111,10 @@ Passcode: **`gilded-staff`**, kept in `sessionStorage` for the tab. It is in
 server-side auth.
 
 The panel edits every collection: add, edit and remove items (including their
-drop table), equipment, overlays, floors, listings, gains and quotes. Reset
-restores the sample records.
+drop table), equipment, overlays, floors, listings, gains and quotes. Filter box
+and pager included, since the database is thousands of rows. **Rarity** is a
+select on equipment and overlays, blank when unknown. Reset restores the records
+shipped with the site.
 
 ## Accounts
 
