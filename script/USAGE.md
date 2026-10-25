@@ -565,29 +565,29 @@ the route started on the stop are still walked.
    on a reference nothing could reach: the character stood at the corpse until
    the game finally dropped the model, which is why it looked like the route
    was waiting for the character to heal before it would reset.
-5. If it ends on the kill and **Reset After Kill** is on, what the reset costs
-   decides it — and that is **learned from the game**, not predicted. After a
-   reset the route reads `PlayerStats.EXP` again once the character is back
-   and watches it for **4 s** (the penalty lands on the respawn and the stat
-   settles a moment after; the lowest reading is the one taken). The share a
-   reset left behind is remembered for that **level**, and the lowest share
-   ever seen there is the one kept.
+5. If it ends on the kill and **Reset After Kill** is on, where the character
+   is in its EXP bar decides the reset. The bar is **the level's own
+   requirement** — the EXP that level asks for, `neededExp(Level) −
+   neededExp(Level − 1)` — which is the number you read as "I needed 1,300 to
+   level up": **1,302** at level 216, **3,606** at 600, **5,406** at 900. A
+   reset keeps the **first 10% of that bar for every 100 levels**, stopping at
+   **90% from level 900 up**, so at level 216 it keeps the first **281** and
+   at 900 the first **4,865**.
 
-   - **A level that was watched paying**: every later reset there holds, and
-     `CLEARING  7s  LOSE 50 EXP` shows the cost from that measurement. This is
-     the low-level case — at 600 the game keeps about 60% of the EXP, so a
-     reset costs 40% of it, and the route now waits for it instead of firing
-     the instant the boss drops.
-   - **A level that was watched taking nothing**: resets stay **instant** —
-     one scan tick after the kill, `RESET NOW` — and the numbers `EXP` and
-     `neededExp(Level)` are only used as the bar-position check above the
-     protected part.
-   - **A level nothing has been measured on yet**: the route does not assume
-     the reset is free. The guess is a share of the held EXP (10% per hundred
-     levels, capped at 90% from level 900) and the bar position, whichever is
-     larger, so the first reset at a level is held and the game then says what
-     it really cost.
-   - **EXP that cannot be read at all** counts as a cost and is waited out.
+   - **Above the kept part the route holds**, and `CLEARING  7s  LOSE 50 EXP`
+     counts it down. That is the reported case: 1,200 of a 1,300 bar at level
+     216 is 92% of the bar, well over the 21.6% the game protects, so the
+     reset waits instead of firing the moment the boss drops.
+   - **Inside the kept part it resets at once** — one scan tick after the kill,
+     `RESET NOW` — because the game takes nothing there.
+   - **EXP it cannot place** (the stats are not readable yet, or a number that
+     fits no bar) counts as a loss and is waited out.
+
+   The bar's size is what the old build got wrong: `AICUI.neededExp` is a
+   running total, so using it as the bar made 1,200 of a 1,300 level look like
+   0.8% of 141,909 and every reset below level 900 came back free. A
+   **running total** in `PlayerStats.EXP` is read too — a value between this
+   level's floor and its reach is progress in this level's bar.
 
    A reset that costs EXP always pauses, even when the row's **Reset (s)** is
    **0**: the box sizes the pause, it does not license throwing the EXP away.

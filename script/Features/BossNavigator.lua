@@ -104,10 +104,12 @@ return {
         local TARGET_KEEP_TIME = 4
         --// A reset whose character never comes back gives up after this.
         local RESPAWN_TIMEOUT = 20
-        --// EXP kept after a reset, as a guess for a level nothing has been
-        --// measured on yet: ten percent for every hundred levels, 90% from
-        --// level 900 up. Only used until a reset on that level has been
-        --// watched (KeepShare); the game's own answer replaces it.
+        --// EXP kept after a reset: ten percent of the level's EXP bar for every
+        --// hundred levels, and it stops climbing at 90% once the level reaches
+        --// 900. Only the EXP above that protected part of the bar is lost, and
+        --// what a reset would take is read from this before the reset, because
+        --// the hold at the corpse is only worth having when there is something
+        --// to lose.
         local KEEP_PERCENT_PER_LEVEL = 0.1
         local KEEP_PERCENT_MAX = 90
         --// The hold a stop that has no Reset (s) of its own gets.
@@ -115,10 +117,6 @@ return {
         --// A reset that costs nothing is not waited for: one scan tick after
         --// the kill is enough to know nothing else of the stop is standing.
         local FREE_RESET_GRACE = 0.2
-        --// How long the EXP stat is watched after a reset. The game takes the
-        --// death penalty on the respawn and the stat can settle a moment after
-        --// it, so the cost is read from the lowest value seen in this window.
-        local RESET_EXP_WINDOW = 4
         --// Still alive this long after the reset fired means the game dropped
         --// it; ask again rather than standing at the corpse.
         local RESET_RETRY_TIME = 3
@@ -412,10 +410,9 @@ return {
             return Level and tonumber(Level.Value) or nil
         end
 
-        --// Share of the EXP a reset leaves behind: ten percent for every hundred
-        --// levels, 90% from level 900 up. No level published yet (PlayerStats is
-        --// filled a moment after joining) reads as "nothing is lost", so the
-        --// route never holds for ten seconds on a guess.
+        --// Share of the EXP bar a reset leaves behind: ten percent for every
+        --// hundred levels, 90% from level 900 up. Only reached with a level in
+        --// hand - GetResetCost returns "unknown" without one, and that holds.
         local function GetKeepPercent(Level)
             if not Level or Level <= 0 then
                 return 100
@@ -424,56 +421,56 @@ return {
             return math.min(Level * KEEP_PERCENT_PER_LEVEL, KEEP_PERCENT_MAX)
         end
 
-        --// The size of a level's EXP bar, from the same curve the HUD prints
-        --// (AICUI.neededExp). The label reads `EXP <value>/<Needed(Level)>`,
-        --// and the value starts again at 0 on every level, so the bar is the
-        --// level's own requirement: 2,438,097 at level 900.
-        --//
-        --// The old build took the difference between two levels instead -
-        --// about 5,400 at level 900 - and compared the progress inside the
-        --// real bar with 90% of that. At 100,000 of 2,438,097 the overflow
-        --// looked like 95,000, so every reset was held; then, once the
-        --// running-total band was tried instead, the progress could not be
-        --// placed at all and every reset was free. The bar itself was the
-        --// missing piece, not the placement.
+        --// The size of a level's EXP bar: the EXP that level asks for, which
+        --// is the difference between its own point on the curve and the one
+        --// before it (AICUI.neededExp is a running total, not a bar). That is
+        --// the number a player reads as "I needed 1,300 to level up": about
+        --// 1,302 at level 216, 3,606 at 600, 5,406 at 900. Taking the running
+        --// total itself - millions - as the bar is what made every reset look
+        --// free below level 900: 1,200 of 141,909 read as 0.8% of the bar
+        --// instead of 92% of the 1,302 it actually asks for.
         --// Cached per level: that curve is a loop, and this is read every
         --// frame of a hold.
         local LevelBars = {}
 
+        --// Reach: the running total at which this level is done (the number the
+        --// HUD prints after the slash). Floor: the total the level started at.
+        --// Bar: what the level itself asks for, Reach - Floor.
         local function GetLevelBar(Level)
             if not Level or Level <= 0 then
-                return nil, 0
+                return nil, 0, 0
             end
 
             local Cached = LevelBars[Level]
 
             if Cached then
-                return Cached.Ceiling, Cached.Bar
+                return Cached.Reach, Cached.Bar, Cached.Floor
             end
 
             local Needed = type(AICUI.neededExp) == "function" and AICUI.neededExp
 
             if not Needed then
-                return nil, 0
+                return nil, 0, 0
             end
 
-            local Bar = math.max(1, Needed(Level))
-            --// Where the next level starts, for a game that publishes a
-            --// running total instead of the progress inside the bar.
-            local Ceiling = math.max(Bar + 1, Needed(Level + 1))
+            local Reach = math.max(1, Needed(Level))
+            local Floor = Level > 1 and math.max(0, Needed(Level - 1)) or 0
+            local Bar = math.max(1, Reach - Floor)
 
-            LevelBars[Level] = { Ceiling = Ceiling, Bar = Bar }
+            LevelBars[Level] = { Reach = Reach, Bar = Bar, Floor = Floor }
 
-            return Ceiling, Bar
+            return Reach, Bar, Floor
         end
 
-        --// How far into its bar the character's EXP is, 0..bar. The bar runs
-        --// from 0 to the level's requirement (the shape the HUD draws); a
-        --// running total would sit between this level's requirement and the
-        --// next, so that is read too. nil when neither fits, so the route
-        --// never holds on a number it cannot place.
+        --// How far into its bar the character's EXP is, 0..bar. A value that
+        --// already fits the level's own bar is that bar's progress (the EXP
+        --// stat restarting each level); a running total sits between this
+        --// level's floor and its reach, and is read from the floor. Past the
+        --// reach means the character has levelled up (the stat has not caught
+        --// up yet), so it is at the end of the old bar. nil when it fits
+        --// neither, and then the caller holds rather than guessing.
         local function GetBarProgress(Exp, Level)
-            local Ceiling, Bar = GetLevelBar(Level)
+            local Reach, Bar, Floor = GetLevelBar(Level)
 
             if not Bar or Bar <= 0 then
                 return nil, Bar
@@ -483,107 +480,29 @@ return {
                 return Exp, Bar
             end
 
-            if Ceiling and Ceiling > Bar and Exp <= Ceiling then
-                return Exp - Bar, Ceiling - Bar
+            if Exp > Floor and Exp <= Reach then
+                return Exp - Floor, Bar
+            end
+
+            if Reach and Exp > Reach then
+                return Bar, Bar
             end
 
             return nil, Bar
         end
 
         --// What a reset has been *seen* to leave behind, one share per level:
-        --// 0.6 means a reset on that level keeps sixty percent of the EXP the
-        --// character holds and takes the rest. Measured from the game after a
-        --// reset (WatchResetExp); nil until one on that level has been watched.
-        --//
-        --// The rule cannot be read off the EXP curve. It was modelled as "the
-        --// first 90% of the bar is protected at level 900" and a level 600
-        --// account kept losing EXP anyway: below level 900 a reset keeps a much
-        --// smaller part of what is held, so a character sitting low in its bar
-        --// - where the model called the reset free - still paid. Whichever way
-        --// the game does it, the amount it takes is observable, so the route
-        --// watches one reset per level and then holds exactly when it is paid.
-        local KeepShare = {}
-
-        --// Levels where a reset has been watched taking nothing at all. The
-        --// guess below is not needed there any more, so resets stay instant
-        --// where the game has shown it takes nothing.
-        local VerifiedFree = {}
-
-        --// The lowest EXP seen after the reset that is still being watched.
-        local ResetWatch = nil
-
-        --// Reads the EXP the last reset left behind, once the character is back.
-        --// Runs for RESET_EXP_WINDOW seconds: the penalty lands on the respawn
-        --// and the stat settles a moment after, so a single read can catch it
-        --// before or after. The lowest value is the one taken.
-        local function WatchResetExp(Now)
-            local Watch = ResetWatch
-
-            if not Watch then
-                return
-            end
-
-            local _, Humanoid = Runtime:GetCharacter()
-            local Level = GetLevel()
-            local Exp = GetExp()
-
-            --// Still dead, or the stats are not readable yet: the window has
-            --// not opened, and nothing has been compared. A level up across
-            --// the reset leaves the old bar's EXP gone, so that reset cannot be
-            --// measured at all - drop it rather than learn a wrong share.
-            if not Level or not Exp then
-                return
-            end
-
-            if Humanoid and Humanoid.Health > 0 and not Watch.Started then
-                Watch.Started = Now
-                Watch.Low = Exp
-                return
-            end
-
-            if Level ~= Watch.Level or not Watch.Started then
-                if Now - Watch.At >= RESPAWN_TIMEOUT then
-                    ResetWatch = nil
-                end
-
-                return
-            end
-
-            Watch.Low = math.min(Watch.Low, Exp)
-
-            if Now - Watch.Started < RESET_EXP_WINDOW then
-                return
-            end
-
-            ResetWatch = nil
-
-            if Watch.Before <= 0 then
-                return
-            end
-
-            local Share = math.clamp(Watch.Low / Watch.Before, 0, 1)
-
-            --// Nothing taken. Which part of the bar is protected is another
-            --// matter (a reset higher up can still cost), so this is recorded
-            --// as "the guess is not needed here", not as a free level.
-            if Share >= 0.999 then
-                VerifiedFree[Watch.Level] = true
-                return
-            end
-
-            VerifiedFree[Watch.Level] = nil
-
-            local Known = KeepShare[Watch.Level]
-
-            --// The lowest share ever seen on that level: one reset that came
-            --// back even does not undo another that was watched paying.
-            KeepShare[Watch.Level] = Known and math.min(Known, Share) or Share
-        end
-
         --// What a reset would cost where the character is standing: the EXP it
         --// would take, the size of one level's EXP bar, and that loss as a share
-        --// of the bar. nil when the EXP cannot be read at all - an unknown cost
-        --// is waited out, never assumed to be nothing.
+        --// of the bar. The bar is the level's own requirement (1,302 at level
+        --// 216, 3,606 at 600), and the game keeps a part of it: the first 10%
+        --// for every hundred levels, 90% from level 900 up. So 1,200 of a
+        --// 1,300 bar at level 216 is 92% of a bar that only protects 21.6% -
+        --// the reset takes the 1,200 above the 281 it keeps, and the route
+        --// holds for it instead of resetting the instant the boss drops.
+        --//
+        --// nil means the cost cannot be read (no stats yet, a number that fits
+        --// no bar) and is waited out, never taken for free.
         local function GetResetCost()
             local Level = GetLevel()
             local Exp = GetExp()
@@ -592,41 +511,28 @@ return {
                 return nil
             end
 
-            --// An empty bar has nothing to take, whichever way the game does it.
+            --// An empty bar has nothing to take.
             if Exp <= 0 then
                 return 0, 0, 0, Level
             end
 
-            local _, Bar = GetLevelBar(Level)
-            local Progress = GetBarProgress(Exp, Level)
+            local Progress, Bar = GetBarProgress(Exp, Level)
+
+            if not Progress or not Bar or Bar <= 0 then
+                return nil
+            end
+
             local Keep = GetKeepPercent(Level) / 100
+            local Loss = math.max(0, Progress - Bar * Keep)
 
-            --// Measured on this level: the share of the held EXP a reset was
-            --// watched taking.
-            local Share = KeepShare[Level]
-            local FromShare = Share and math.max(0, Exp * (1 - Share)) or 0
-
-            --// The protected part of the bar, the reading the game was assumed
-            --// to use, still holds when the character sits above it.
-            local FromBar = Progress and Bar and math.max(0, Progress - Bar * Keep) or 0
-
-            --// Until a reset on this level has been watched taking nothing, a
-            --// share of what is held is assumed to be at risk. This is what
-            --// makes a level 600 reset hold: it never measured free, so the
-            --// guess - which at 600 is 40% of the bar - holds it rather than
-            --// firing at once on a number the game never confirmed.
-            local FromGuess = VerifiedFree[Level] and 0 or Exp * (1 - Keep)
-
-            local Loss = math.max(FromShare, FromBar, FromGuess)
-
-            return Loss, Bar, Bar and Bar > 0 and Loss / Bar or 0, Level
+            return Loss, Bar, Loss / Bar, Level
         end
 
         --// Seconds held at the corpse before the reset. Nothing is held when the
-        --// game has been seen taking nothing at this level and place in the bar;
+        --// character's EXP sits inside the part of the bar a reset keeps;
         --// otherwise the stop's own Reset (s), ten by default. A reset that
         --// costs EXP always pauses - a 0 in the box is not a licence to throw it
-        --// away - and an EXP stat that cannot be read is treated as a loss.
+        --// away - and a cost that cannot be read is treated as a loss.
         local function GetResetHold(Stop)
             local Wait = tonumber(Stop and Stop.ResetWait)
             local Loss = GetResetCost()
@@ -1187,16 +1093,6 @@ return {
             local _, Humanoid, RootPart = Runtime:GetCharacter()
 
             S.Resets += 1
-
-            --// What the level and the EXP are before the game takes its cut, so
-            --// WatchResetExp can tell what this reset actually cost. Read here,
-            --// not after the kill: the stat belongs to the body being reset.
-            local Before = GetExp()
-            local WatchLevel = GetLevel()
-
-            ResetWatch = Before and Before > 0 and WatchLevel
-                and { Level = WatchLevel, Before = Before, At = Now }
-                or nil
 
             if Humanoid and Humanoid.Health > 0 then
                 Humanoid:Move(Vector3.zero)
@@ -2541,8 +2437,6 @@ return {
                 return false
             end
 
-            WatchResetExp(Now)
-
             if WatchDeath(Now) then
                 return true
             end
@@ -2645,8 +2539,6 @@ return {
                 return false
             end
 
-            WatchResetExp(Now)
-
             if WatchDeath(Now) then
                 return true
             end
@@ -2667,11 +2559,6 @@ return {
         --// A profile load brings another place's stops with it.
         AICFeature.ResetBossRoute = function()
             EndDodge()
-            --// Another profile or place: its levels and its route know nothing
-            --// of what this one has been watched doing.
-            table.clear(KeepShare)
-            table.clear(VerifiedFree)
-            ResetWatch = nil
             S.HpAt = nil
             S.HpBase = nil
             S.Index = 1
