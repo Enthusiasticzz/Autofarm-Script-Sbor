@@ -538,15 +538,22 @@ return {
         end
 
         --// Seconds held at the corpse before the reset: the row's Reset (s),
-        --// ten when it has none, plus RESET_HOLD_EXTRA. Nothing is held when the
-        --// character's EXP sits inside the part of the bar a reset keeps. A
-        --// reset that costs EXP always pauses - a 0 in the box is not a licence
-        --// to throw the EXP away - and a cost that cannot be read is a loss.
+        --// ten when it has none, plus RESET_HOLD_EXTRA. Always Wait Before Reset
+        --// takes that pause every time, so nothing resets on the spot even when
+        --// the EXP check would have called it free. Otherwise nothing is held
+        --// when the character's EXP sits inside the part of the bar a reset
+        --// keeps. A reset that costs EXP always pauses - a 0 in the box is not a
+        --// licence to throw the EXP away - and a cost that cannot be read is a
+        --// loss.
         local function GetResetHold(Stop)
             local Wait = tonumber(Stop and Stop.ResetWait)
 
             if not Wait or Wait <= 0 then
                 Wait = DEFAULT_RESET_HOLD
+            end
+
+            if CONFIG.BOSS_RESET_ALWAYS_WAIT == true then
+                return Wait + RESET_HOLD_EXTRA
             end
 
             local Loss = GetResetCost()
@@ -858,6 +865,9 @@ return {
                     or "PROMPT:  NONE SAVED  (NEAREST TO THE STOP IS USED)"
             end
             if UIRef.BossLoopToggle then UIRef.BossLoopToggle:Set(CONFIG.BOSS_ROUTE_LOOP ~= false, false) end
+            if UIRef.BossAlwaysWaitToggle then
+                UIRef.BossAlwaysWaitToggle:Set(CONFIG.BOSS_RESET_ALWAYS_WAIT == true, false)
+            end
             AICUI.RefreshBossPathList()
         end
 
@@ -2369,7 +2379,8 @@ return {
                 --// there is nothing to wait for and the route moves on after
                 --// the grace. A reset that costs no EXP is not held at all, so
                 --// the ten seconds only ever show up when there is something
-                --// to lose.
+                --// to lose - unless Always Wait Before Reset is on, which holds
+                --// every reset for its pause whatever the EXP would cost.
                 local Hold = Stop.ResetAfterKill and GetResetHold(Stop) or 0
                 --// A reset with nothing to lose is not held at all: one scan
                 --// tick after the kill, not the two-second grace the held
@@ -2383,13 +2394,19 @@ return {
                         local Loss = GetResetCost()
                         local Fleeing = FleeStep(Humanoid, RootPart, Stop)
 
+                        --// With nothing at risk the hold is the Always Wait
+                        --// toggle holding a reset the EXP check called free,
+                        --// so say that rather than "LOSE 0 EXP".
+                        local Risk = Loss == nil and "COST UNKNOWN"
+                            or (Loss > 0 and string.format("LOSE %d EXP", math.floor(Loss + 0.5))
+                                or "NO EXP AT RISK")
+
                         SetStatus(string.format(
                             "STOP %d/%d  CLEARING  %ds  %s%s",
                             S.Index,
                             #GetStops(),
                             math.ceil(Left),
-                            Loss and string.format("LOSE %d EXP", math.floor(Loss + 0.5))
-                                or "COST UNKNOWN",
+                            Risk,
                             Fleeing and "  RUNNING" or ""
                         ))
                     else
@@ -2606,6 +2623,25 @@ return {
 
         UIRef.BossStatusLabel = UIRef.BossSection:AddLabel("STATUS:  IDLE")
 
+        --// Turns instant resets off: with it on, every stop takes its Reset (s)
+        --// before resetting, even when the character's EXP is inside the part of
+        --// the bar a reset keeps and the wait would cost nothing.
+        UIRef.BossAlwaysWaitToggle = UIRef.BossSection:AddToggle(
+            "Always Wait Before Reset",
+            CONFIG.BOSS_RESET_ALWAYS_WAIT == true,
+            function(Value)
+                CONFIG.BOSS_RESET_ALWAYS_WAIT = Value == true
+
+                if AICProfile.S.ActiveProfileName then
+                    AICProfile.SaveActiveProfile()
+                end
+
+                SetStatus(CONFIG.BOSS_RESET_ALWAYS_WAIT
+                    and "ALWAYS WAIT BEFORE RESET"
+                    or "INSTANT RESET WHEN NOTHING IS AT RISK")
+            end
+        )
+
         UIRef.BossSection:AddButton("Add Boss Stop Here", function()
             local _, _, RootPart = Runtime:GetCharacter()
 
@@ -2657,7 +2693,8 @@ return {
 
         UIRef.BossListComponent = UIRef.BossSection:AddPriority("Boss Route", BuildLabels(), {
             --// Seconds held at the corpse before a reset that costs EXP. The
-            --// reset is not held at all when it would cost nothing.
+            --// reset is not held at all when it would cost nothing, unless
+            --// Always Wait Before Reset is on.
             Values = true,
             ValueLabel = "Reset (s)",
             Default = AICConfig.DEFAULT_BOSS_RESET_WAIT,

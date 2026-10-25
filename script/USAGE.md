@@ -424,6 +424,12 @@ teleport) to a boss, fight it, and reset back to spawn before the next one.
   `… CLEARING  7s  LOSE 95 EXP  RUNNING`, `… BOSS DOWN`,
   `… TELEPORT WP3`, `… TELEPORT <prompt>`, `… RESET PENDING`, `… RESET RETRY 1`,
   `ROUTE FINISHED`, `OFF`.
+- **Always Wait Before Reset** (off by default) — sits just under the status
+  line. On, every stop takes its **Reset (s)** pause before resetting even when
+  the reset would cost no EXP, so nothing ever resets on the spot; off, a reset
+  inside the part of the bar the game protects still happens immediately. The
+  status shows `CLEARING  12s  NO EXP AT RISK` while it waits. The setting is
+  saved with the profile.
 - **Add Boss Stop Here** — saves a stop at your current position, with an empty
   **Path to Boss**. A new stop starts with **Reset After Kill on**, a 10 s
   **Reset (s)**, **Dodge Skills on**, **Teleport To Prompt off** and a 120-stud
@@ -433,8 +439,9 @@ teleport) to a boss, fight it, and reset back to spawn before the next one.
   has, its first boss name and where it is. Drag a row (or use ▲▼) to reorder
   the  route. Its `Reset (s)` box is the pause held at the corpse before the
   character resets (0–600), used **only when the EXP sits above the part of
-  the bar a reset keeps** — see *What a stop does*; ✕ removes the row. There
-  is no fight timer: the row can never reset while the boss lives.
+  the bar a reset keeps** — or on every reset with **Always Wait Before Reset**
+  on; see *What a stop does*; ✕ removes the row. There is no fight timer: the
+  row can never reset while the boss lives.
 - **Clear Boss Route** — removes every stop.
 - **Edit Boss Stop** — picks which stop the boxes below change, and which stop
   **Path to Boss** and **Boss Names** edit.
@@ -584,7 +591,9 @@ the route started on the stop are still walked.
      216 is 92% of the bar, well over the 20% the game protects, so the reset
      waits instead of firing the moment the boss drops.
    - **Inside the kept part it resets at once** — one scan tick after the kill,
-     `RESET NOW` — because the game takes nothing there.
+     `RESET NOW` — because the game takes nothing there. With **Always Wait
+     Before Reset** on, that same reset takes the pause instead (the bar check
+     still runs, it just cannot skip the wait).
    - **EXP it cannot place** (the stats are not readable yet, or a number that
      fits no bar) counts as a loss and is waited out.
 

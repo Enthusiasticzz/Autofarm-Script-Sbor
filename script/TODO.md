@@ -1393,3 +1393,15 @@ were added.
 > - Harness, Lua 5.4 over the real functions: the kept share table is 0/10/20/20/20/30 … 60 … 80/90/90/90 for levels 99/100/199/216/250/299/300/600/899/900/1,000/1,500; on the game curve 216 is free to 260.4 and costs from 261 (0.6, hold 12), 250 free to 301.2, 299 free to 360, 300 free to 541.8, 900 free to 4,865.4 while a full 5,406 bar loses 540.6, 1,500 loses 900.6 of 9,006.
 > - Same functions against a deliberately different curve (a 1,899,000-point bar at level 950): free to exactly 90% of it, costing 18,990 at 91% and 189,900 at a full bar — so the rule really is a share of the bar, not a number.
 > - Not run: `luau-compile` (no Luau toolchain here); the file's brackets balance.
+
+### [x] Boss Route: Always Wait Before Reset toggle at the top of the Bosses tab
+
+> **Asked:** a toggle near the top of the Bosses tab that turns instant resets off, so even a reset that would cost no EXP waits first.
+> **Changed (v3.78):**
+> - New saved setting `BOSS_RESET_ALWAYS_WAIT` (default off) in `SaveConfig.Settings`, so it is stored with the profile like `BOSS_ROUTE_LOOP`.
+> - **Always Wait Before Reset**, a toggle placed directly under the `STATUS:` line, above **Add Boss Stop Here**. Its own refresh keeps the switch in step with the setting when a profile is loaded, and it writes `ALWAYS WAIT BEFORE RESET` / `INSTANT RESET WHEN NOTHING IS AT RISK` to the status line when flipped.
+> - `GetResetHold` returns the row's `Reset (s)` (10 by default) plus 2 whenever the toggle is on, before it ever asks what the EXP would cost, so every reset waits. Off, the old behaviour stands: free inside the protected share, held above it, and an unreadable cost always held.
+> - The held status no longer prints `LOSE 0 EXP` when the toggle is what is holding a free reset — it prints `CLEARING  12s  NO EXP AT RISK`, keeping `LOSE n EXP` / `COST UNKNOWN` for the real cases. A stop with **Reset After Kill** off still does not reset at all, toggle or no toggle.
+> - Docs: `USAGE.md` covers the toggle under *Boss Route* and in *What a stop does*, `UI/Descriptions.lua` has its tooltip.
+> - Harness, Lua 5.4 over the real `GetResetCost` / `GetResetHold` with the game's curve — toggle off: level 216 at 260 EXP (inside the protected 20%) gives cost 0 and hold 0, while 1,200 EXP costs 939.6 and holds 12; toggle on: the same free 260 EXP holds 12, a `Reset (s)` of 4 holds 6, a 0 holds 12, and the costly cases are unchanged (34.6 at 900/4,900 and 540.6 at a full bar, both holding 12). File brackets balance.
+> - Not run: `luau-compile` (no Luau toolchain here), and the toggle has not been clicked in game.

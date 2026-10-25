@@ -198,6 +198,10 @@ return {
             --// Boss Route loops back to its first stop after the last one;
             --// off, it plays the route once and switches itself off.
             { Key = "BOSS_ROUTE_LOOP", Default = true },
+            --// Boss Route takes its Reset (s) before every reset, including one
+            --// the EXP check would have fired at once; off, a reset that costs
+            --// no EXP still happens immediately.
+            { Key = "BOSS_RESET_ALWAYS_WAIT", Default = false },
 
             --// Retreat below this share of health (0 = never), and drink at or below the
             --// heal share.
