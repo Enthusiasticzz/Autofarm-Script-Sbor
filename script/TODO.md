@@ -1361,3 +1361,35 @@ were added.
 > - Dropped again: the v3.73 build that watched one reset per level and learned the share it left behind. A free reset early in a bar marked the whole level free, which is what made it keep resetting after the boss at 600 — the position in the bar is the rule, not the level.
 > - Harness: 18 new checks over the real functions (`GetLevelBar` / `GetBarProgress` / `GetResetCost` / `GetResetHold`) in Lua 5.4 with the game's curve: the 1,200/1,302 case costs 919 and holds for 10 s both as a bar value and as a running total, 900 of 3,606 at level 600 is free (0 s) while 2,500 is held, 1,000 of 5,406 at level 900 is free while 5,300 is held, an empty bar is free, an unreadable `EXP` or `Level` holds, and a `Reset (s)` of 0 still holds a reset that costs EXP.
 > - Not run: `luau-compile` (no Luau toolchain on the machine that made this change) — the region was executed under Lua 5.4 instead, and the whole file's block balance was checked.
+
+### [x] Boss Route: make the instant-reset rule purely level + EXP, and add 2 s to the pause
+
+> **Asked:** whether a reset can fire at once should depend on the level and the EXP held and nothing else — no fixed numbers standing in for the rule — and every held reset should fire 2 seconds later than it does now.
+> **Changed (v3.75):**
+> - **The kept share is the level, full stop.** `GetKeepPercent` became a share read from the level alone — 600 keeps 60%, 900 keeps 90% — with the game's ninety-percent ceiling at the top (v3.76 put that ceiling back, and v3.77 made the share step in whole hundreds instead of interpolating).
+> - **The bar was already the level**, and stays that way: `neededExp(Level) − neededExp(Level − 1)` — 1,302 at 216, 3,606 at 600, 5,406 at 900 — with the EXP stat placed inside it as either bar progress or a running total.
+> - **The pause is the row's `Reset (s)` plus `RESET_HOLD_EXTRA` (2)**: a stop left at the 10 s default holds **12 s**, one set to 4 holds **6**, one set to 0 still holds the default plus two (there is no free reset while a cost is predicted), and an unreadable cost holds the same 12 s.
+> - Nothing else decides the hold: no learned shares, no per-level memory, no fixed threshold anywhere in `GetResetCost` other than the level-derived share and the bar the level itself asks for.
+> - Harness: the real functions run under Lua 5.4 with the game's curve — 1,200 of 1,302 at 216 loses 919 and holds 12 s (same when the EXP stat is a running total), 600 keeps 60% so 900 of 3,606 is free while 2,500 holds 12, 900 keeps 90% so 1,000 of 5,406 is free while 5,300 holds 12, `Reset (s)` 4 → 6, 0 → 12, 25 → 27, and an unreadable `EXP` holds 12.
+> - Not run: `luau-compile` (no Luau toolchain on the machine that made this change); the region was executed under Lua 5.4 and the file's block balance checked.
+
+### [x] Boss Route: the ninety-percent ceiling holds at every level
+
+> **Asked:** level 1000 was being treated as keeping the whole bar — at 1,500 and 2,000 too, the game still keeps only 90%.
+> **Cause:** the previous build removed the ceiling with the rest of the fixed numbers, so `GetKeepPercent` was `clamp(Level / 10, 0, 100)`: past level 900 the share kept climbing, and from level 1000 every reset read as free.
+> **Changed (v3.76):**
+> - `GetKeepPercent` is capped at ninety percent, so 1,000, 1,500 and 2,000 all keep 90% and the top tenth of the bar is always at risk. (Its stepped form — floor(Level / 100) × 10 — landed in v3.77.)
+> - Nothing else moved: the bar is still `neededExp(Level) − neededExp(Level − 1)`, the cost is still `max(0, progress − bar × keep%)`, and the pause is still the row's `Reset (s)` plus 2.
+> - Harness, under Lua 5.4 with the game's curve: at 1,000 (bar 6,006) 5,405 of EXP is free and 5,406 holds 12 s, 6,006 loses 600.6; at 1,500 (9,006) 8,105 free / 8,106 holds, 9,006 loses 900.6; at 2,000 (12,006) free below 10,805.4. 216, 600 and 900 are unchanged from v3.75 (919 lost at 1,200/1,302, etc.), `Reset (s)` 0 → 12, 4 → 6, 10 → 12, 25 → 27, an unreadable `Level` or `EXP` holds 12, and an EXP past the bar's reach clamps to the end of the bar instead of running wild.
+> - Not run: `luau-compile` (no Luau toolchain here); the functions were executed under Lua 5.4 and the file's brackets balance.
+
+
+### [x] Boss Route: the kept share steps in hundreds of levels, and is always a percentage of the bar
+
+> **Asked:** the share is not continuous — 216 keeps 20%, 250 keeps 20%, 299 keeps 20%, and reaching 300 steps it to 30% — and the protected amount must be a percentage of the level's bar, because level 900's bar is bigger than the 5,406 the curve in the old notes implied.
+> **Changed (v3.77):**
+> - `GetKeepPercent` is `math.min(90, math.floor(Level / 100) * 10)`: one step of ten percent per hundred levels completed. 1–99 keeps 0%, 100–199 keeps 10%, 200–299 keeps 20%, 300–399 keeps 30%, 600 keeps 60%, 899 keeps 80%, 900 keeps 90%, and everything above 900 stays at 90%. No interpolation inside a hundred, and no cap anywhere except the game's ninety.
+> - **Nothing is stored as an EXP amount.** `GetResetCost` is still `max(0, progress − bar × keep%)`, where the bar comes from the level's own curve (`neededExp(Level) − neededExp(Level − 1)`), so whatever a level actually asks for, the route protects that share of it. The 1,302 / 3,606 / 5,406 figures only appear in prose.
+> - Harness, Lua 5.4 over the real functions: the kept share table is 0/10/20/20/20/30 … 60 … 80/90/90/90 for levels 99/100/199/216/250/299/300/600/899/900/1,000/1,500; on the game curve 216 is free to 260.4 and costs from 261 (0.6, hold 12), 250 free to 301.2, 299 free to 360, 300 free to 541.8, 900 free to 4,865.4 while a full 5,406 bar loses 540.6, 1,500 loses 900.6 of 9,006.
+> - Same functions against a deliberately different curve (a 1,899,000-point bar at level 950): free to exactly 90% of it, costing 18,990 at 91% and 189,900 at a full bar — so the rule really is a share of the bar, not a number.
+> - Not run: `luau-compile` (no Luau toolchain here); the file's brackets balance.

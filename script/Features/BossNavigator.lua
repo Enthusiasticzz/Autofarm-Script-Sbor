@@ -12,10 +12,11 @@
 -- when nothing is there to fight at all. With Reset After Kill on (the default
 -- for a new stop) the character then resets, so the next stop is travelled to
 -- from spawn. Whether that reset is worth holding for is decided from the EXP
--- in the level's bar: a reset keeps the first 10% of the bar for every 100
--- levels (90% from level 900 up). The bar's own size is the level's, from the
--- game's EXP curve (about 5,406 at level 900), so the kept part there is about
--- 4,865: 5,300 comes back as 4,865 and loses 435, while 3,000 is kept whole.
+-- in the level's bar: a reset keeps the first 10% of the bar for each whole
+-- hundred levels - 20% at 216, 30% from 300, 90% from 900 and never more above
+-- that. The bar's own size is the level's, from the game's EXP curve, so the
+-- kept part is always that share of the bar in front of it: nine tenths in at
+-- 900 and above, and only the top tenth is at risk.
 -- A reset that would drop the character past that protection is held for the
 -- stop's Reset (s), ten by default; one that would keep everything happens at
 -- once.
@@ -104,16 +105,17 @@ return {
         local TARGET_KEEP_TIME = 4
         --// A reset whose character never comes back gives up after this.
         local RESPAWN_TIMEOUT = 20
-        --// EXP kept after a reset: ten percent of the level's EXP bar for every
-        --// hundred levels, and it stops climbing at 90% once the level reaches
-        --// 900. Only the EXP above that protected part of the bar is lost, and
-        --// what a reset would take is read from this before the reset, because
-        --// the hold at the corpse is only worth having when there is something
-        --// to lose.
-        local KEEP_PERCENT_PER_LEVEL = 0.1
-        local KEEP_PERCENT_MAX = 90
+        --// EXP kept after a reset: ten percent of the level's own EXP bar for
+        --// every hundred levels, straight from the level (see GetKeepPercent).
+        --// Only the EXP above that protected part is lost, and what a reset
+        --// would take is read before the reset, because the hold at the corpse
+        --// is only worth having when there is something to lose.
         --// The hold a stop that has no Reset (s) of its own gets.
         local DEFAULT_RESET_HOLD = 10
+        --// How much later than the stop asks for the reset fires. The wait is
+        --// there to sit out the EXP a reset would cost, so it runs a little
+        --// past the row's Reset (s) rather than exactly on it.
+        local RESET_HOLD_EXTRA = 2
         --// A reset that costs nothing is not waited for: one scan tick after
         --// the kill is enough to know nothing else of the stop is standing.
         local FREE_RESET_GRACE = 0.2
@@ -410,15 +412,21 @@ return {
             return Level and tonumber(Level.Value) or nil
         end
 
-        --// Share of the EXP bar a reset leaves behind: ten percent for every
-        --// hundred levels, 90% from level 900 up. Only reached with a level in
-        --// hand - GetResetCost returns "unknown" without one, and that holds.
+        --// Share of the EXP bar a reset leaves behind, from the level alone.
+        --// The game steps it in whole hundreds: ten percent for each hundred
+        --// levels *completed*, so 100-199 keeps 10%, 200-299 keeps 20%, 250
+        --// and 299 are the same 20%, and 300 is the step up to 30%. From 900
+        --// on it stays at 90% - 1,000, 1,500 and 2,000 all keep 90% - so the
+        --// top tenth of the bar is always at risk. Only reached with a level
+        --// in hand: GetResetCost returns "unknown" without one, and that
+        --// holds. A share, never an EXP amount: what it protects is worked out
+        --// from the bar the level actually has.
         local function GetKeepPercent(Level)
             if not Level or Level <= 0 then
-                return 100
+                return 0
             end
 
-            return math.min(Level * KEEP_PERCENT_PER_LEVEL, KEEP_PERCENT_MAX)
+            return math.min(90, math.floor(Level / 100) * 10)
         end
 
         --// The size of a level's EXP bar: the EXP that level asks for, which
@@ -494,12 +502,13 @@ return {
         --// What a reset has been *seen* to leave behind, one share per level:
         --// What a reset would cost where the character is standing: the EXP it
         --// would take, the size of one level's EXP bar, and that loss as a share
-        --// of the bar. The bar is the level's own requirement (1,302 at level
-        --// 216, 3,606 at 600), and the game keeps a part of it: the first 10%
-        --// for every hundred levels, 90% from level 900 up. So 1,200 of a
-        --// 1,300 bar at level 216 is 92% of a bar that only protects 21.6% -
-        --// the reset takes the 1,200 above the 281 it keeps, and the route
-        --// holds for it instead of resetting the instant the boss drops.
+        --// of the bar. The bar is whatever the level's own requirement is (the
+        --// curve moves, so nothing here is a fixed EXP amount), and the game
+        --// keeps a share of it: 10% for each completed hundred levels, 90%
+        --// from level 900 up. At level 216 that share is the first 20% of the
+        --// bar, so 1,200 of a 1,300 bar sits above it, the reset takes the
+        --// 1,200 above the 260 it keeps, and the route holds for it instead of
+        --// resetting the instant the boss drops.
         --//
         --// nil means the cost cannot be read (no stats yet, a number that fits
         --// no bar) and is waited out, never taken for free.
@@ -528,28 +537,29 @@ return {
             return Loss, Bar, Loss / Bar, Level
         end
 
-        --// Seconds held at the corpse before the reset. Nothing is held when the
-        --// character's EXP sits inside the part of the bar a reset keeps;
-        --// otherwise the stop's own Reset (s), ten by default. A reset that
-        --// costs EXP always pauses - a 0 in the box is not a licence to throw it
-        --// away - and a cost that cannot be read is treated as a loss.
+        --// Seconds held at the corpse before the reset: the row's Reset (s),
+        --// ten when it has none, plus RESET_HOLD_EXTRA. Nothing is held when the
+        --// character's EXP sits inside the part of the bar a reset keeps. A
+        --// reset that costs EXP always pauses - a 0 in the box is not a licence
+        --// to throw the EXP away - and a cost that cannot be read is a loss.
         local function GetResetHold(Stop)
             local Wait = tonumber(Stop and Stop.ResetWait)
+
+            if not Wait or Wait <= 0 then
+                Wait = DEFAULT_RESET_HOLD
+            end
+
             local Loss = GetResetCost()
 
             if Loss == nil then
-                return Wait and Wait > 0 and Wait or DEFAULT_RESET_HOLD
+                return Wait + RESET_HOLD_EXTRA
             end
 
             if Loss <= 0 then
                 return 0
             end
 
-            if not Wait or Wait <= 0 then
-                return DEFAULT_RESET_HOLD
-            end
-
-            return Wait
+            return Wait + RESET_HOLD_EXTRA
         end
 
         ------------------------------------------------------------------------

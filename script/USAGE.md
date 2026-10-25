@@ -569,15 +569,20 @@ the route started on the stop are still walked.
    is in its EXP bar decides the reset. The bar is **the level's own
    requirement** — the EXP that level asks for, `neededExp(Level) −
    neededExp(Level − 1)` — which is the number you read as "I needed 1,300 to
-   level up": **1,302** at level 216, **3,606** at 600, **5,406** at 900. A
-   reset keeps the **first 10% of that bar for every 100 levels**, stopping at
-   **90% from level 900 up**, so at level 216 it keeps the first **281** and
-   at 900 the first **4,865**.
+   level up": **1,302** at level 216, **3,606** at 600. A reset keeps a
+   **share of that bar**, and the share steps in whole hundreds of levels:
+   **10% for every hundred completed**, so 100–199 keeps 10%, 200–299 keeps
+   20% (250 and 299 are the same), 300 jumps to 30%, 600 keeps 60%, 900 keeps
+   90% — and **never more than 90%**, however high the level goes: 1,000, 1,500
+   and 2,000 all keep 90%. It is always a **percentage of the bar in front of
+   you**, not a fixed amount of EXP: at 216 that is 20% of 1,302 (about 260),
+   at 900 it is 90% of whatever that level asks for, so a reset is free while
+   the character sits in that first share and costs only what is above it.
 
    - **Above the kept part the route holds**, and `CLEARING  7s  LOSE 50 EXP`
      counts it down. That is the reported case: 1,200 of a 1,300 bar at level
-     216 is 92% of the bar, well over the 21.6% the game protects, so the
-     reset waits instead of firing the moment the boss drops.
+     216 is 92% of the bar, well over the 20% the game protects, so the reset
+     waits instead of firing the moment the boss drops.
    - **Inside the kept part it resets at once** — one scan tick after the kill,
      `RESET NOW` — because the game takes nothing there.
    - **EXP it cannot place** (the stats are not readable yet, or a number that
@@ -591,8 +596,9 @@ the route started on the stop are still walked.
 
    A reset that costs EXP always pauses, even when the row's **Reset (s)** is
    **0**: the box sizes the pause, it does not license throwing the EXP away.
-   The character holds at the corpse for it — **10 s** for a stop that has not
-   set one — and `CLEARING  7s  LOSE 50 EXP` counts it down.
+   The pause is the row's **Reset (s) plus 2 seconds** — 12 s for a stop that
+   has not set one (10), 6 s for a stop set to 4 — and `CLEARING  7s  LOSE 50
+   EXP` counts it down. A cost that cannot be read waits the same.
    During that hold a living mob within **40 studs** is run from: the character
    sprints to a ring 45 studs on the far side of it (further when the stop's
    **Dodge Distance** is larger), and the status adds `RUNNING`. Standing at
