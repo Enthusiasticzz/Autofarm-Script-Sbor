@@ -5,6 +5,9 @@
 Backup-Copy/
 Others-code/
 
+# Local Studio preview of the menu, kept out of the published tree.
+Testing Env/
+
 # OS / editor junk
 .DS_Store
 Thumbs.db

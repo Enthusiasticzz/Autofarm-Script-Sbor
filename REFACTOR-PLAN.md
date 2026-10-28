@@ -15,7 +15,8 @@ a stubbed test harness. You will do the live test afterwards.
 | 2 | ✅ | `Core/Logger.lua` is now a real spec module (`Name`, `Dependencies`, `Start`), exposed as `Context.Logger`, gated by the new `CONFIG.VERBOSE_LOGGING`. Wired into the main silent-bail sites: missing `PlayerStats`, missing weapon weld / input handle, farm-state transitions, and profile-store decode failure. |
 | 3 | ✅ | `AutoFarming.lua` split into the entry plus six helper modules (Combat, Navigation, State, UI, Smithing, Mining). The `Feature:Update` state machine and `CreateUI`/`BuildLateUI` stay in the entry. |
 | 4 | ✅ | `ProfileManager.lua` split into the entry plus Storage, Global, Serialization, and Creation. There is no UI sub-module because the original file contained no profile UI code. |
-| 5 | ✅ | Luau CLI harness (`tests/run-cli.ps1`) + 10 passing pure-logic tests (config normalizers, ProfileManager serialization, AutoFarming split wiring). |
+| 5 | ✅ | Luau CLI harness (`tests/run-cli.ps1`) + 11 passing pure-logic tests (config normalizers, ProfileManager serialization, AutoFarming split wiring). |
+| 6 | ✅ | **Menu replaced with the revamped library** (`UI Revamp/UILib.lua`). Every existing tab, section and control was transferred through a compatibility layer; the theme/font/text-scale/cursor/notification settings moved from the old Configuration panel into a normal **Settings** tab. `UI/Utils.lua` is generated (see below); `11/11` tests still pass, and `tests/run-ui-smoke.ps1` builds the whole menu against a stubbed Roblox environment without Studio. |
 
 ### Split shape (as built)
 
@@ -39,6 +40,24 @@ Every helper module attaches its functions to the existing `AICFeature` table, s
 call sites outside the entry (`Bootstrap`, `AutoMining`, `AutoSmithing`, `BossNavigator`,
 `MobGather`) keep working unchanged. Each helper declares `Dependencies = {"AutoFarming"}`
 so it always starts after the entry that owns the `Feature` table.
+
+### UI revamp (as built)
+
+```
+UI/UILib.lua     the revamped library (sidebar, tabs, cards, popups, cursor, pins)
+UI/Utils.lua     generated: UILib.lua + compatibility layer 1-4, one chunk
+UI/Floating.lua  floating windows built on UI.SectionMethods / UI.Theme
+UI/Components.lua  feature toggles, dropdown pickers, priority helpers
+```
+
+- `Utils.lua` keeps the old **positional** widget API (`Section:AddToggle(name, default, callback)`, `AddSlider(name, default, min, max, callback)`, `AddPriority(name, values, options)`, …) on top of the revamp widgets, so no feature module had to change.
+- Widgets are drawn as rows of the revamped card (`self.Holder`, `Components`, `LayoutOrder`), which is why the same methods also work inside `Floating.Section` stand-ins.
+- Tabs are single-column. The sidebar tab list is a scrolling frame (the project has more tabs than fit), with a thin scrollbar and scroll-into-view on selection.
+- Descriptions from `UI/Descriptions.lua` are hover tooltips; keys are upcased on both write and lookup.
+- The old **Configuration** panel is now the **Settings** tab (built on the last module load by `FinishLoading`), and the sidebar's bottom button selects it. Font families are applied per text preserving weight; text scale stores each text's base size in an attribute so repeated changes do not drift.
+- The red **×** in the sidebar header closes the window for touch users, who have no menu key.
+- **Do not hand-edit `UI/Utils.lua`.** Regenerate it from `script/UI/UILib.lua` (with the trailing `return Library` stripped) plus the four compatibility parts, UTF-8 without BOM; only the last part ends with `return Library`. Then run `luau-compile` on every file and `tests/run-cli.ps1`.
+- `tests/run-ui-smoke.ps1` concatenates `tests/UiStub.lua` (Instance, signals, UDim/UDim2/Vector2, Color3, Enum, TweenService, task), the generated `UI/Utils.lua` and `tests/UiSmoke.lua`, then builds the window, every widget the project uses, the Settings tab and the pinned panel; it clicks tabs, dropdowns, sliders and the reset button, fires a render step and destroys the window. It proves construction and wiring only — layout and looks still need the in-game test.
 
 ### Known follow-ups after in-game testing
 

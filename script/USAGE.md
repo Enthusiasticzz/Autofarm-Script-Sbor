@@ -148,6 +148,14 @@ The rest of this file walks the window tab by tab. Every control listed exists i
 the code with that exact label; defaults and ranges come from the profile schema in
 `Core/SaveConfig.lua`.
 
+### Getting around the window
+
+- **Tabs** sit in the sidebar on the left. The list scrolls when there are more tabs than fit, and selecting a tab (from the list or the **Menu** settings button) scrolls it into view. Tabs animate with the style chosen in Settings.
+- **Search** (top of the sidebar) filters the current tab's controls by label as you type, and jumps to the first tab with a match. Clearing it shows everything again.
+- **Menu** (bottom of the sidebar) opens the **Settings** tab. The red **×** beside the title closes the window; the menu key (default **Insert**, rebindable in Settings) opens and closes it too.
+- **Pinned Items** is a separate draggable panel, shown or hidden from the Status tab. Its position, contents and visibility are shared by every profile.
+- **Hovering a control** shows its one-line description as a tooltip; there is no permanent description row under each name.
+
 ### Farming tab
 
 The Farming tab is where the farm loop is switched on and told what to fight, split into
@@ -895,16 +903,41 @@ added in front for a longer run: `2 Hours, 15 Minutes, 42 Seconds`.
 - The floor name is looked up from the PlaceId; until that answers (or if it cannot), the report uses the server's own name.
 - Some executors blacklist `HttpService:RequestAsync` (the `disabled/blacklisted` notice). The report goes through the executor's own request function when it has one — `syn.request`, `http.request`, `http_request`, `request` — and only falls back to `HttpService` when none does, so it sends either way. If every route fails, the notification carries the reason.
 
-### Configuration panel
+### Settings tab
 
-Opened from the **CONFIGURATION** button at the bottom of the window (`SYSTEM CONFIGURATION  //  THEME / WINDOW / TYPOGRAPHY`). It holds the theme swatches (click a swatch for the colour picker; hex/RGB), the window size limits, the text scale and the font. All three of those live in `AutoFarmProfiles/Global.json` and are **shared by every profile and PlaceId**, so they are not part of a profile export.
+Opened from the **Menu** button at the bottom of the sidebar. It holds the window's own appearance and behaviour — theme colours, palette, font, text scale, size and animation — plus notifications, the menu key and the custom cursor. The font, theme colours and text scale are saved in `AutoFarmProfiles/Global.json` and are **shared by every profile and PlaceId**, so they are not part of a profile export. Window size, menu scale and animation speed apply for the current session.
 
-- **Font** (dropdown) — every Roblox font, each option previewed in its own font; picking one retargets the whole UI at once and is saved immediately. Fonts that fail to load are hidden and warned about in the console.
-- **TEXT SCALE** (number field, 0.8–2.2) — resizes text across the whole window and floating windows. Each text remembers its base size, so scaling back and forth does not drift.
-- **MIN WIDTH / MIN HEIGHT / MAX WIDTH / MAX HEIGHT** (number fields) — the resize limits for the main window.
-- **APPLY** (button) — applies the theme colours typed or picked above; colours identical to the built-in theme are not saved.
-- **RESET DEFAULT** (button) — restores the default theme, window size, text scale and font, and clears the saved copies.
-- **RETURN** (button) — closes the panel without further changes.
+**Appearance**
+
+- **Colour rows** (Accent colour, Background, Panel, Element, Border, Text, Muted text, Hovered border, Danger, Warning) — click the swatch to open the colour picker (drag on the square for saturation/value, the strip for hue; the hex code is shown under it). Colours identical to the built-in theme are not saved.
+- **Menu palette** (dropdown) — Default, Midnight, Rose, Forest or Light. Picking one replaces every colour above at once.
+- **Reset defaults** (button) — restores the default colours and palette, font, text scale, window size, menu scale and animation speed, and clears the saved copies.
+
+**Interface**
+
+- **Text scale** (slider, 80%–220%) — resizes text across the whole window and floating windows. Each text remembers its base size, so scaling back and forth does not drift.
+- **Font** (dropdown) — one entry per font family, listed by family name. Picking one retargets the whole UI at once, keeping each label's bold/regular weight, and is saved immediately.
+- **Window width / Window height** (sliders, 700–1400 px / 360–900 px) — resize the main window.
+- **Menu scale** (slider, 50%–150%) — scales the whole window up or down.
+- **Animation speed** (slider, 25%–300%) — speeds up or slows down tab changes, hovers and notification slides.
+
+**Notifications and tabs**
+
+- **Display notifications** (toggle) — off, status notices are suppressed.
+- **Notification position** (dropdown) — Top/Bottom, left/centre/right.
+- **Tab animation** (dropdown) — Fade, Slide or None.
+- **Watermark** (toggle) — the small title/FPS/ping strip.
+- **Keybind list** (toggle) — the keybind panel.
+- **Menu key** (keybind) — click it, then press the key that opens the window (default **Insert**; **Escape** cancels).
+
+**Cursor**
+
+- **Cursor** (dropdown) — Menu open, Always or Never.
+- **Cursor style** (dropdown) — Arrow, Dot, Cross or Circle.
+- **Cursor size** (slider, 50%–300%).
+- **Cursor effects** (toggle) — the click ripple.
+- **Custom cursor colour** (colour row with a checkbox) — the checkbox turns the custom colour on.
+- **Unlock mouse** (toggle) — frees the mouse while the window is open (saved back when it closes).
 
 ## Troubleshooting
 

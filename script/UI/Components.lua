@@ -27,7 +27,7 @@ return {
         local NotifyAction = Context.NotifyAction
         local Module = Context.AICUI
         function AICUI.CreateFeature(Name, Default, Callback)
-            local Component = UIRef.FeatureSection:AddToggle(Name, Default, Callback)
+            local Component = UIRef.FeatureSection:AddToggle{ Name = Name, Default = Default, Callback = Callback }
         
             return Component
         end
@@ -60,7 +60,7 @@ return {
                 return nil
             end
 
-            State.Button = Section:AddToggle(Label, State.Enabled, function(Value)
+            State.Button = Section:AddToggle{ Name = Label, Default = State.Enabled, Callback = function(Value)
                 State.Enabled = Value == true
 
                 if OnChanged then
@@ -72,7 +72,7 @@ return {
                 else
                     AICProfile.SaveActiveProfile()
                 end
-            end)
+            end }
 
             return State.Button
         end
@@ -137,7 +137,7 @@ return {
             return nil
         end
 
-        --// Makes a priority list of UserIds show "UserId  ·  @Name", redrawn
+        --// Makes a priority list of UserIds show "UserId  Â·  @Name", redrawn
         --// as names arrive.
         function AICUI.ShowUserNames(Component)
             --// One callback per list, so a list waits on each id only once.
@@ -148,7 +148,7 @@ return {
             Component.Format = function(Value)
                 local Name = AICUI.GetUserName(Value, Redraw)
 
-                return Name and string.format("%s  ·  @%s", Value, Name) or Value
+                return Name and string.format("%s  Â·  @%s", Value, Name) or Value
             end
 
             Component:_Refresh()

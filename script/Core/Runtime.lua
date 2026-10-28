@@ -17,7 +17,7 @@ return {
         local Player    = Players.LocalPlayer
         local PlayerGui = Player:WaitForChild("PlayerGui", 30)
         if not PlayerGui then
-            error("[AIC] PlayerGui not found — cannot start AIC UI")
+            error("[AIC] PlayerGui not found â€” cannot start AIC UI")
         end
         
         --==============================================================
@@ -88,49 +88,49 @@ return {
                 local UtilsChunk = assert(loadstring(game:HttpGet(Base .. "UI/Utils.lua"), "@Utils.lua"))
                 Utils = UtilsChunk()
             end
-            UI = Utils.new("AUTOMATED INDUSTRY COMPLEX")
+            UI = Utils.new{ Title = "AUTOMATED INDUSTRY COMPLEX" }
         end
 
         --// Shared UI foundation. Feature modules own their controls; Runtime
         --// only creates the tabs/sections they attach those controls to.
-        UIRef.StatusTab = UI:AddTab("Status")
-        UIRef.FarmTab = UI:AddTab("Farming")
+        UIRef.StatusTab = UI:AddTab{ Name = "Status" }
+        UIRef.FarmTab = UI:AddTab{ Name = "Farming" }
         --// Boss route: its own tab, list and timers, apart from the farming
         --// waypoints and the profile waypoints (BossNavigator).
-        UIRef.BossTab = UI:AddTab("Bosses")
-        UIRef.MineTab = UI:AddTab("Mining")
-        UIRef.CraftTab = UI:AddTab("Crafting")
-        UIRef.PartyTab = UI:AddTab("Party")
-        UIRef.ServerTab = UI:AddTab("Server")
-        UIRef.TeleportTab = UI:AddTab("Teleport")
-        UIRef.QuestTab = UI:AddTab("Quest")
-        UIRef.DebugTab = UI:AddTab("Debug")
-        UIRef.UtilityTab = UI:AddTab("Utility")
-        UIRef.UtilitySection = UIRef.UtilityTab:AddSection("Utilities")
+        UIRef.BossTab = UI:AddTab{ Name = "Bosses" }
+        UIRef.MineTab = UI:AddTab{ Name = "Mining" }
+        UIRef.CraftTab = UI:AddTab{ Name = "Crafting" }
+        UIRef.PartyTab = UI:AddTab{ Name = "Party" }
+        UIRef.ServerTab = UI:AddTab{ Name = "Server" }
+        UIRef.TeleportTab = UI:AddTab{ Name = "Teleport" }
+        UIRef.QuestTab = UI:AddTab{ Name = "Quest" }
+        UIRef.DebugTab = UI:AddTab{ Name = "Debug" }
+        UIRef.UtilityTab = UI:AddTab{ Name = "Utility" }
+        UIRef.UtilitySection = UIRef.UtilityTab:AddSection{ Title = "Utilities" }
         --// Discord reports (Webhook): URL, mention, duo and format in one
         --// place, on the tab about the machine rather than the farm.
-        UIRef.WebhookSection = UIRef.UtilityTab:AddSection("Webhook")
-        UIRef.FeatureSection = UIRef.FarmTab:AddSection("Core")
+        UIRef.WebhookSection = UIRef.UtilityTab:AddSection{ Title = "Webhook" }
+        UIRef.FeatureSection = UIRef.FarmTab:AddSection{ Title = "Core" }
         UIRef.CoreSection = UIRef.FeatureSection
-        UIRef.CombatSection = UIRef.FarmTab:AddSection("Combat")
-        UIRef.TargetSection = UIRef.FarmTab:AddSection("Targeting")
-        UIRef.BlockSection = UIRef.FarmTab:AddSection("Auto Block")
-        UIRef.GatherSection = UIRef.FarmTab:AddSection("Mob Gather")
+        UIRef.CombatSection = UIRef.FarmTab:AddSection{ Title = "Combat" }
+        UIRef.TargetSection = UIRef.FarmTab:AddSection{ Title = "Targeting" }
+        UIRef.BlockSection = UIRef.FarmTab:AddSection{ Title = "Auto Block" }
+        UIRef.GatherSection = UIRef.FarmTab:AddSection{ Title = "Mob Gather" }
         --// Holds AutoRefill's booster list: which boosters reset the character
         --// when they run out.
-        UIRef.BoosterSection = UIRef.FarmTab:AddSection("Booster Reset")
-        UIRef.StatusSection = UIRef.StatusTab:AddSection("Live Status")
-        UIRef.DebugSection = UIRef.DebugTab:AddSection("Debug Visualizer")
-        UIRef.MineSection = UIRef.MineTab:AddSection("Auto Mining")
-        UIRef.CraftSection = UIRef.CraftTab:AddSection("Auto Smithing")
-        UIRef.PartySection = UIRef.PartyTab:AddSection("Party System")
-        UIRef.ServerSection = UIRef.ServerTab:AddSection("Current Server")
-        UIRef.ServerSafetySection = UIRef.ServerTab:AddSection("Server Safety")
-        UIRef.ServerLogSection = UIRef.ServerTab:AddSection("Player Log")
-        UIRef.DoorTeleportSection = UIRef.TeleportTab:AddSection("Door Teleport")
-        UIRef.WaypointTeleportSection = UIRef.TeleportTab:AddSection("Waypoint Teleport")
-        UIRef.QuestSection = UIRef.QuestTab:AddSection("Assign Quest")
-        UIRef.QuestHelperSection = UIRef.QuestTab:AddSection("Quest Helper")
+        UIRef.BoosterSection = UIRef.FarmTab:AddSection{ Title = "Booster Reset" }
+        UIRef.StatusSection = UIRef.StatusTab:AddSection{ Title = "Live Status" }
+        UIRef.DebugSection = UIRef.DebugTab:AddSection{ Title = "Debug Visualizer" }
+        UIRef.MineSection = UIRef.MineTab:AddSection{ Title = "Auto Mining" }
+        UIRef.CraftSection = UIRef.CraftTab:AddSection{ Title = "Auto Smithing" }
+        UIRef.PartySection = UIRef.PartyTab:AddSection{ Title = "Party System" }
+        UIRef.ServerSection = UIRef.ServerTab:AddSection{ Title = "Current Server" }
+        UIRef.ServerSafetySection = UIRef.ServerTab:AddSection{ Title = "Server Safety" }
+        UIRef.ServerLogSection = UIRef.ServerTab:AddSection{ Title = "Player Log" }
+        UIRef.DoorTeleportSection = UIRef.TeleportTab:AddSection{ Title = "Door Teleport" }
+        UIRef.WaypointTeleportSection = UIRef.TeleportTab:AddSection{ Title = "Waypoint Teleport" }
+        UIRef.QuestSection = UIRef.QuestTab:AddSection{ Title = "Assign Quest" }
+        UIRef.QuestHelperSection = UIRef.QuestTab:AddSection{ Title = "Quest Helper" }
         
         local function NotifyAction(Action, Message, Duration)
             if UI and type(UI.Notify) == "function" then
