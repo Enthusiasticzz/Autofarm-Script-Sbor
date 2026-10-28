@@ -149,6 +149,10 @@ return {
         local CONFIG = {
             CURRENT_WAYPOINT_TARGET = 1,
             MAX_SERVER_AGE = 7 * 60 * 60,
+
+            --// Opt-in diagnostic output. Core/Logger reads this at start; the
+            --// DEBUG lines are suppressed unless it is true.
+            VERBOSE_LOGGING = false,
         
             TARGET_ENTITY_PRIORITY = {
                 [1] = "Goblin",

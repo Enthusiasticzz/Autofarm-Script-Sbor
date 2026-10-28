@@ -77,7 +77,8 @@ touching.
 
 1. Create `Features/MyFeature.lua` returning
    `{ Name = "MyFeature", Dependencies = {...}, Start = function(Context) ... end }`.
-2. Add `"Features/MyFeature.lua"` to `MODULES` in `Init.lua`.
+2. Add `"Features/MyFeature.lua"` to `START_ORDER` in `ModuleConfig.lua`, and mirror
+   it in the fallback `MODULES` array in `Init.lua`.
 3. Add `{ Name = "MyFeature", Default = false, Key = "<unused letter>" }` to
    `SaveConfig.Features`.
 4. In `Start`, call `Context.AICUI.BindFeatureToggle("MyFeature", "My Feature", OnChanged)`

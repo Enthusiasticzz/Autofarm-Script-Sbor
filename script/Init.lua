@@ -57,7 +57,12 @@ local MODULES = {
     "Core/SaveConfig.lua",
     "Core/GuiClick.lua",
     "Core/Runtime.lua",
+    "Core/Logger.lua",
     "UI/Descriptions.lua",
+    "Core/ProfileManager_Storage.lua",
+    "Core/ProfileManager_Global.lua",
+    "Core/ProfileManager_Serialization.lua",
+    "Core/ProfileManager_Creation.lua",
     "Core/ProfileManager.lua",
     "UI/Components.lua",
     "UI/Floating.lua",
@@ -71,6 +76,14 @@ local MODULES = {
     "Combat/Combat.lua",
 
     "Features/AutoFarming.lua",
+    --// AutoFarming helpers. They attach to AICFeature, so they must start
+    --// after the entry module above.
+    "Features/AutoFarming_Combat.lua",
+    "Features/AutoFarming_Navigation.lua",
+    "Features/AutoFarming_State.lua",
+    "Features/AutoFarming_UI.lua",
+    "Features/AutoFarming_Smithing.lua",
+    "Features/AutoFarming_Mining.lua",
     "Features/AutoBlock.lua",
     "Features/AutoBlockConfirm.lua",
     "Features/SafeCombat.lua",
@@ -124,6 +137,41 @@ local MODULES = {
     "Core/Heartbeat.lua",
 }
 
+--// ModuleConfig is the single source of truth for the module list. It is
+--// fetched (remote) or required (local Studio) before the start order is
+--// derived, so adding a module there is enough. If it cannot be loaded, the
+--// inline MODULES table above is used as a fallback.
+do
+    local Config
+    local Ok = pcall(function()
+        if ROOT then
+            local ConfigModule = ROOT:FindFirstChild("ModuleConfig")
+            if ConfigModule and ConfigModule:IsA("ModuleScript") then
+                Config = require(ConfigModule)
+            end
+        else
+            local Body = game:HttpGet(BASE .. "ModuleConfig.lua", true)
+            if type(Body) == "string"
+                and Body ~= ""
+                and not string.find(Body, "^404: Not Found")
+            then
+                local Chunk = loadstring(Body, "@ModuleConfig.lua")
+                if Chunk then
+                    Config = Chunk()
+                end
+            end
+        end
+    end)
+
+    if Ok
+        and type(Config) == "table"
+        and type(Config.START_ORDER) == "table"
+        and #Config.START_ORDER > 0
+    then
+        MODULES = Config.START_ORDER
+    end
+end
+
 --// Module name from its path: "Features/AutoFarming.lua" -> "AutoFarming".
 --// Every module's Name matches its file name.
 local START_ORDER = {}
@@ -133,9 +181,10 @@ for _, Path in ipairs(MODULES) do
 end
 
 --// Modules that are not specs. UI/Utils is the UI library that Runtime
---// loads itself.
+--// loads itself; ModuleConfig is the config table loaded above.
 local NON_SPEC_MODULES = {
     ["UI/Utils.lua"] = true,
+    ["ModuleConfig.lua"] = true,
 }
 
 local function collect(Container, Prefix, Output)

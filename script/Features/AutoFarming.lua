@@ -81,258 +81,9 @@ return {
             end)
         end
 
-        function Feature.GetPlayerStatValue(Name, Default)
-            local PlayerStats = Player:FindFirstChild("PlayerStats")
-            local Stat = PlayerStats and PlayerStats:FindFirstChild(Name)
-        
-            if not Stat then
-                return Default
-            end
-        
-            return tonumber(Stat.Value) or Default
-        end
-        function Feature.GetPlayerLevel()
-            return Feature.GetPlayerStatValue("Level", 0)
-        end
-        
-        --// Toggle Screen GUI
-        function Feature.CreateToggleContainer()
-        end
-        function Feature.RegenStamina()
-            task.spawn(function()
-                local PlayerStats = Player:FindFirstChild("PlayerStats")
-                if not PlayerStats then
-                    repeat task.wait(0.5) until Player:FindFirstChild("PlayerStats")
-                    PlayerStats = Player:FindFirstChild("PlayerStats")
-                end
-                local GameGui = PlayerGui:FindFirstChild("GameGui")
-                if not GameGui then
-                    repeat task.wait(0.5) until PlayerGui:FindFirstChild("GameGui")
-                    GameGui = PlayerGui:FindFirstChild("GameGui")
-                end
-                local Stamina = GameGui:FindFirstChild("Stamina")
-                local MaxStamina = PlayerStats:FindFirstChild("MaxStamina")
-        
-                --// Both values are required. Without MaxStamina there is no target
-                --// value to restore, so the connection would error on every change.
-                if not Stamina or not MaxStamina then
-                    return
-                end
-        
-                AICFeature.S.StaminaConnection = Stamina:GetPropertyChangedSignal("Value"):Connect(function()
-                    if Stamina.Value < MaxStamina.Value then
-                        Stamina.Value = MaxStamina.Value
-                    end
-                end)
-            end)
-        end
-
-        function Feature:RenderUpdate(dt)
-            local Character, Humanoid, RootPart = Runtime:GetCharacter()
-            local PlaceConfig = Runtime:GetPlaceConfig()
-
-            AICUI.updatePosition()
-
-            --// Auto Mining holds WalkSpeed at 0 while it mines a node.
-            local SpeedLocked = AICFeature.IsWalkSpeedLocked and AICFeature.IsWalkSpeedLocked()
-
-            if Humanoid and not SpeedLocked then
-                if AICFeature.GetPlayerLevel() >= CONFIG.HIGH_LEVEL_THRESHOLD then
-                    if Humanoid.WalkSpeed < CONFIG.MAXIMUM_WALKSPEED then
-                        Humanoid.WalkSpeed = CONFIG.MAXIMUM_WALKSPEED
-                    end
-                elseif Humanoid.WalkSpeed < CONFIG.MINIMUM_WALKSPEED then
-                    Humanoid.WalkSpeed = CONFIG.MINIMUM_WALKSPEED
-                end
-            end
-        end
-        --// Draws the weapon when it is sheathed. True when the draw was just
-        --// issued, so the caller should give it this frame.
-        local function EnsureWeaponDrawn(now, InputBindableFunction, MainWeld)
-            local Sheathed = not AICFeature.S.Equipped
-                or (MainWeld.Part1 and MainWeld.Part1.Name == "UpperTorso")
-
-            if not Sheathed or now - AICFeature.S.LAST_EQUIP_TIME < CONFIG.EQUIP_TOGGLE_COOLDOWN then
-                return false
-            end
-
-            AICFeature.S.Equipped = true
-            AICFeature.S.LAST_EQUIP_TIME = now
-
-            InputBindableFunction:Invoke(
-                "EquipButton",
-                Enum.UserInputState.Begin
-            )
-
-            return true
-        end
-
-        --// For code outside the farm loop (Auto Mining's defence), which has
-        --// no weld or input handle of its own.
-        AICFeature.EnsureWeaponDrawn = function(now)
-            local Character = Runtime:GetCharacter()
-            local Sword = Character and Character:FindFirstChild("Sword")
-            local MainWeld = Sword and Sword:FindFirstChild("MainWeld", true)
-            local InputBindableFunction = Runtime:GetInputBindableFunction()
-
-            if not MainWeld or not InputBindableFunction then
-                return false
-            end
-
-            return EnsureWeaponDrawn(now, InputBindableFunction, MainWeld)
-        end
-
-        --// Auto Smithing, then Auto Mining, once the route is walked. True
-        --// while one of them owns this frame's movement; each fights off
-        --// anything close by itself, so the combat at the end of the frame
-        --// is skipped then. Smithing never pulls the character off a node
-        --// mid-mining; mining never interrupts a craft, as smithing keeps
-        --// the frame for the whole of one.
-        local function RunSideJobs(now)
-            local MiningBusy = AICFeature.IsMiningCommitted and AICFeature.IsMiningCommitted()
-            local Taken = (not MiningBusy and AICFeature.SmithingStep and AICFeature.SmithingStep(now))
-                or (AICFeature.MiningStep and AICFeature.MiningStep(now))
-
-            if not Taken then
-                return false
-            end
-
-            AICCombat.S.ClosestTarget = nil
-            AICFeature.CancelPatrol()
-            return true
-        end
-
-        --// FARM STATE on the Status tab: what the loop did this frame, so a
-        --// character standing still can be told apart (retreating, holding
-        --// for Auto Block, waiting on a path...) without reading the code.
-        local function SetFarmState(Text)
-            local Label = UIRef.FarmStateLabel
-            Text = "FARM STATE  " .. Text
-
-            if Label and Label.Text ~= Text then
-                Label.Text = Text
-            end
-        end
-
-        --// "CHASE Goblin 12 // CHASE TO SPOT / STRAIGHT": the target, how far
-        --// it is, the MoveToGoblin step and what ChaseMoveTo did in it.
-        local CHASE_MOVE_STEPS = {
-            ["CHASE TO SPOT"] = true,
-            ["CHASE TO MOB"] = true,
-            ["REPOSITION"] = true,
-            ["SAFE ENEMY RANGE"] = true,
-        }
-
-        local function DescribeChase()
-            local Target = AICCombat.S.ClosestTarget
-            local _, _, RootPart = Runtime:GetCharacter()
-            local TargetRoot = Target and Target:FindFirstChild("HumanoidRootPart")
-            local Distance = RootPart and TargetRoot
-                and math.floor(AICCombatUtils.GetHorizontalDistance(RootPart.Position, TargetRoot.Position) + 0.5)
-                or "?"
-            local Step = tostring(AICCombat.S.ChaseStep or "?")
-
-            if CHASE_MOVE_STEPS[Step] and AICCombat.S.ChaseMoveStep then
-                Step ..= " / " .. AICCombat.S.ChaseMoveStep
-            end
-
-            return string.format("CHASE  %s  %s  //  %s", Target and Target.Name or "?", tostring(Distance), Step)
-        end
-
-        --// Goes for the locked target. While Character.NoDamage is on us our
-        --// hits do nothing, so it circles the target outside its reach
-        --// instead of running in, until NoDamage is gone.
-        local function ApproachTarget(Target)
-            if AICCombat.HasNoDamage() then
-                AICCombat.OrbitTarget(Target)
-            else
-                AICCombat.MoveToGoblin(Target)
-            end
-        end
-
-        --// Gather Mobs, once the route is walked and the character is inside
-        --// the farm zone. True while it pulls a pack together or uses the
-        --// skill on it; it moves and fights by itself then, so the combat at
-        --// the end of the frame is skipped. Once the skill is used, normal
-        --// combat fights the pack.
-        local function RunGather(now)
-            if not AICFeature.GatherStep or not AICFeature.GatherStep(now) then
-                return false
-            end
-
-            AICCombat.S.ClosestTarget = nil
-            AICFeature.CancelPatrol()
-            return true
-        end
-
-        --// Drinks the last used potion when it is off cooldown. The weapon
-        --// is sheathed first, which costs a frame: true means this frame was
-        --// spent sheathing and the caller should yield it. Shared by the
-        --// retreat and by healing while walking the waypoint route.
-        local function TryConsumePotion(now, PlayerStats, InputBindableFunction, MainWeld)
-            local UseConsumable = Replicated:FindFirstChild("UseConsumable", true)
-            local LastConsumed = PlayerStats and PlayerStats:FindFirstChild("LastConsumed")
-
-            if not UseConsumable
-                or not LastConsumed
-                or LastConsumed.Value == ""
-                or now - AICFeature.S.LAST_CONSUME_TIME < CONFIG.CONSUME_INTERVAL
-            then
-                return false
-            end
-
-            --// Sheathe only when a potion is actually about to be drunk. The old
-            --// build sheathed on every retreat frame and drew again as soon as
-            --// the retreat ended, which is where the constant draw/sheathe came
-            --// from, and each toggle also threw away the frame it happened on.
-            if InputBindableFunction
-                and (AICFeature.S.Equipped or (MainWeld.Part1 and MainWeld.Part1.Name ~= "UpperTorso"))
-                and now - AICFeature.S.LAST_EQUIP_TIME >= CONFIG.EQUIP_TOGGLE_COOLDOWN
-            then
-                AICFeature.S.Equipped = false
-                AICFeature.S.LAST_EQUIP_TIME = now
-
-                InputBindableFunction:Invoke(
-                    "EquipButton",
-                    Enum.UserInputState.Begin
-                )
-
-                return true
-            end
-
-            if not AICFeature.S.Equipped then
-                AICFeature.S.LAST_CONSUME_TIME = now
-                UseConsumable:InvokeServer(LastConsumed.Value)
-            end
-
-            return false
-        end
-
-        --// Drinks from anywhere, for code that never reaches the retreat
-        --// above: the Boss Route fights its stops before Auto Farm's health
-        --// decision runs, so a stop was fought with no heal at all. True when
-        --// the frame was spent sheathing, so the caller gives it up.
-        AICFeature.TryHeal = function(now)
-            local Character = Runtime:GetCharacter()
-            local Sword = Character and Character:FindFirstChild("Sword")
-            local MainWeld = Sword and Sword:FindFirstChild("MainWeld", true)
-            local InputBindableFunction = Runtime:GetInputBindableFunction()
-
-            if not Character or not MainWeld or not InputBindableFunction then
-                return false
-            end
-
-            return TryConsumePotion(
-                now,
-                Player:FindFirstChild("PlayerStats"),
-                InputBindableFunction,
-                MainWeld
-            )
-        end
-
         function Feature:Update(dt)
             -- Keep walkspeed / position UI in sync every frame (was RenderUpdate)
-            Feature:RenderUpdate(dt)
+            AICFeature.RenderUpdate(dt)
 
             --// A departure is under way: the client is being teleported, or it
             --// is already disconnected behind a kick screen while the executor
@@ -417,7 +168,7 @@ return {
 
             --// Party System is resetting or waiting to Tp to its Leader.
             if AICFeature.IsPartyHolding and AICFeature.IsPartyHolding() then
-                SetFarmState("PARTY HOLD")
+                AICFeature.SetFarmState("PARTY HOLD")
 
                 if FaceOrientation then
                     FaceOrientation.Enabled = false
@@ -428,12 +179,12 @@ return {
             end
 
             if not AICFeature.S.Enabled then
-                SetFarmState("AUTO FARM OFF")
+                AICFeature.SetFarmState("AUTO FARM OFF")
 
                 --// The Boss Route runs on its own, with Auto Farm on or off:
                 --// it walks its stops, fights, and resets on its own timers.
                 if AICFeature.BossStep and AICFeature.BossStep(now) then
-                    SetFarmState("BOSS ROUTE")
+                    AICFeature.SetFarmState("BOSS ROUTE")
                     return
                 end
 
@@ -564,7 +315,7 @@ return {
             end
 
             if AICCombat.S.RETREATING then
-                SetFarmState("RETREAT (" .. tostring(AICCombat.S.RetreatReason or "?") .. ")")
+                AICFeature.SetFarmState("RETREAT (" .. tostring(AICCombat.S.RetreatReason or "?") .. ")")
 
                 --// On the route the dodge may land outside the farm zones,
                 --// which is where the route runs.
@@ -590,7 +341,7 @@ return {
                     and (not AICCombatUtils.IsInsideFarmArea(RootPart.Position)
                         or AICCombatUtils.IsInsideFarmDeadzone(RootPart.Position))
                 then
-                    SetFarmState("RETURN TO FARM ZONE")
+                    AICFeature.SetFarmState("RETURN TO FARM ZONE")
                     AICFeature.MoveBackToFarmZone()
                 end
 
@@ -600,7 +351,7 @@ return {
                 local FightBackThreat = AICCombat.GetFightBackThreat()
 
                 if (InDuel or (FightBackThreat and not EnemyUsingSkill))
-                    and EnsureWeaponDrawn(now, InputBindableFunction, MainWeld)
+                    and AICFeature.EnsureWeaponDrawnRaw(now, InputBindableFunction, MainWeld)
                 then
                     return
                 end
@@ -620,7 +371,7 @@ return {
                     and not InDuel
 
                 if WantsConsume then
-                    TryConsumePotion(now, PlayerStats, InputBindableFunction, MainWeld)
+                    AICFeature.TryConsumePotion(now, PlayerStats, InputBindableFunction, MainWeld)
                 end
 
                 return
@@ -629,7 +380,7 @@ return {
             --// Low on the route: no retreat, keep walking and drink on the move.
             if RouteActive
                 and (EmergencyHealth or ShouldHeal)
-                and TryConsumePotion(now, PlayerStats, InputBindableFunction, MainWeld)
+                and AICFeature.TryConsumePotion(now, PlayerStats, InputBindableFunction, MainWeld)
             then
                 return
             end
@@ -690,9 +441,9 @@ return {
                         --// normally be hopped away; with the leave setting on
                         --// they are ignored instead, so nothing closes the
                         --// game for someone on the list.
-                        SetFarmState("AUTO BLOCK  @" .. BlockedWhitelisted.Name .. " IS WHITELISTED, STAYING")
+                        AICFeature.SetFarmState("AUTO BLOCK  @" .. BlockedWhitelisted.Name .. " IS WHITELISTED, STAYING")
                     else
-                        SetFarmState("AUTO BLOCK  HOP FROM @" .. BlockedWhitelisted.Name)
+                        AICFeature.SetFarmState("AUTO BLOCK  HOP FROM @" .. BlockedWhitelisted.Name)
                         AICFeature.TeleportToPlace(nil, BlockedWhitelisted)
                         return
                     end
@@ -704,7 +455,7 @@ return {
                     --// Not another server: a kick is what a client script can
                     --// do, and it lands back in the Roblox app.
                     if LeavingGame then
-                        SetFarmState("AUTO BLOCK  LEAVING GAME FROM @" .. Intruder.Name)
+                        AICFeature.SetFarmState("AUTO BLOCK  LEAVING GAME FROM @" .. Intruder.Name)
                         AICFeature.LeaveGame(
                             "Auto Block: leaving instead of blocking",
                             Intruder
@@ -712,7 +463,7 @@ return {
                         return
                     end
 
-                    SetFarmState("AUTO BLOCK  @" .. Intruder.Name)
+                    AICFeature.SetFarmState("AUTO BLOCK  @" .. Intruder.Name)
 
                     if not AICFeature.isBlocked(Intruder.UserId) then
                         AICFeature.promptBlockPlayer(Intruder)
@@ -723,7 +474,7 @@ return {
                     --// can cut the block request short and land us back
                     --// with them.
                     if not AICFeature.IsBlockSettled(Intruder) then
-                        SetFarmState("AUTO BLOCK  CHECKING @" .. Intruder.Name)
+                        AICFeature.SetFarmState("AUTO BLOCK  CHECKING @" .. Intruder.Name)
                         return
                     end
 
@@ -735,7 +486,7 @@ return {
 
             --// Play Time
             if workspace.DistributedGameTime >= CONFIG.MAX_SERVER_AGE then
-                SetFarmState("SERVER TOO OLD, HOPPING")
+                AICFeature.SetFarmState("SERVER TOO OLD, HOPPING")
                 AICFeature.TeleportToPlace()
                 return
             end
@@ -745,7 +496,7 @@ return {
             --// frame, so a Boss Route run keeps Auto Block, the retreat and the
             --// server-age hop.
             if AICFeature.BossStep and AICFeature.BossStep(now) then
-                SetFarmState("BOSS ROUTE")
+                AICFeature.SetFarmState("BOSS ROUTE")
                 return
             end
 
@@ -764,7 +515,7 @@ return {
                     and not FeatureState.AutoFind.Enabled
                     and now < AICFeature.S.WaypointWaitUntil
                 then
-                    SetFarmState("WAYPOINT WAIT")
+                    AICFeature.SetFarmState("WAYPOINT WAIT")
 
                     if FaceOrientation then
                         FaceOrientation.Enabled = false
@@ -789,7 +540,7 @@ return {
 
                 --// Route mode: never let combat target state leak into waypoint movement.
                 if not FeatureState.AutoFind.Enabled and target then
-                    SetFarmState("ROUTE  #" .. tostring(WaypointIndex))
+                    AICFeature.SetFarmState("ROUTE  #" .. tostring(WaypointIndex))
                     AICCombat.S.ClosestTarget = nil
                     AICCombat.S.TargetPath = nil
                     AICCombat.S.TargetPathMob = nil
@@ -887,10 +638,10 @@ return {
                     local InFarmDeadzone = AICCombatUtils.IsInsideFarmDeadzone(RootPart.Position)
 
                     if LoopResult == "move" then
-                        SetFarmState("WAYPOINT LOOP")
+                        AICFeature.SetFarmState("WAYPOINT LOOP")
                         AICFeature.CancelPatrol()
-                    elseif RunSideJobs(now) then
-                        SetFarmState("MINING / SMITHING")
+                    elseif AICFeature.RunSideJobs(now) then
+                        AICFeature.SetFarmState("MINING / SMITHING")
                         HandedOff = true
                     elseif FeatureState.ReturnToFarmZone.Enabled
                         and not FeatureState.IgnoreFarmZone.Enabled
@@ -898,10 +649,10 @@ return {
                     then
                         AICCombat.S.ClosestTarget = nil
                         AICFeature.CancelPatrol()
-                        SetFarmState("RETURN TO FARM ZONE")
+                        AICFeature.SetFarmState("RETURN TO FARM ZONE")
                         AICFeature.MoveBackToFarmZone()
-                    elseif RunGather(now) then
-                        SetFarmState("GATHER")
+                    elseif AICFeature.RunGather(now) then
+                        AICFeature.SetFarmState("GATHER")
                         HandedOff = true
                     else
                         if not AICCombat.S.ClosestTarget or not AICCombat.IsTargetLockValid(AICCombat.S.ClosestTarget) then
@@ -918,13 +669,13 @@ return {
                             --// patrol was doing rather than leaving a pause or a leg
                             --// chain to resume once the fight is over.
                             AICFeature.CancelPatrol()
-                            ApproachTarget(AICCombat.S.ClosestTarget)
-                            SetFarmState(DescribeChase())
+                            AICFeature.ApproachTarget(AICCombat.S.ClosestTarget)
+                            AICFeature.SetFarmState(AICFeature.DescribeChase())
                         elseif FeatureState.AutoPatrol.Enabled then
-                            SetFarmState("PATROL")
+                            AICFeature.SetFarmState("PATROL")
                             AICFeature.MoveToPatrol()
                         else
-                            SetFarmState("IDLE (NO TARGET)")
+                            AICFeature.SetFarmState("IDLE (NO TARGET)")
                             PatrolState.PatrolPosition = nil
                             AICFeature.S.FarmReturnPosition = nil
                             if FaceOrientation then
@@ -941,8 +692,8 @@ return {
                 local OutsideFarmZone = not AICCombatUtils.IsInsideFarmArea(RootPart.Position)
                 local InFarmDeadzone = AICCombatUtils.IsInsideFarmDeadzone(RootPart.Position)
 
-                if RunSideJobs(now) then
-                    SetFarmState("MINING / SMITHING")
+                if AICFeature.RunSideJobs(now) then
+                    AICFeature.SetFarmState("MINING / SMITHING")
                     HandedOff = true
                 elseif FeatureState.ReturnToFarmZone.Enabled
                     and not FeatureState.IgnoreFarmZone.Enabled
@@ -950,10 +701,10 @@ return {
                 then
                     AICCombat.S.ClosestTarget = nil
                     AICFeature.CancelPatrol()
-                    SetFarmState("RETURN TO FARM ZONE")
+                    AICFeature.SetFarmState("RETURN TO FARM ZONE")
                     AICFeature.MoveBackToFarmZone()
-                elseif RunGather(now) then
-                    SetFarmState("GATHER")
+                elseif AICFeature.RunGather(now) then
+                    AICFeature.SetFarmState("GATHER")
                     HandedOff = true
                 else
                     if not AICCombat.S.ClosestTarget or not AICCombat.IsTargetLockValid(AICCombat.S.ClosestTarget) then
@@ -970,13 +721,13 @@ return {
                         --// was doing rather than leaving a pause or a leg chain to
                         --// resume once the fight is over.
                         AICFeature.CancelPatrol()
-                        ApproachTarget(AICCombat.S.ClosestTarget)
-                        SetFarmState(DescribeChase())
+                        AICFeature.ApproachTarget(AICCombat.S.ClosestTarget)
+                        AICFeature.SetFarmState(AICFeature.DescribeChase())
                     elseif FeatureState.AutoPatrol.Enabled then
-                        SetFarmState("PATROL")
+                        AICFeature.SetFarmState("PATROL")
                         AICFeature.MoveToPatrol()
                     else
-                        SetFarmState("IDLE (NO TARGET)")
+                        AICFeature.SetFarmState("IDLE (NO TARGET)")
                         PatrolState.PatrolPosition = nil
                         AICFeature.S.FarmReturnPosition = nil
                         if FaceOrientation then
@@ -1052,7 +803,7 @@ return {
                         return
                     end
 
-                    if EnsureWeaponDrawn(now, InputBindableFunction, MainWeld) then
+                    if AICFeature.EnsureWeaponDrawnRaw(now, InputBindableFunction, MainWeld) then
                         return
                     end
 
@@ -1089,10 +840,6 @@ return {
         end
 
         AICFeature.updateCharacter = function(...) return Feature.updateCharacter(...) end
-        AICFeature.GetPlayerStatValue = function(...) return Feature.GetPlayerStatValue(...) end
-        AICFeature.GetPlayerLevel = function(...) return Feature.GetPlayerLevel(...) end
-        AICFeature.CreateToggleContainer = function(...) return Feature.CreateToggleContainer(...) end
-        AICFeature.RegenStamina = function(...) return Feature.RegenStamina(...) end
 
         function Feature:CreateUI()
             if UIRef.FeatureSection and UIRef.FeatureSection.AddToggle then

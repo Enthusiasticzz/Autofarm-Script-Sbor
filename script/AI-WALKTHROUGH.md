@@ -4,7 +4,7 @@ This file provides guidance to LLM's or AI when working with code in this reposi
 
 ## What this is
 
-A Roblox auto-farm script ("Automated Industry Complex", aka AutoFarmV3) written in Luau. It has no build, lint or test tooling. Nothing can be run locally: the code only runs inside a Roblox client, so every change is "done but not tested in-game" until the user checks it (`TODO.md` uses `[x]` with that same meaning).
+A Roblox auto-farm script ("Automated Industry Complex", aka AutoFarmV3) written in Luau. Nothing can be run in a real Roblox client from here, so every change is "done but not tested in-game" until the user checks it (`TODO.md` uses `[x]` with that same meaning). There **is** now a local harness: `tests/run-cli.ps1` embeds the stubs and pure-logic tests into one chunk and runs it with the Luau CLI (see `tests/`).
 
 It runs in two ways (`Init.lua`):
 - **Remote (executor):** `Init.lua` downloads every file in parallel from `raw.githubusercontent.com/Enthusiasticzz/Autofarm-Script-Sbor/refs/heads/main/script/` (or from `getgenv().AICBaseURL` when it is set) and `loadstring`s it. **Pushing to `main` ships the change to users.** Runtime reads the same override for the `UI/Utils.lua` it falls back to.
@@ -12,13 +12,16 @@ It runs in two ways (`Init.lua`):
 
 ## Module system
 
-Every file except `UI/Utils.lua` returns a spec: `{ Name, Dependencies = {...}, IsFeature?, Start = function(Context) ... end }`. `Name` must match the file name.
+Every file except `UI/Utils.lua` (the UI library Runtime loads itself) and `ModuleConfig.lua` (a data table) returns a spec: `{ Name, Dependencies = {...}, IsFeature?, Start = function(Context) ... end }`. `Name` must match the file name.
 
-- `MODULES` in `Init.lua` is the one list of files: it controls both the download and the start order. Dependencies start first. Start order also sets where each module's UI controls appear in the window.
+- `ModuleConfig.lua` is the single source of truth for `START_ORDER` (and the `FEATURE_MODULES` / `LATE_UI_MODULES` / `FINALIZE_MODULES` sets). `Init.lua` loads it first (remote fetch or local `require`) and keeps an inline `MODULES` array only as a fallback; the two lists must stay identical.
+- `MODULES` / `START_ORDER` controls both the download and the start order. Dependencies start first. Start order also sets where each module's UI controls appear in the window.
 - Whatever `Start` returns is stored as both `Context.Modules[Name]` and `Context[Name]`. A module returned with `IsFeature` goes into `Context.Features`, and `Core/Heartbeat.lua` calls its `:Update(dt)` every RunService.Heartbeat.
 - After all modules have started, Init calls the optional `:BuildLateUI()` on every module (controls that must go below all the toggles), then `:Finalize()` (ProfileSettings restores the last profile here, once every control exists), then starts Heartbeat.
 - `Core/Bootstrap.lua` is the composition root. It wires character respawn resets and other cross-module glue.
 - `Features/AutoFarming.lua` `Feature:Update` is the main per-frame decision loop (retreat, Auto Block, waypoint route, then combat/patrol). Once the route is walked it first offers the frame to `AICFeature.SmithingStep` (AutoSmithing, also run with Auto Farm off) and then `AICFeature.MiningStep` (AutoMining); a true return means that job moved and fought this frame, and the farm's own combat is skipped.
+- The AutoFarming helpers are split out but still attach to `AICFeature`, so call sites elsewhere are unchanged: `AutoFarming_Combat` (`EnsureWeaponDrawn*`, `TryConsumePotion`, `TryHeal`), `AutoFarming_Navigation` (`ApproachTarget`, `RunGather`), `AutoFarming_State` (`SetFarmState`, `DescribeChase`, `RunSideJobs`), `AutoFarming_UI` (stat helpers, `RegenStamina`, `RenderUpdate`). `AutoFarming_Smithing` / `AutoFarming_Mining` are hook points only; the real steps still live in `AutoSmithing.lua` / `AutoMining.lua`.
+- `Core/Logger.lua` is a spec module (`Context.Logger`). `CONFIG.VERBOSE_LOGGING` gates its DEBUG lines; WARN/ERROR always print. Use `Logger.debug("...%s", value)` at silent-bail sites.
 - `AICFeature.BossStep` (BossNavigator) is offered the frame *before* the waypoint route, and again in the Auto Farm off branch, so the Boss Route runs with Auto Farm on or off and the farm keeps its safety checks (party hold, retreat, Auto Block, server age) ahead of it. While the character is dead Auto Farm returns early, so `AICFeature.BossRecoverStep` is called there to keep a boss reset waiting for its respawn.
 
 ## Shared runtime layers
@@ -28,7 +31,7 @@ Every file except `UI/Utils.lua` returns a spec: `{ Name, Dependencies = {...}, 
 | Layer | Filled in by |
 |---|---|
 | `AICConfig` | Runtime |
-| `AICProfile` | ProfileManager |
+| `AICProfile` | ProfileManager + its `ProfileManager_*` sub-modules |
 | `AICCombatUtils` | Combat/CombatUtils |
 | `AICCombat` | Combat/Targeting, Navigation, Combat (+ Components) |
 | `AICFeature` | the Features/* modules |
@@ -51,7 +54,7 @@ This is the single schema for everything a profile saves. `Features` lists the t
 
 Adding a feature with a saved toggle (from README):
 1. Create `Features/MyFeature.lua` returning the spec.
-2. Add its path to `MODULES` in `Init.lua`.
+2. Add its path to `START_ORDER` in `ModuleConfig.lua` (and mirror it in `Init.lua`'s fallback `MODULES`).
 3. Add `{ Name = "MyFeature", Default = false, Key = "<unused letter>" }` to `SaveConfig.Features`.
 4. In `Start`, call `Context.AICUI.BindFeatureToggle("MyFeature", "My Feature", OnChanged)` and read `Context.Feature.MyFeature.Enabled`.
 

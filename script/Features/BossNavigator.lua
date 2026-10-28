@@ -84,6 +84,21 @@ return {
         --// Waited after a waypoint teleport, so the character lands before
         --// the walk to the spot starts.
         local TELEPORT_WAIT = 2
+        --// After a respawn the first waypoint teleport waits this long: the
+        --// game drops a TeleportEvent fired on the respawn frame, before the
+        --// new character has loaded, and the stop was then walked from spawn.
+        local RESPAWN_SETTLE = 1.5
+        --// A teleport that did not move the character was dropped by the game.
+        --// It is asked again this many times, this far apart, before the
+        --// route gives up and walks.
+        local TELEPORT_RETRIES = 2
+        local TELEPORT_RETRY_DELAY = 0.75
+        --// Moved less than this from where the teleport fired means it never
+        --// landed.
+        local TELEPORT_LAND_DISTANCE = 4
+        --// A stop this far away is worth re-asking the teleport for; a nearer
+        --// one is simply walked.
+        local TELEPORT_RETRY_DISTANCE = 60
         --// Mob scan interval. The folder is read whole, so not every frame.
         local SCAN_INTERVAL = 0.2
         --// Nothing matching at the spot for this long: move on.
@@ -236,6 +251,12 @@ return {
                 --// to read, so Health alone missed the death and the walk back
                 --// was taken for a fresh arrival - complete with Wait At Spot.
                 DeathMark = nil,
+                --// Deaths this route's own resets are expected to cause.
+                --// CharacterAdded bumps DEATH_COUNT a frame after the new body,
+                --// so that bump can land after Advance has already moved on -
+                --// it used to restart the next stop mid-approach.
+                OwnDeaths = 0,
+                OwnDeathAt = nil,
                 WalkStart = nil,
                 Teleported = false,
                 --// A target was fought at this stop, so its absence now means
@@ -270,6 +291,9 @@ return {
                 --// fired, and how many times it has been retried for this stop.
                 TeleportFrom = nil,
                 Teleports = 0,
+                --// No waypoint teleport before this: set after a respawn so the
+                --// game has a loaded character to move, and between retries.
+                TeleportHold = nil,
                 --// The body the reset fired on, so a respawned character is never
                 --// killed again by the retry, and how many retries it has had.
                 ResetHumanoid = nil,
@@ -999,6 +1023,9 @@ return {
             --// from while the route was off is not the next run's.
             S.SkipSpotWait = false
             S.SkipSpotWaitNext = false
+            S.TeleportHold = nil
+            S.OwnDeaths = 0
+            S.OwnDeathAt = nil
             SyncDeathMark()
             EndDodge()
             StopFlee()
@@ -1033,6 +1060,7 @@ return {
             S.InteractAt = nil
             S.TeleportFrom = nil
             S.Teleports = 0
+            S.TeleportHold = nil
             S.PromptUsed = false
             S.SpotWaitUntil = nil
             S.SkipSpotWait = S.SkipSpotWaitNext == true
@@ -1119,6 +1147,11 @@ return {
                 --// The same reset Party System uses; the game respawns the
                 --// character and, on a death, takes the EXP it takes.
                 Humanoid.Health = 0
+                --// The respawn this causes bumps DEATH_COUNT a frame after the
+                --// new body, which can be after the route has advanced. It is
+                --// this reset, not a death the route has to walk back from.
+                S.OwnDeaths = (S.OwnDeaths or 0) + 1
+                S.OwnDeathAt = Now
             end
 
             --// The body this fired on. A retry re-kills only that one: a
@@ -1154,6 +1187,14 @@ return {
             else
                 Advance(Now)
             end
+
+            --// The stop is about to travel and the body is a fresh respawn. The
+            --// game drops a TeleportEvent fired this early, so hold the body
+            --// for a moment before the first attempt: firing on the respawn
+            --// frame left the stop being walked from spawn instead.
+            if S.Phase == "Approach" then
+                S.TeleportHold = Now + RESPAWN_SETTLE
+            end
         end
 
         --// A death the dead-frame check never got to see. A game that
@@ -1181,6 +1222,24 @@ return {
             end
 
             S.DeathMark = Count
+
+            --// A bump this route's own reset caused can arrive after the new
+            --// body has been seen and the next stop is already under way. It
+            --// is that reset, not a death: consuming it here keeps the stop
+            --// from restarting mid-approach and losing its teleport.
+            if (S.OwnDeaths or 0) > 0
+                and S.OwnDeathAt
+                and Now - S.OwnDeathAt <= RESPAWN_TIMEOUT + RESPAWN_SETTLE + 5
+            then
+                S.OwnDeaths -= 1
+
+                if S.OwnDeaths <= 0 then
+                    S.OwnDeaths = 0
+                    S.OwnDeathAt = nil
+                end
+
+                return false
+            end
 
             --// Already recovering from it, or nothing left to walk again.
             if S.Phase == "Recover" or S.Phase == "Done" or not CurrentStop() then
@@ -2079,6 +2138,20 @@ return {
                 return
             end
 
+            --// A fresh respawn needs a moment before the game will move it: a
+            --// TeleportEvent fired on the respawn frame is dropped and the stop
+            --// then gets walked from spawn. This also spaces out the retries.
+            if S.TeleportHold then
+                if Now < S.TeleportHold
+                    and (Stop.Prompt or (Stop.Waypoint or 0) > 0)
+                then
+                    Humanoid:Move(Vector3.zero)
+                    return
+                end
+
+                S.TeleportHold = nil
+            end
+
             --// The stop saved an interaction prompt (a door or portal in front
             --// of the boss): land on it once, then walk the rest. A stop that
             --// has both uses the prompt first, because it is the point of
@@ -2154,16 +2227,29 @@ return {
 
             --// A teleport fired before a just-respawned character had loaded
             --// can be dropped by the game. If nothing moved and the stop is
-            --// still far away, ask once more rather than walking the whole
-            --// way from spawn.
+            --// still far away, hold the body and ask again rather than walking
+            --// the whole way from spawn. Bounded, so a game that never accepts
+            --// the request still reaches the stop.
             if S.TeleportFrom then
                 local Moved = (RootPart.Position - S.TeleportFrom).Magnitude
                 local ToStop = AICCombatUtils.GetHorizontalDistance(Stop.Position, RootPart.Position)
                 S.TeleportFrom = nil
 
-                if Moved < 4 and ToStop > 60 and (S.Teleports or 0) < 1 then
+                if Moved < TELEPORT_LAND_DISTANCE
+                    and ToStop > TELEPORT_RETRY_DISTANCE
+                    and not S.PromptUsed
+                    and (S.Teleports or 0) < TELEPORT_RETRIES
+                then
                     S.Teleports = (S.Teleports or 0) + 1
                     S.Teleported = false
+                    S.TeleportHold = Now + TELEPORT_RETRY_DELAY
+                    Say("Boss Route", string.format(
+                        "Teleport did not land at stop #%d; retrying (%d/%d)",
+                        S.Index,
+                        S.Teleports,
+                        TELEPORT_RETRIES
+                    ), 4)
+                    return
                 end
             end
 

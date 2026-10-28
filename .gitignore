@@ -18,3 +18,16 @@ desktop.ini
 # Web dependencies and build output, when the web app gains a build step.
 node_modules/
 web/dist/
+
+# Runtime profile data (executor-local, per-place JSON).
+AutoFarmProfiles/
+
+# In-game database dumps (can be regenerated via Asset Explorer).
+DatabaseDump.json
+web/DatabaseDump.json
+
+# Local test output.
+tests/output/
+
+# Local one-off helper scripts, not part of the tree.
+_*.py

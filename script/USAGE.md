@@ -931,6 +931,27 @@ clean. If `FARM STATE` is not updating at all:
 3. Confirm the script actually started: the boot window reaching 100% and the tabs
    appearing means `Init.lua` got that far.
 
+### Verbose logging
+
+The silent bails above can also report themselves. `Core/Logger.lua` is available to
+every module as `Context.Logger`, and its DEBUG lines are gated by
+`CONFIG.VERBOSE_LOGGING` in `Core/Runtime.lua`:
+
+```lua
+VERBOSE_LOGGING = false,   -- set true to print [AIC] DEBUG lines
+```
+
+With it on, the console shows the reason a frame bailed, for example:
+
+```
+[AIC]  DEBUG  PlayerStats.Level missing; using 0
+[AIC]  DEBUG  EnsureWeaponDrawn: missing MainWeld InputBindableFunction
+[AIC]  DEBUG  FARM STATE  RETREAT (LOW HEALTH)
+```
+
+`WARN` and `ERROR` always print; only `DEBUG` needs the flag. Turn it back off
+afterwards, since it logs on every state change.
+
 ### Nothing to fight
 
 | Symptom | Cause | Fix |
