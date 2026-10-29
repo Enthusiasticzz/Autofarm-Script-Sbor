@@ -176,8 +176,11 @@ return {
         local DrawingApi
         do
             local Ok, Api = pcall(function() return Drawing end)
-            if Ok and type(Api) == "table" and type(Api.new) == "function" then
-                DrawingApi = Api
+            if Ok and Api and (type(Api) == "table" or type(Api) == "userdata") then
+                local HasNew, NewFn = pcall(function() return Api.new end)
+                if HasNew and type(NewFn) == "function" then
+                    DrawingApi = Api
+                end
             end
         end
 
@@ -266,8 +269,10 @@ return {
             return Target:FindFirstChildWhichIsA("BasePart")
         end
 
-        --// The model's box relative to its anchor part. Re-measured on the
-        --// scan so a changed rig is picked up and a lost anchor replaced.
+        --// The box is measured in world space and follows its anchor by
+        --// translation only. GetBoundingBox is world-aligned, so a cached
+        --// offset rotated with the mob would swing the box around its feet
+        --// every time it turned, then snap back on the next measurement.
         local function Measure(Target, Entry)
             Entry.NextMeasure = os.clock() + MEASURE_INTERVAL
 
@@ -276,12 +281,13 @@ return {
 
             local Ok, CF, Size = pcall(Target.GetBoundingBox, Target)
             if not Ok or not CF then
-                Entry.LocalCF, Entry.Size = nil, nil
+                Entry.BoxCF, Entry.Size, Entry.MeasurePoint = nil, nil, nil
                 return
             end
 
-            Entry.LocalCF = (Entry.Anchor and Entry.Anchor.CFrame or CF):ToObjectSpace(CF)
+            Entry.BoxCF = CF
             Entry.Size = Size
+            Entry.MeasurePoint = Entry.Anchor and Entry.Anchor.Position or CF.Position
         end
 
         --// Thicker up close, thinner far away, so a box at 20 studs does not
@@ -628,8 +634,9 @@ return {
                     --// the measurement cached on the scan.
                     if Anchor and Anchor.Parent then
                         Distance = (Anchor.Position - CameraPosition).Magnitude
-                        if Entry.LocalCF and Entry.Size and Distance <= Range then
-                            X1, Y1, X2, Y2 = Project(Anchor.CFrame * Entry.LocalCF, Entry.Size, Camera)
+                        if Entry.BoxCF and Entry.Size and Distance <= Range then
+                            local BoxCF = Entry.BoxCF + (Anchor.Position - Entry.MeasurePoint)
+                            X1, Y1, X2, Y2 = Project(BoxCF, Entry.Size, Camera)
                         end
                     end
 
@@ -672,7 +679,7 @@ return {
                             --// Center is both axes, so the block sits just
                             --// above the box: half a line per extra line.
                             local LineCount = Entry.LabelLines or 1
-                            DrawText.Position = Vector2.new((X1 + X2) / 2, Y1 - 6 - LineCount * 7)
+                            DrawText.Position = Vector2.new((X1 + X2) / 2, Y1 - 8 - LineCount * 7)
                             DrawText.Visible = true
                         else
                             DrawText.Visible = false
@@ -769,7 +776,7 @@ return {
                 end,
             }
             SettingsSection:AddToggle{
-                Name = "Auto thickness (thinner with distance)",
+                Name = "Auto thickness",
                 Default = true,
                 Callback = function(Value)
                     S.Settings.AutoThickness = Value == true
