@@ -46,6 +46,13 @@ return {
         --// Label text is refreshed this often from the render loop, so it
         --// reads live instead of at the scan's rate.
         local LABEL_INTERVAL = 0.25
+        --// Every piece of text is the same pixel size at any distance, like
+        --// the popular ESP libraries. Change this one number to resize all
+        --// of it.
+        local TEXT_SIZE = 16
+        --// The Drawing font the text uses: UI, System, Plex or Monospace
+        --// (some executors also have Roboto, Legacy, SourceSans, RobotoMono).
+        local TEXT_FONT_NAME = "Monospace"
 
         local KINDS = { "Player", "Mob", "Weapon" }
         local TITLES = { Player = "Players", Mob = "Mobs", Weapon = "Weapons" }
@@ -354,14 +361,15 @@ return {
         local LineSupported = ProbeDrawing("Line")
         local TextSupported = ProbeDrawing("Text")
 
-        --// The default Drawing font (UI) is thin and hard to read at a
-        --// glance. Plex is the heavier one the popular ESP libraries pick,
-        --// and 2 is the number it has when the executor has no named table.
-        local TextFont = 2
+        --// The default Drawing font (UI) is thin and plain. The font is picked
+        --// by name from the executor's own Drawing.Fonts table; when that
+        --// table or the name is missing, the usual numbers are used instead.
+        local FONT_NUMBERS = { UI = 0, System = 1, Plex = 2, Monospace = 3 }
+        local TextFont = FONT_NUMBERS[TEXT_FONT_NAME] or 2
         do
-            local Ok, Plex = pcall(function() return DrawingApi.Fonts.Plex end)
-            if Ok and Plex ~= nil then
-                TextFont = Plex
+            local Ok, Font = pcall(function() return DrawingApi.Fonts[TEXT_FONT_NAME] end)
+            if Ok and Font ~= nil then
+                TextFont = Font
             end
         end
 
@@ -466,17 +474,24 @@ return {
             local Found = false
             local Parts = 0
 
-            for _, Part in ipairs(Target:GetDescendants()) do
-                if Part:IsA("BasePart") then
-                    Found = true
-                    Parts += 1
-                    for _, Corner in ipairs(CORNERS) do
-                        local Point = Frame:PointToObjectSpace(Part.CFrame:PointToWorldSpace(Corner * Part.Size))
-                        MinX, MaxX = math.min(MinX, Point.X), math.max(MaxX, Point.X)
-                        MinY, MaxY = math.min(MinY, Point.Y), math.max(MaxY, Point.Y)
-                        MinZ, MaxZ = math.min(MinZ, Point.Z), math.max(MaxZ, Point.Z)
+            --// Invisible parts (hitboxes, the root part, effect holders) are
+            --// left out, so the box hugs what can actually be seen. Only a
+            --// model with nothing visible falls back to measuring everything.
+            local Descendants = Target:GetDescendants()
+            for Pass = 1, 2 do
+                for _, Part in ipairs(Descendants) do
+                    if Part:IsA("BasePart") and (Pass == 2 or Part.Transparency < 1) then
+                        Found = true
+                        Parts += 1
+                        for _, Corner in ipairs(CORNERS) do
+                            local Point = Frame:PointToObjectSpace(Part.CFrame:PointToWorldSpace(Corner * Part.Size))
+                            MinX, MaxX = math.min(MinX, Point.X), math.max(MaxX, Point.X)
+                            MinY, MaxY = math.min(MinY, Point.Y), math.max(MaxY, Point.Y)
+                            MinZ, MaxZ = math.min(MinZ, Point.Z), math.max(MaxZ, Point.Z)
+                        end
                     end
                 end
+                if Found then break end
             end
 
             if not Found or MaxY - MinY < 0.1 then return false end
@@ -550,10 +565,6 @@ return {
             return math.clamp(600 / math.max(Distance, 1), 8, 40)
         end
 
-        --// Every piece of text is the same pixel size at any distance, like
-        --// the popular ESP libraries. Change this one number to resize all
-        --// of it.
-        local TEXT_SIZE = 18
         local function TextSizeFor()
             return TEXT_SIZE
         end
@@ -602,10 +613,10 @@ return {
             return nil
         end
 
-        --// The label is split into three pieces that sit around the box:
-        --// Top is the name with the HP under it ("100 / 100 HP"), Right is
-        --// the level (and, for a mob, the EXP it gives), Bottom is the
-        --// distance. Missing pieces are left out.
+        --// The label is split into four pieces that sit around the box: Name
+        --// and Hp (each centred on its own) above it, Right is the level
+        --// (and, for a mob, the EXP it gives), Bottom is the distance.
+        --// Missing pieces are left out.
         local function LabelParts(Target, Kind, Entry)
             local Owner = Kind == "Player" and Players:GetPlayerFromCharacter(Target) or nil
             local Config = Kind == "Mob" and Target:FindFirstChild("Config") or nil
@@ -615,10 +626,10 @@ return {
                 or (MobEntity and MobEntity:IsA("StringValue") and MobEntity.Value ~= "" and MobEntity.Value)
                 or Target.Name
 
-            local Top = Name
+            local Hp = ""
             local Humanoid = Target:FindFirstChildOfClass("Humanoid")
             if Humanoid and Kind ~= "Weapon" then
-                Top = Top .. "\n" .. math.floor(Humanoid.Health) .. " / " .. math.floor(Humanoid.MaxHealth) .. " HP"
+                Hp = math.floor(Humanoid.Health) .. " / " .. math.floor(Humanoid.MaxHealth) .. " HP"
             end
 
             local Right = {}
@@ -657,12 +668,13 @@ return {
                 Bottom = math.floor(Distance + 0.5) .. "m"
             end
 
-            return { Top = Top, Right = table.concat(Right, "\n"), Bottom = Bottom }
+            return { Name = Name, Hp = Hp, Right = table.concat(Right, "\n"), Bottom = Bottom }
         end
 
         local function SetLabelText(Target, Kind, Entry)
             if not Entry.TextParts then return end
             local Texts = LabelParts(Target, Kind, Entry)
+            Entry.HasHp = (Texts.Hp or "") ~= ""
 
             for _, Part in ipairs(Entry.TextParts) do
                 local Text = Texts[Part.Key] or ""
@@ -778,10 +790,10 @@ return {
             end
         end
 
-        --// One text object per side of the box. Weapons only have a name and
-        --// a distance, so they get no right-hand piece.
+        --// One text object per piece. Weapons only have a name and a
+        --// distance, so they get no HP or right-hand piece.
         local function AddLabel(Entry, Target, C, Kind)
-            local Keys = Kind == "Weapon" and { "Top", "Bottom" } or { "Top", "Right", "Bottom" }
+            local Keys = Kind == "Weapon" and { "Name", "Bottom" } or { "Name", "Hp", "Right", "Bottom" }
             Entry.TextParts = {}
 
             for _, Key in ipairs(Keys) do
@@ -813,9 +825,9 @@ return {
                     Text.Visible = false
                     Text.ZIndex = 3
 
-                    if Key == "Top" then
+                    if Key == "Name" or Key == "Hp" then
                         Text.AnchorPoint = Vector2.new(0.5, 1)
-                        Text.Size = UDim2.fromOffset(340, 80)
+                        Text.Size = UDim2.fromOffset(340, 40)
                         Text.TextXAlignment = Enum.TextXAlignment.Center
                         Text.TextYAlignment = Enum.TextYAlignment.Bottom
                     elseif Key == "Bottom" then
@@ -1074,28 +1086,29 @@ return {
                     end
 
                     --// Text is spaced around the box rather than stacked on
-                    --// top of it: the name and HP above the top edge, the
-                    --// level (and a mob's EXP) down the right edge, the
-                    --// distance below the bottom edge. Each piece is centred
-                    --// on the edge it belongs to, and a multi-line piece is
-                    --// offset by half its own height so it never creeps
-                    --// back onto the box.
+                    --// top of it: the HP just above the top edge with the name
+                    --// above that (each centred on its own, so they line up),
+                    --// the level (and a mob's EXP) down the right edge, the
+                    --// distance below the bottom edge.
                     if TextParts then
-                        local Pad = 6 + Thickness
+                        local Pad = 4 + Thickness
+                        local RowHeight = TextSize + 2
+                        local HpHeight = Entry.HasHp and RowHeight or 0
                         local CenterX = X1 and (X1 + X2) * 0.5
                         local MiddleY = X1 and (Y1 + Y2) * 0.5
 
                         for _, Part in ipairs(TextParts) do
                             local Show = X1 ~= nil and not Part.Empty
                             local Key = Part.Key
-                            local Size = TextSize
-                            local Block = Part.Lines * (Size + 2) * 0.5
+                            local Block = Part.Lines * RowHeight * 0.5
 
                             if Part.Draw then
                                 if Show then
-                                    Part.Draw.Size = Size
-                                    if Key == "Top" then
+                                    Part.Draw.Size = TextSize
+                                    if Key == "Hp" then
                                         Part.Draw.Position = Vector2.new(CenterX, Y1 - Pad - Block)
+                                    elseif Key == "Name" then
+                                        Part.Draw.Position = Vector2.new(CenterX, Y1 - Pad - HpHeight - Block)
                                     elseif Key == "Bottom" then
                                         Part.Draw.Position = Vector2.new(CenterX, Y2 + Pad + Block)
                                     else
@@ -1105,9 +1118,11 @@ return {
                                 Part.Draw.Visible = Show
                             elseif Part.Gui then
                                 if Show and Part.Gui.Parent then
-                                    Part.Gui.TextSize = Size
-                                    if Key == "Top" then
+                                    Part.Gui.TextSize = TextSize
+                                    if Key == "Hp" then
                                         Part.Gui.Position = UDim2.fromOffset(CenterX, Y1 - Pad)
+                                    elseif Key == "Name" then
+                                        Part.Gui.Position = UDim2.fromOffset(CenterX, Y1 - Pad - HpHeight)
                                     elseif Key == "Bottom" then
                                         Part.Gui.Position = UDim2.fromOffset(CenterX, Y2 + Pad)
                                     else
