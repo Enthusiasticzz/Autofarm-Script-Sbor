@@ -1325,6 +1325,7 @@ START_ORDER = {
 "Features/RespawnTimers.lua",
 "Features/WaypointLoop.lua",
 "Features/BossNavigator.lua",
+"Features/Esp.lua",
 "Core/Bootstrap.lua",
 "Core/Heartbeat.lua",
 },
@@ -1368,6 +1369,7 @@ FEATURE_MODULES = {
 ["Features/RespawnTimers.lua"] = true,
 ["Features/WaypointLoop.lua"] = true,
 ["Features/BossNavigator.lua"] = true,
+["Features/Esp.lua"] = true,
 ["Features/EnemyPriority.lua"] = true,
 },
 LATE_UI_MODULES = {

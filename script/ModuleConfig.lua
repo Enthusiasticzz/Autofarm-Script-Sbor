@@ -103,6 +103,7 @@ return {
         "Features/RespawnTimers.lua",
         "Features/WaypointLoop.lua",
         "Features/BossNavigator.lua",
+        "Features/Esp.lua",
 
         --// Lifecycle modules (started last)
         "Core/Bootstrap.lua",
@@ -151,6 +152,7 @@ return {
         ["Features/RespawnTimers.lua"] = true,
         ["Features/WaypointLoop.lua"] = true,
         ["Features/BossNavigator.lua"] = true,
+        ["Features/Esp.lua"] = true,
         ["Features/EnemyPriority.lua"] = true,
     },
 

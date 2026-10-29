@@ -137,6 +137,7 @@ local MODULES = {
     "Features/RespawnTimers.lua",
     "Features/WaypointLoop.lua",
     "Features/BossNavigator.lua",
+    "Features/Esp.lua",
 
     "Core/Bootstrap.lua",
     "Core/Heartbeat.lua",
