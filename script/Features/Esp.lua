@@ -2,9 +2,10 @@
 --
 -- Each enabled kind draws either an outline (Highlight) or a 2D box, never
 -- both, and can add a text label (name, level, EXP, HP, distance).
--- Everything lives under one ScreenGui: the highlights sit in a folder inside
--- it, and the boxes and labels are GUI objects moved every render frame from
--- the target's projected bounds.
+-- Outlines live in a folder inside one ScreenGui. Boxes and labels are drawn
+-- with the executor's Drawing API when it has one, because a Drawing object
+-- costs no GUI work per frame; otherwise they fall back to Frames and
+-- TextLabels inside that same ScreenGui.
 --
 -- Players are the models directly in workspace that have a Humanoid. Mobs are
 -- the models in workspace.Mobs. Weapons are the Sword and Sword2 models on a
@@ -35,9 +36,9 @@ return {
         --// Bounds re-measurement is spread over scans: doing every due mob in
         --// one frame put a visible hitch in the same frame, every interval.
         local MEASURE_PER_SCAN = 12
-        --// Nothing is drawn past this range: a box on the other side of the
-        --// map is a few pixels and not worth projecting every frame.
-        local MAX_DRAW_DISTANCE = 900
+        --// Label text is rewritten this often from the render loop, so HP,
+        --// EXP and the distance read live instead of at the scan's rate.
+        local LABEL_INTERVAL = 0.25
 
         local KINDS = { "Player", "Mob", "Weapon" }
         local TITLES = { Player = "Players", Mob = "Mobs", Weapon = "Weapons" }
@@ -49,9 +50,15 @@ return {
 
         local S = {
             Kinds = {},
-            Entries = {}, -- [Target] = { Kind, Highlight?, Frame?, Stroke?, Label?, ... }
+            Entries = {}, -- [Target] = { Kind, Highlight?, Frame?, Stroke?, Label?, BoxLines?, DrawText?, ... }
             StyleToggles = {}, -- [Kind] = { Outline = toggle, Box = toggle }
+            Settings = {
+                Thickness = 1.5, -- box thickness at close range
+                AutoThickness = true,
+                Range = 900, -- studs; nothing past this is drawn
+            },
             Timer = 0,
+            LabelRefresh = 0,
         }
         for _, Kind in ipairs(KINDS) do
             S.Kinds[Kind] = {
@@ -82,6 +89,12 @@ return {
             if Entry.Highlight then pcall(function() Entry.Highlight:Destroy() end) end
             if Entry.Frame then pcall(function() Entry.Frame:Destroy() end) end
             if Entry.Label then pcall(function() Entry.Label:Destroy() end) end
+            if Entry.BoxLines then
+                for _, Line in ipairs(Entry.BoxLines) do
+                    pcall(function() Line:Remove() end)
+                end
+            end
+            if Entry.DrawText then pcall(function() Entry.DrawText:Remove() end) end
             S.Entries[Target] = nil
         end
 
@@ -105,10 +118,11 @@ return {
             return Ok and Gui.Parent == Parent
         end
 
-        --// One ScreenGui holds everything. It goes in a hidden UI container
-        --// when the executor has one, then CoreGui, then PlayerGui. If it is
-        --// ever lost (PlayerGui reset, etc.) it is rebuilt and all entries
-        --// are redrawn on the same scan.
+        --// One ScreenGui holds the highlights and, when there is no Drawing
+        --// API, every box and label. It goes in a hidden UI container when the
+        --// executor has one, then CoreGui, then PlayerGui. If it is ever lost
+        --// (PlayerGui reset, etc.) it is rebuilt and all entries are redrawn on
+        --// the same scan.
         local function GetRoot()
             if Root and Root.Parent and HighlightFolder and HighlightFolder.Parent then
                 return Root
@@ -152,6 +166,50 @@ return {
         end
 
         ----------------------------------------------------------------------
+        -- Drawing API
+        ----------------------------------------------------------------------
+
+        --// Drawing draws straight to the screen instead of through the GUI, so
+        --// a box costs four property writes a frame rather than a Frame, its
+        --// UIStroke and a TextLabel each. It is an executor feature, so it is
+        --// probed once and every piece falls back to the GUI on its own.
+        local DrawingApi
+        do
+            local Ok, Api = pcall(function() return Drawing end)
+            if Ok and type(Api) == "table" and type(Api.new) == "function" then
+                DrawingApi = Api
+            end
+        end
+
+        local LineSupported, TextSupported = false, false
+        if DrawingApi then
+            LineSupported = pcall(function()
+                local Line = DrawingApi.new("Line")
+                if not Line then error("no Line") end
+                pcall(function() Line:Remove() end)
+            end)
+            TextSupported = pcall(function()
+                local Text = DrawingApi.new("Text")
+                if not Text then error("no Text") end
+                pcall(function() Text:Remove() end)
+            end)
+        end
+
+        local function NewLine()
+            if not LineSupported then return nil end
+            local Ok, Line = pcall(DrawingApi.new, "Line")
+            if Ok then return Line end
+            return nil
+        end
+
+        local function NewText()
+            if not TextSupported then return nil end
+            local Ok, Text = pcall(DrawingApi.new, "Text")
+            if Ok then return Text end
+            return nil
+        end
+
+        ----------------------------------------------------------------------
         -- Projection
         ----------------------------------------------------------------------
 
@@ -188,10 +246,9 @@ return {
 
         --// A part the box can follow. Reading Model:GetPivot looks cheap but
         --// is only a single CFrame read when the model has a PrimaryPart: a
-        --// mob rig usually does not, so the engine walks every part to find
-        --// the bounding box centre on each call. Doing that per mob per frame
-        --// is exactly what left mob boxes and labels a step behind. A cached
-        --// part has the same position for one property read.
+        --// mob rig usually does not, so the engine falls back to the model's
+        --// stored pivot, which does not follow its parts. A cached part has
+        --// the position of what is actually on screen.
         local function GetAnchor(Target)
             --// HumanoidRootPart first: it is the part the rest of this script
             --// already uses to follow a mob, so the box follows the same thing
@@ -225,6 +282,16 @@ return {
 
             Entry.LocalCF = (Entry.Anchor and Entry.Anchor.CFrame or CF):ToObjectSpace(CF)
             Entry.Size = Size
+        end
+
+        --// Thicker up close, thinner far away, so a box at 20 studs does not
+        --// turn into one fat line at 400. The slider is the close-up width.
+        local function ThicknessFor(Distance)
+            local Base = S.Settings.Thickness
+            if not S.Settings.AutoThickness or Distance == math.huge then
+                return Base
+            end
+            return math.clamp(Base * (250 / math.max(Distance, 1)), 1, Base)
         end
 
         ----------------------------------------------------------------------
@@ -279,13 +346,28 @@ return {
             return table.concat(Lines, "\n")
         end
 
-        --// Rewrites the text of every live label. Called on the scan, so HP
-        --// and distance stay current without touching labels every frame.
+        local function SetLabelText(Target, Kind, Entry)
+            local Text = LabelText(Target, Kind, Entry)
+            Entry.LabelLines = 1
+
+            for _ in string.gmatch(Text, "\n") do
+                Entry.LabelLines += 1
+            end
+
+            if Entry.DrawText then
+                Entry.DrawText.Text = Text
+            end
+            if Entry.Label then
+                Entry.Label.Text = Text
+            end
+        end
+
+        --// Rewrites every live label from the render loop, so the numbers
+        --// read live without re-projecting or rebuilding anything.
         local function RefreshLabels()
             for Target, Entry in pairs(S.Entries) do
-                local Label = Entry.Label
-                if Label and Label.Parent and Target.Parent then
-                    Label.Text = LabelText(Target, Entry.Kind, Entry)
+                if (Entry.DrawText or Entry.Label) and Target.Parent then
+                    SetLabelText(Target, Entry.Kind, Entry)
                 end
             end
         end
@@ -307,6 +389,34 @@ return {
         end
 
         local function AddBox(Entry, C, Kind)
+            --// Four Drawing lines, refusing the whole set if one cannot be
+            --// made (an executor with a partial Drawing API falls back to a
+            --// Frame instead of leaving half a box).
+            if LineSupported then
+                local Lines = {}
+                for Index = 1, 4 do
+                    local Line = NewLine()
+                    if not Line then
+                        for _, Created in ipairs(Lines) do
+                            pcall(function() Created:Remove() end)
+                        end
+                        Lines = nil
+                        break
+                    end
+
+                    Line.Color = C.Color
+                    Line.Thickness = S.Settings.Thickness
+                    Line.Transparency = 1
+                    Line.Visible = false
+                    Lines[Index] = Line
+                end
+
+                if Lines then
+                    Entry.BoxLines = Lines
+                    return
+                end
+            end
+
             local Frame = Instance.new("Frame")
             Frame.Name = Kind .. "Box"
             Frame.BackgroundTransparency = 1
@@ -316,7 +426,7 @@ return {
 
             local Stroke = Instance.new("UIStroke")
             Stroke.Color = C.Color
-            Stroke.Thickness = 1.5
+            Stroke.Thickness = S.Settings.Thickness
             Stroke.Parent = Frame
 
             Frame.Parent = Root
@@ -325,6 +435,24 @@ return {
         end
 
         local function AddLabel(Entry, Target, C, Kind)
+            local DrawText = NewText()
+            if DrawText then
+                pcall(function()
+                    DrawText.Color = C.Color
+                    DrawText.Size = 13
+                    DrawText.Center = true
+                    DrawText.Transparency = 1
+                    DrawText.Visible = false
+                end)
+                --// Outline is not on every executor's Text object.
+                pcall(function() DrawText.Outline = true end)
+                pcall(function() DrawText.OutlineColor = Color3.fromRGB(0, 0, 0) end)
+
+                Entry.DrawText = DrawText
+                SetLabelText(Target, Kind, Entry)
+                return
+            end
+
             local Text = Instance.new("TextLabel")
             Text.Name = Kind .. "Label"
             Text.BackgroundTransparency = 1
@@ -338,9 +466,9 @@ return {
             Text.TextXAlignment = Enum.TextXAlignment.Center
             Text.Visible = false
             Text.ZIndex = 3
-            Text.Text = LabelText(Target, Kind, Entry)
             Text.Parent = Root
             Entry.Label = Text
+            SetLabelText(Target, Kind, Entry)
         end
 
         local function Mark(Target, Kind)
@@ -437,13 +565,12 @@ return {
                 end
             end
 
-            --// Bounds are re-measured here, and label text rewritten, so both
-            --// follow the target without doing either every frame. Only a few
-            --// are measured per scan; the rest wait their turn.
+            --// Bounds are re-measured here, a few at a time, so a rig change
+            --// is picked up without one frame paying for every mob.
             local Now = os.clock()
             local Measured = 0
             for Target, Entry in pairs(S.Entries) do
-                if Target.Parent and (Entry.Frame or Entry.Label)
+                if Target.Parent and (Entry.Frame or Entry.BoxLines or Entry.Label or Entry.DrawText)
                     and (not Entry.NextMeasure or Now >= Entry.NextMeasure) then
                     if Measured >= MEASURE_PER_SCAN then break end
                     Measure(Target, Entry)
@@ -451,7 +578,6 @@ return {
                 end
             end
 
-            RefreshLabels()
             Prune()
         end
 
@@ -474,6 +600,11 @@ return {
             Scan()
         end
 
+        local function SetLine(Line, X1, Y1, X2, Y2)
+            Line.From = Vector2.new(X1, Y1)
+            Line.To = Vector2.new(X2, Y2)
+        end
+
         --// Boxes and labels follow the camera, so they move on RenderStepped
         --// rather than on the slower scan (otherwise they trail the target).
         local function UpdateDrawings()
@@ -482,37 +613,71 @@ return {
 
             local CameraPosition = Camera.CFrame.Position
             local Viewport = Camera.ViewportSize
+            local Range = S.Settings.Range
 
             for _, Entry in pairs(S.Entries) do
                 local Frame, Label = Entry.Frame, Entry.Label
-                if Frame or Label then
+                local Lines, DrawText = Entry.BoxLines, Entry.DrawText
+
+                if Frame or Label or Lines or DrawText then
                     local X1, Y1, X2, Y2
                     local Anchor = Entry.Anchor
+                    local Distance = math.huge
 
                     --// One live part is read per frame; the rest of the box is
                     --// the measurement cached on the scan.
-                    if Anchor and Anchor.Parent and Entry.LocalCF and Entry.Size
-                        and (Anchor.Position - CameraPosition).Magnitude <= MAX_DRAW_DISTANCE then
-                        X1, Y1, X2, Y2 = Project(Anchor.CFrame * Entry.LocalCF, Entry.Size, Camera)
+                    if Anchor and Anchor.Parent then
+                        Distance = (Anchor.Position - CameraPosition).Magnitude
+                        if Entry.LocalCF and Entry.Size and Distance <= Range then
+                            X1, Y1, X2, Y2 = Project(Anchor.CFrame * Entry.LocalCF, Entry.Size, Camera)
+                        end
                     end
 
                     --// Off-screen targets are hidden rather than moved, so a
-                    --// busy zone does not pay for GUI it cannot see.
+                    --// busy zone does not pay for drawing it cannot show.
                     if X1 and (X2 < 0 or Y2 < 0 or X1 > Viewport.X or Y1 > Viewport.Y) then
                         X1 = nil
                     end
 
-                    if Frame and Frame.Parent then
+                    local Thickness = ThicknessFor(Distance)
+
+                    if Lines then
+                        if X1 then
+                            SetLine(Lines[1], X1, Y1, X2, Y1)
+                            SetLine(Lines[2], X2, Y1, X2, Y2)
+                            SetLine(Lines[3], X2, Y2, X1, Y2)
+                            SetLine(Lines[4], X1, Y2, X1, Y1)
+                            for _, Line in ipairs(Lines) do
+                                Line.Thickness = Thickness
+                                Line.Visible = true
+                            end
+                        else
+                            for _, Line in ipairs(Lines) do
+                                Line.Visible = false
+                            end
+                        end
+                    elseif Frame and Frame.Parent then
                         if X1 then
                             Frame.Position = UDim2.fromOffset(X1, Y1)
                             Frame.Size = UDim2.fromOffset(X2 - X1, Y2 - Y1)
                             Frame.Visible = true
+                            if Entry.Stroke then Entry.Stroke.Thickness = Thickness end
                         else
                             Frame.Visible = false
                         end
                     end
 
-                    if Label and Label.Parent then
+                    if DrawText then
+                        if X1 then
+                            --// Center is both axes, so the block sits just
+                            --// above the box: half a line per extra line.
+                            local LineCount = Entry.LabelLines or 1
+                            DrawText.Position = Vector2.new((X1 + X2) / 2, Y1 - 6 - LineCount * 7)
+                            DrawText.Visible = true
+                        else
+                            DrawText.Visible = false
+                        end
+                    elseif Label and Label.Parent then
                         if X1 then
                             Label.Position = UDim2.fromOffset((X1 + X2) / 2, Y1 - 4)
                             Label.Visible = true
@@ -521,6 +686,12 @@ return {
                         end
                     end
                 end
+            end
+
+            local Now = os.clock()
+            if Now - S.LabelRefresh >= LABEL_INTERVAL then
+                S.LabelRefresh = Now
+                RefreshLabels()
             end
         end
 
@@ -570,6 +741,12 @@ return {
                     if Entry.Highlight then Entry.Highlight.OutlineColor = Color end
                     if Entry.Stroke then Entry.Stroke.Color = Color end
                     if Entry.Label then Entry.Label.TextColor3 = Color end
+                    if Entry.DrawText then Entry.DrawText.Color = Color end
+                    if Entry.BoxLines then
+                        for _, Line in ipairs(Entry.BoxLines) do
+                            Line.Color = Color
+                        end
+                    end
                 end
             end
         end
@@ -579,6 +756,36 @@ return {
         ----------------------------------------------------------------------
 
         if UIRef.EspTab then
+            local SettingsSection = UIRef.EspTab:AddSection{ Title = "ESP Settings" }
+
+            SettingsSection:AddSlider{
+                Name = "Box thickness",
+                Default = S.Settings.Thickness,
+                Min = 1,
+                Max = 6,
+                Decimals = 1,
+                Callback = function(Value)
+                    S.Settings.Thickness = Value
+                end,
+            }
+            SettingsSection:AddToggle{
+                Name = "Auto thickness (thinner with distance)",
+                Default = true,
+                Callback = function(Value)
+                    S.Settings.AutoThickness = Value == true
+                end,
+            }
+            SettingsSection:AddSlider{
+                Name = "Draw range",
+                Default = S.Settings.Range,
+                Min = 100,
+                Max = 2000,
+                Suffix = "m",
+                Callback = function(Value)
+                    S.Settings.Range = Value
+                end,
+            }
+
             for _, Kind in ipairs(KINDS) do
                 local C = S.Kinds[Kind]
                 local Sec = UIRef.EspTab:AddSection{ Title = TITLES[Kind] }
