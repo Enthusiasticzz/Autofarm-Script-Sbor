@@ -10,23 +10,15 @@ return {
         local AICConfig = Context.AICConfig
         local AICCombat = Context.AICCombat
         local AICFeature = Context.AICFeature
-        local AICUI = Context.AICUI
-        local AICDebug = Context.AICDebug
         local CONFIG = Context.CONFIG
         local Feature = Context.Feature
-        local UIRef = Context.UIRef
         local PatrolState = Context.PatrolState
-        local HttpService = Context.Services.HttpService
         local BasePlaceConfig = Runtime:GetBasePlaceConfig()
         local PlaceConfig = Runtime:GetPlaceConfig()
 
         local PROFILE_FOLDER = "AutoFarmProfiles"
-        local PROFILE_FILE = PROFILE_FOLDER .. "/" .. tostring(game.PlaceId) .. ".json"
-        --// Not keyed by PlaceId: pinned items follow the player between places.
-        local PINNED_FILE = PROFILE_FOLDER .. "/PinnedItems.json"
         --// Global toggles and SaveConfig.GlobalSettings, shared by every
         --// profile and PlaceId.
-        local GLOBAL_FILE = PROFILE_FOLDER .. "/Global.json"
 
         --// Short keys for feature toggles in exported/imported profile text,
         --// taken from SaveConfig.Features so a new toggle exports on its own.
@@ -83,10 +75,6 @@ return {
 
                 if Entry.Scope == "Place" then
                     Value = FarmConfig[Entry.Key]
-                elseif Entry.Key == "PINNED_STATE" and UIRef.PinPanel then
-                    --// Read from the panel, so a drag or a pop out is captured
-                    --// without the panel having to announce every change.
-                    Value = UIRef.PinPanel:GetState()
                 else
                     Value = CONFIG[Entry.Key]
                 end
@@ -108,14 +96,6 @@ return {
 
                 if Entry.Scope == "Place" then
                     FarmConfig[Entry.Key] = SaveConfig.NormalizeSetting(Entry, Value, FarmConfig[Entry.Key])
-                elseif Entry.Global then
-                    --// Pinned items are shared across every PlaceId and live
-                    --// in their own file. A profile's copy only seeds that
-                    --// file once, for saves made before pins were global.
-                    if not AICProfile.S.HasGlobalPinnedState and type(Value) == "table" then
-                        CONFIG[Entry.Key] = SaveConfig.NormalizeSetting(Entry, Value)
-                        AICProfile.WritePinnedState(CONFIG[Entry.Key])
-                    end
                 else
                     CONFIG[Entry.Key] = SaveConfig.NormalizeSetting(Entry, Value)
                 end
@@ -329,7 +309,6 @@ return {
             CONFIG.CURRENT_WAYPOINT_TARGET = 1
             AICFeature.S.WaypointWaitUntil = nil
             if AICFeature.ResetWaypointLoop then AICFeature.ResetWaypointLoop() end
-            --// PINNED_STATE is global, so ResetSettings leaves it alone.
             AICProfile.ResetSettings()
 
             AICCombat.ResetTargetReposition()

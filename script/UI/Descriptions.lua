@@ -35,7 +35,6 @@ return {
             ["Leave On Danger Group"] = "Blocks, then leaves when a Danger Group member joins",
             ["Join Alerts"] = "Notifies you when someone off the Block Whitelist joins",
             ["Follower Guard"] = "Kicks you out of the game when one player keeps joining yours",
-            ["Show Pinned Items"] = "Shows the floating Pinned Items panel",
 
             --// Boss Route
             ["Always Wait Before Reset"] = "Takes the Reset (s) pause before every reset, even when no EXP would be lost",
@@ -162,7 +161,6 @@ return {
 
             --// Status
             ["Reset Stats"] = "Zeroes stats under 500 points; 500 won't reset (trips the anticheat)",
-            ["Reset Pinned Items Position"] = "Docks the Pinned Items panel back at the right",
 
             --// Profile
             ["Profile"] = "Loads the picked profile",

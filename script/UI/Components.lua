@@ -6,16 +6,9 @@ return {
         local Services = Context.Services
         local Players = Services.Players
         local Player = Context.Player
-        local PlayerGui = Context.PlayerGui
-        local Replicated = Services.Replicated
-        local StarterGui = Services.StarterGui
-        local RunService = Services.RunService
-        local PathfindingService = Services.PathfindingService
-        local HttpService = Services.HttpService
         local CONFIG = Context.CONFIG
         local AICConfig = Context.AICConfig
         local AICProfile = Context.AICProfile
-        local AICCombatUtils = Context.AICCombatUtils
         local AICCombat = Context.AICCombat
         local AICFeature = Context.AICFeature
         local AICUI = Context.AICUI
@@ -23,8 +16,6 @@ return {
         local UIRef = Context.UIRef
         local UI = Context.UI
         local FeatureState = Context.Feature
-        local PatrolState = Context.PatrolState
-        local NotifyAction = Context.NotifyAction
         local Module = Context.AICUI
         function AICUI.CreateFeature(Name, Default, Callback)
             local Component = UIRef.FeatureSection:AddToggle{ Name = Name, Default = Default, Callback = Callback }
@@ -85,6 +76,9 @@ return {
         AICUI.S.UserNames = {}
         --// UserId -> callbacks waiting on its lookup.
         AICUI.S.UserNameWaiters = {}
+        --// UserId -> true once its lookup came back with nothing, so a row
+        --// can say so instead of waiting for a name that is not coming.
+        AICUI.S.UserNameFailed = {}
 
         --// An imported whitelist asks for every name in it at once. Roblox
         --// rate limits GetNameFromUserIdAsync, and a burst of refusals is what
@@ -107,6 +101,14 @@ return {
 
                 for _, Callback in ipairs(Callbacks) do
                     Callback(Name)
+                end
+            else
+                --// A UserId Roblox will not answer for (deleted, or the
+                --// request was refused): the row says so and stops asking.
+                AICUI.S.UserNameFailed[Id] = true
+
+                for _, Callback in ipairs(Callbacks) do
+                    Callback(nil)
                 end
             end
         end
@@ -142,12 +144,17 @@ return {
 
         --// The username of UserId, or nil when not known yet. Someone in the
         --// server is answered at once; anyone else is looked up in the
-        --// background and OnFound(Name) runs when it arrives.
+        --// background and OnFound(Name) runs when it arrives. The second
+        --// value says why there is no name yet: "pending" or "failed".
         function AICUI.GetUserName(UserId, OnFound)
             local Id = tonumber(UserId)
 
             if not Id then
-                return nil
+                return nil, "failed"
+            end
+
+            if AICUI.S.UserNameFailed[Id] then
+                return nil, "failed"
             end
 
             local Cached = AICUI.S.UserNames[Id]
@@ -177,7 +184,7 @@ return {
                 PumpUserNames()
             end
 
-            return nil
+            return nil, "pending"
         end
 
         --// Makes a priority list of UserIds show the name on one line and
@@ -204,14 +211,19 @@ return {
                 end)
             end
 
+            --// Every row is two lines, so a list does not change height as
+            --// names arrive: who it is on top, the id underneath. Only
+            --// characters a Row's font always has, so a name can never come
+            --// out as stray bytes.
             Component.Format = function(Value)
-                local Name = AICUI.GetUserName(Value, Redraw)
+                local Id = tostring(Value)
+                local Name, Reason = AICUI.GetUserName(Value, Redraw)
 
                 if Name then
-                    return "@" .. Name, "ID " .. tostring(Value)
+                    return "@" .. Name, "ID " .. Id
                 end
 
-                return "User " .. tostring(Value)
+                return "UserId " .. Id, Reason == "failed" and "NAME NOT FOUND" or "LOOKING UP NAME"
             end
 
             Component:Refresh()
@@ -478,19 +490,6 @@ return {
         
         --// Utility UI status helpers
         function AICUI.updateFeatureButtons()
-            --// Called from every path that loads, creates, imports or deletes a
-            --// profile, so the two new controls are resynced from here rather than
-            --// repeating the call at each of those sites.
-            --// SetState resolves every count through the bound inventory, so no
-            --// separate refresh is needed here any more.
-            if UIRef.PinPanel and type(CONFIG.PINNED_STATE) == "table" then
-                UIRef.PinPanel:SetState(CONFIG.PINNED_STATE)
-
-                if UIRef.PinnedVisibleToggle then
-                    UIRef.PinnedVisibleToggle:Set(UIRef.PinPanel.Visible, false)
-                end
-            end
-        
             if UIRef.ExecuteChargeSlider then
                 UIRef.ExecuteChargeSlider:Set(
                     math.clamp(tonumber(CONFIG.EXECUTE_CHARGE_HP_PERCENT) or 0, 0, 90),
@@ -703,16 +702,13 @@ return {
         end
         
         --// UI stats
+        --// EXP the next level needs: 9 plus 6 * (i + 2) for every level so
+        --// far. Closed form: at level 900 the loop it replaces ran 899 times,
+        --// twice a second, inside the label that shows this.
         function AICUI.neededExp(lvl)
-            lvl = lvl - 1
-        
-            local total = 9
-        
-            for i = 1, lvl do
-                total = total + (6 * (i + 2))
-            end
-        
-            return total
+            local levels = math.max(0, (tonumber(lvl) or 1) - 1)
+
+            return 9 + 6 * (levels * (levels + 1) / 2 + 2 * levels)
         end
         function AICUI.GetItem(String, ItemName)
             for Item in string.gmatch(String, "([^,]+)") do
@@ -788,21 +784,33 @@ return {
                 UIRef.ServerAgeLabel:Set("PLAY TIME      " .. string.format("%02d:%02d:%02d", Hours, Minutes, Seconds))
             end
         end
+        --// Written only when the text actually changes: a label assignment
+        --// re-shapes the string, and the heartbeat used to do this 60 times a
+        --// second for a readout nobody reads that often.
         function AICUI.updatePosition()
-            local Character, Humanoid, RootPart = Runtime:GetCharacter()
             if not UIRef.PositionLabel then
                 return
             end
+
+            local _, _, RootPart = Runtime:GetCharacter()
+            local Text
+
             if RootPart then
                 local Position = RootPart.Position
-                UIRef.PositionLabel:Set(string.format(
+
+                Text = string.format(
                     "POSITION       %.2f, %.2f, %.2f",
                     Position.X,
                     Position.Y,
                     Position.Z
-                ))
+                )
             else
-                UIRef.PositionLabel:Set("POSITION       --")
+                Text = "POSITION       --"
+            end
+
+            if Text ~= AICUI.S.LastPositionText then
+                AICUI.S.LastPositionText = Text
+                UIRef.PositionLabel:Set(Text)
             end
         end
         

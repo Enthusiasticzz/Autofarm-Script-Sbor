@@ -1,1 +1,1 @@
-return { Parts = 17 }
+return { Parts = 5 }

@@ -62,7 +62,6 @@ return {
         local Runtime = Context.Runtime
         local Player = Context.Player
         local Replicated = Context.Services.Replicated
-        local Players = Context.Services.Players
         local AICCombatUtils = Context.AICCombatUtils
         local CONFIG = Context.CONFIG
         local FeatureState = Context.Feature

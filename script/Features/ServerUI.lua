@@ -711,8 +711,12 @@ return {
         local function RefreshInfo()
             local Ping = GetPingMs()
 
-            UIRef.ServerPlayersLabel:Set(string.format("PLAYERS  %d / %d  //  %s", #Players:GetPlayers(), Players.MaxPlayers, S.PlaceName))
-            UIRef.ServerJobLabel:Set(string.format("JOB ID  %s  //  PLACE  %d", ShortJobId(game.JobId), game.PlaceId))
+            --// Every one of these can be missing: the place name comes from a
+            --// web request that can fail, and JobId is empty on a server that
+            --// does not have one. string.format throws on a nil argument, and
+            --// a throw here took the whole tab's updates down with it.
+            UIRef.ServerPlayersLabel:Set(string.format("PLAYERS  %d / %d  //  %s", #Players:GetPlayers(), Players.MaxPlayers or 0, tostring(S.PlaceName or "unknown place")))
+            UIRef.ServerJobLabel:Set(string.format("JOB ID  %s  //  PLACE  %d", tostring(ShortJobId(game.JobId) or "--"), game.PlaceId or 0))
             UIRef.ServerFPSLabel:Set("FPS  " .. (S.FPS and tostring(S.FPS) or "--"))
             UIRef.ServerFPSLabel:SetColor(ColorBand(S.FPS, FPS_GOOD, FPS_OK, false))
             UIRef.ServerPingLabel:Set("PING  " .. (Ping and tostring(Ping) or "--") .. " MS")

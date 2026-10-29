@@ -153,7 +153,6 @@ the code with that exact label; defaults and ranges come from the profile schema
 - **Tabs** sit in the sidebar on the left. The list scrolls when there are more tabs than fit, and selecting a tab (from the list or the **Menu** settings button) scrolls it into view. Tabs animate with the style chosen in Settings.
 - **Search** (top of the sidebar) filters the current tab's controls by label as you type, and jumps to the first tab with a match. Clearing it shows everything again.
 - **Menu** (bottom of the sidebar) opens the **Settings** tab. The red **×** beside the title closes the window; the menu key (default **Insert**, rebindable in Settings) opens and closes it too.
-- **Pinned Items** is a separate draggable panel, shown or hidden from the Status tab. Its position, contents and visibility are shared by every profile.
 - **Hovering a control** shows its one-line description as a tooltip; there is no permanent description row under each name.
 
 ### Farming tab
@@ -228,7 +227,7 @@ every place, unlike the rest of this tab.
 - **Block Delay (s)** (0, 0–120) — how long a stranger may stay before being blocked (or, with Leave Instead Of Block, closing the game) and the server left. 0 acts at once; each player's delay starts the moment they join (or the first look at them, for someone already here when the script loaded). The leave itself waits it out too: a kick asked for early waits on one timer for the rest and looks at them again before closing the game, so no path can leave before the delay. A player who is no longer in the server when that timer runs out is left alone, and their delay starts over when they come back.
 - **Random Leave Delay** (on, global) — every leave the script starts on its own waits a random **2–4 s** first, so the client never drops the server on the very frame a stranger appeared. It is taken once per leave, not per ask, and the longer of it and the Block Delay still owed to the player is what runs. Covered: Leave Instead Of Block and the kick fallback, **Follower Guard's kick**, and the **Leave On Danger Group** hop. Manual exits (**Rejoin**, **Server Hop**, **Join Job ID**) and the server-age hop are your own doing and are not paused. Turn it off and only the Block Delay remains.
 - **Whitelist Skips Safety** (on, global) — players on the Block Whitelist never make Auto Block or Leave On Danger Group leave the server, even if already blocked.
-- **Block Whitelist** — the UserIds Auto Block never touches. Entries show as `UserId  ·  @name` once the name is known; drag to reorder.
+- **Block Whitelist** — the UserIds Auto Block never touches. Each entry is a row: the name on top (`@name`) and the UserId under it, or `UserId <id>` with `LOOKING UP NAME` / `NAME NOT FOUND` while Roblox has no name to give. The arrows move an entry, `✕` removes it, and the header counts how many are in the list.
 - **Add Player In Server** — dropdown of the players in this server, listed as `DisplayName (@name)  UserId`. Picking one whitelists them.
 - **User ID** — textbox for a raw UserId to whitelist.
 - **Add User ID** — adds the UserId typed above; digits only.
@@ -802,13 +801,11 @@ Taking a quest by ID, and finding its objectives in the world.
 
 ### Status tab
 
-A read-only window on what the farm is doing, plus two buttons.
+A read-only window on what the farm is doing, plus the Reset Stats button.
 
 - **FARM STATE  --** (readout) — what the farm loop did this frame.
 - **PLACE ID**, **WALKSPEED**, **WAYPOINTS:  n / m**, **FALLEN CAMELLIA**, **PLAY TIME**, **POSITION**, **DEATH**, **EXP** (readouts) — the current place, walk speed, route progress, the event currency, time on the server, position, death count and experience. The event currency line is named after the currency this event hands out and counts the inventory item of that name (`AICUI.S.TargetCurrency` in `Core/Runtime.lua`), so it is renamed when the event's currency changes.
 - **Reset Stats** (button) — fires `StatsEvent` with 0 for Vitality, Agility, Luck, Strength and Defense. A stat at or above `STAT_RESET_THRESHOLD` (500) is refused with a notice: firing that many points at the game's anticheat trips it and the reset never lands, so 499 is the highest that resets.
-- **Show Pinned Items** (toggle) — shows the floating Pinned Items panel, which is the only way back after its × closes it. Panel contents, open/closed state and position live in the global `PinnedItems.json`.
-- **Reset Pinned Items Position** (button) — docks the panel back on the right.
 
 ### Debug tab
 
@@ -1055,7 +1052,7 @@ over.
   place it came from.
 - Font, Text Scale, Theme, **Block Whitelist**, **Whitelist Skips Safety**,
   **Leave On Danger Group**, **Danger Groups**, **Danger Whitelist**, **Auto Start
-  Game**, **FPS Boost** and the Pinned Items panel are stored globally
+  Game** and **FPS Boost** are stored globally
   (`AutoFarmProfiles/Global.json`), shared by every profile and place, and are not
   part of a profile export.
 

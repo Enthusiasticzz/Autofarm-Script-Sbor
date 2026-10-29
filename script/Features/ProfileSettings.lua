@@ -7,7 +7,6 @@ return {
         local AICProfile = Context.AICProfile
         local AICUI = Context.AICUI
         local AICDebug = Context.AICDebug
-        local AICConfig = Context.AICConfig
         local UIRef = Context.UIRef
         local UI = Context.UI
         local Feature = Context.Feature

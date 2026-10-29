@@ -107,7 +107,7 @@ return {
         UIRef.TeleportTab = UI:AddTab{ Name = "Teleport", Description = "Doors and waypoints, by name or by number" }
         UIRef.QuestTab = UI:AddTab{ Name = "Quest", Description = "Assign a quest and track what it asks for" }
         UIRef.DebugTab = UI:AddTab{ Name = "Debug", Description = "Draw zones, waypoints and targets in the world" }
-        UIRef.UtilityTab = UI:AddTab{ Name = "Utility", Description = "Webhook reports, profiles and the pinned items panel" }
+        UIRef.UtilityTab = UI:AddTab{ Name = "Utility", Description = "Webhook reports and profiles" }
         UIRef.UtilitySection = UIRef.UtilityTab:AddSection{ Title = "Utilities" }
         --// Discord reports (Webhook): URL, mention, duo and format in one
         --// place, on the tab about the machine rather than the farm.
@@ -226,7 +226,7 @@ return {
             },
         
             --// Saved settings (EXECUTE_CHARGE_HP_PERCENT, TARGET_HP_MODE,
-            --// PARTY_LEADER, PINNED_STATE, SAFE_ENEMY_RANGE,
+            --// PARTY_LEADER, SAFE_ENEMY_RANGE,
             --// RETREAT_HEALTH_PERCENT, AUTO_HEAL_HEALTH_PERCENT) take their
             --// defaults from SaveConfig.Settings below, not from here; global
             --// ones (BLOCK_WHITELIST, DANGER_*, UI_*) from SaveConfig.GlobalSettings.

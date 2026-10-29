@@ -26,7 +26,6 @@ return {
     Start = function(Context)
         local Runtime = Context.Runtime
         local Replicated = Context.Services.Replicated
-        local CONFIG = Context.CONFIG
         local FeatureState = Context.Feature
         local AICCombatUtils = Context.AICCombatUtils
         local AICCombat = Context.AICCombat

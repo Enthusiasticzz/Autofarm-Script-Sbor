@@ -523,8 +523,14 @@ function InstanceMT.__index(self, key)
     return nil
 end
 
+--// Instance / property counters, so a probe can report how much GUI the menu
+--// really builds instead of guessing from the source.
+StubStats = StubStats or { New = 0, ByClass = {}, Sets = 0, ByProp = {}, Descendants = 0 }
+
 function InstanceMT.__newindex(self, key, value)
     local props = PropTable(self)
+    StubStats.Sets += 1
+    StubStats.ByProp[key] = (StubStats.ByProp[key] or 0) + 1
     if key == "Parent" then
         local old = props.Parent
         if old and old ~= value then
@@ -568,6 +574,8 @@ end
 
 local Instance = {}
 function Instance.new(class, parent)
+    StubStats.New += 1
+    StubStats.ByClass[class] = (StubStats.ByClass[class] or 0) + 1
     local inst = MakeInstance(class)
     if parent then inst.Parent = parent end
     return inst
@@ -723,6 +731,7 @@ local function typeof_stub(v)
 end
 
 local SmokeEnv = {
+    Stats = StubStats,
     Errors = Errors,
     RunService = RunService,
     UserInputService = UserInputService,

@@ -9,7 +9,6 @@ return {
         local Player = Context.Player
         local PlayerGui = Context.PlayerGui
         local AICFeature = Context.AICFeature
-        local AICUI = Context.AICUI
         local Logger = Context.Logger
         local CONFIG = Context.CONFIG
 
@@ -25,8 +24,22 @@ return {
             return tonumber(Stat.Value) or Default
         end
 
+        --// The walk speed picks between two speeds from this every frame, and
+        --// the lookup walks two children each time; a quarter second of lag
+        --// on a level-up is not worth sixty lookups a second.
+        local LEVEL_CACHE_SECONDS = 0.25
+        local CachedLevel, CachedLevelAt = nil, -math.huge
+
         AICFeature.GetPlayerLevel = function()
-            return AICFeature.GetPlayerStatValue("Level", 0)
+            local Now = os.clock()
+
+            if CachedLevel ~= nil and Now - CachedLevelAt < LEVEL_CACHE_SECONDS then
+                return CachedLevel
+            end
+
+            CachedLevel, CachedLevelAt = AICFeature.GetPlayerStatValue("Level", 0), Now
+
+            return CachedLevel
         end
 
         --// Toggle Screen GUI
@@ -60,11 +73,10 @@ return {
             end)
         end
 
+        --// Runs every frame, so it only touches what changes every frame. The
+        --// position readout moved to the heartbeat's slower text tick.
         AICFeature.RenderUpdate = function(dt)
-            local Character, Humanoid, RootPart = Runtime:GetCharacter()
-            local PlaceConfig = Runtime:GetPlaceConfig()
-
-            AICUI.updatePosition()
+            local _, Humanoid = Runtime:GetCharacter()
 
             --// Auto Mining holds WalkSpeed at 0 while it mines a node.
             local SpeedLocked = AICFeature.IsWalkSpeedLocked and AICFeature.IsWalkSpeedLocked()

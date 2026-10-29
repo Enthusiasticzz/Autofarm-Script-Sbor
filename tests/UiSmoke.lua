@@ -194,7 +194,7 @@ Check("a priority row can show a name and a second line", function()
 
     local texts = {}
 
-    for _, child in ipairs(priority.Frame:GetChildren()) do
+    for _, child in ipairs(priority.Holder:GetChildren()) do
         if child:IsA("Frame") then
             for _, label in ipairs(child:GetChildren()) do
                 if label:IsA("TextLabel") then table.insert(texts, label.Text) end
@@ -211,6 +211,21 @@ Check("a priority row can show a name and a second line", function()
     --// No separator may be written as two bytes again: that is what showed
     --// up as a stray second byte in front of the cut.
     Expect(joined:find(string.char(194), 1, true) == nil, "mojibake in a row: " .. joined)
+end)
+
+Check("a priority list says how many entries it holds", function()
+    priority:SetPriority({ "A", "B", "C" })
+
+    Expect(priority.CountLabel ~= nil, "the list has no count label")
+    Expect(priority.CountLabel.Text == "3 ENTRIES", "count reads " .. tostring(priority.CountLabel.Text))
+
+    priority:SetPriority({ "A" })
+    Expect(priority.CountLabel.Text == "1 ENTRY", "one entry reads " .. tostring(priority.CountLabel.Text))
+
+    priority:SetPriority({})
+    Expect(priority.CountLabel.Text == "EMPTY", "an empty list reads " .. tostring(priority.CountLabel.Text))
+
+    priority:SetPriority({ "A", "B" }, { 3, 4 }, { true, false })
 end)
 
 Check("setting a toggle to what it already is does nothing", function()
@@ -282,6 +297,52 @@ end)
 Check("search", function()
     win:_search("auto")
     win:_search("")
+end)
+
+Check("the search box searches once, not per key", function()
+    --// The search walks every row and every label in the menu. Running it on
+    --// every keystroke is what made typing in the box feel heavy.
+    local calls = 0
+    local original = win._search
+
+    win._search = function(_, query)
+        calls += 1
+        win._searchedQuery = query
+    end
+
+    win.SearchBox.Text = "a"
+    win.SearchBox.Text = "au"
+    win.SearchBox.Text = "aut"
+
+    Expect(calls == 0, "the search ran while typing: " .. calls)
+
+    SmokeEnv.FlushDelayed()
+
+    Expect(calls == 1, "three keys searched " .. calls .. " times")
+    Expect(win._searchedQuery == "aut", "searched \"" .. tostring(win._searchedQuery) .. "\" instead of the last query")
+
+    --// The same text again (a cursor move) is not a new search.
+    win.SearchBox.Text = "aut"
+    SmokeEnv.FlushDelayed()
+
+    Expect(calls == 1, "an unchanged query searched again: " .. calls)
+
+    win._search = original
+end)
+
+Check("the window is not built from canvas groups", function()
+    --// A CanvasGroup renders everything inside it to its own texture. One
+    --// around the window (and one per tab page) put a full-screen texture pass
+    --// in front of every frame while the menu was open.
+    local groups = 0
+
+    for _, obj in ipairs(win.Gui:GetDescendants()) do
+        if obj.ClassName == "CanvasGroup" then
+            groups += 1
+        end
+    end
+
+    Expect(groups == 0, "the window still holds " .. groups .. " CanvasGroup(s)")
 end)
 
 Check("the menu never takes the camera's mouse away", function()
@@ -394,63 +455,15 @@ Check("appearance setters", function()
     Expect(type(win:_GetFontChoices().Names) == "table", "font names")
 end)
 
-Check("pinned panel", function()
-    local pin = win:AddPin("Pinned Items")
-    Expect(pin, "no pin panel")
-    pin:SetItems({ "Board", "Stone" })
-    pin:AddList("Iron", 3)
-    pin:UpdateCounts({ Board = 7 })
-    pin:SetSearchSource(function() return { "Board" } end)
-    pin:SetCountSource(function() return { Board = 7 } end)
-    pin:SetFloating(true)
-    pin:SetPosition(30, 40)
-    pin:SetMinimized(true)
-    pin:SetMinimized(false)
-    pin:SetVisible(false)
-    pin:SetVisible(true)
-    local state = pin:GetState()
-    Expect(type(state) == "table" and state.Items, "pin state")
-    pin:SetState(state)
-    pin:MoveUp("Stone")
-    pin:MoveDown("Stone")
-    pin:Remove("Iron")
-    Expect(#pin:GetItems() >= 1, "pin items")
+Check("no pinned items panel is built any more", function()
+    --// It sat outside the tabs and was bound to the inventory, which changes
+    --// constantly; it is gone, so the library must not offer it either.
+    Expect(win.AddPin == nil, "the window still has AddPin")
+    Expect(win.BindPinToValue == nil, "the window still has BindPinToValue")
 
-    local value = Instance.new("StringValue")
-    value.Value = "Ore|12,Wood|3"
-    Expect(win:BindPinToValue(pin, value, nil) == true, "BindPinToValue")
-    value.Value = "Ore|15"
-end)
-
-Check("a pinned count does not rebuild the panel", function()
-    --// The panel refreshes on every inventory change. Rebuilding every row
-    --// there, and saving from it, is what made an open pinned panel with the
-    --// heartbeat running freeze the game.
-    local pin = win:AddPin("Count test")
-    pin:SetItems({ "Board", "Stone" })
-
-    local saves = 0
-    pin.OnChanged = function() saves += 1 end
-
-    local before = saves
-
-    for i = 1, 20 do
-        pin:UpdateCounts({ Board = i, Stone = i })
+    for _, obj in ipairs(win.Gui:GetDescendants()) do
+        Expect(obj.Name ~= "PinPanel", "a pinned items panel is still in the window")
     end
-
-    Expect(saves == before, "a count change saved the pinned state: " .. (saves - before))
-
-    --// The number on screen is the one that was pushed in, so the count label
-    --// is updated where it is rather than by rebuilding the row.
-    local found = false
-
-    for _, label in ipairs(pin.Panel:GetDescendants()) do
-        if label:IsA("TextLabel") and label.Text == "20" then
-            found = true
-        end
-    end
-
-    Expect(found, "the count label did not follow the count")
 end)
 
 Check("loader + settings tab", function()
@@ -568,9 +581,9 @@ Check("settings: restore defaults", function()
 end)
 
 Check("error screen", function()
-    win:ShowError("Bootstrap failed to start\nBootstrap.lua:319: attempt to index nil with 'PinPanel'\n(error value: string)")
+    win:ShowError("Bootstrap failed to start\nBootstrap.lua:319: attempt to index nil with 'UIRef'\n(error value: string)")
     Expect(win.ErrorPanel ~= nil, "no error panel")
-    Expect(string.find(win.ErrorPanel.Text.Text, "PinPanel") ~= nil, "error text missing")
+    Expect(string.find(win.ErrorPanel.Text.Text, "UIRef") ~= nil, "error text missing")
     win:ShowError("second failure")
     Expect(win.ErrorPanel.Text.Text == "second failure", "error text did not update")
 end)

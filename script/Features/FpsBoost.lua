@@ -167,13 +167,60 @@ return {
             end
         end
 
-        local function OnAdded(Object)
-            --// Deferred so whoever made it has finished setting it up.
-            task.defer(function()
-                if FeatureState.FpsBoost.Enabled then
+        --// Streaming a map in adds hundreds of instances a second. Handling
+        --// each one in its own deferred closure queued a task per instance, and
+        --// every one of those tasks is a frame the client had to get through;
+        --// they are collected and handled in batches instead.
+        local STREAM_BATCH = 500
+        local PendingObjects = {}
+        local PendingScheduled = false
+
+        local function FlushPending(Token)
+            PendingScheduled = false
+
+            if S.Token ~= Token or not FeatureState.FpsBoost.Enabled then
+                return
+            end
+
+            local Batch = PendingObjects
+            PendingObjects = {}
+
+            for Index, Object in ipairs(Batch) do
+                --// A toggle in the middle of a batch wins over the rest.
+                if S.Token ~= Token then
+                    return
+                end
+
+                if Index > STREAM_BATCH then
+                    for Rest = Index, #Batch do
+                        table.insert(PendingObjects, Batch[Rest])
+                    end
+
+                    break
+                end
+
+                if Object.Parent then
                     ApplyObject(Object)
                 end
-            end)
+            end
+
+            if #PendingObjects > 0 and not PendingScheduled then
+                PendingScheduled = true
+                task.delay(0, FlushPending, Token)
+            end
+        end
+
+        local function OnAdded(Object)
+            if not FeatureState.FpsBoost.Enabled then
+                return
+            end
+
+            table.insert(PendingObjects, Object)
+
+            if not PendingScheduled then
+                PendingScheduled = true
+                task.delay(0, FlushPending, S.Token)
+            end
         end
 
         function Feature.Enable()
@@ -213,6 +260,7 @@ return {
             end
 
             table.clear(S.Saved)
+            table.clear(PendingObjects)
             RestoreQuality()
         end
 

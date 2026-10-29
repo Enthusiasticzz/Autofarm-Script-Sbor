@@ -33,7 +33,6 @@ return {
         local AICCombatUtils = Context.AICCombatUtils
         local AICFeature = Context.AICFeature
         local AICUI = Context.AICUI
-        local AICDebug = Context.AICDebug
         local UIRef = Context.UIRef
         local NotifyAction = Context.NotifyAction
 

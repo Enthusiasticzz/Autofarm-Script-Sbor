@@ -45,8 +45,6 @@ local Context = {
     Connect = function() return { Disconnect = noop } end,
     AICProfile = {
         S = {},
-        ReadPinnedState = function() return nil end,
-        QueuePinnedSave = noop,
         QueueProfileSave = noop,
         SaveActiveProfile = noop,
         WriteGlobalStore = noop,
@@ -144,7 +142,7 @@ for _, name in ipairs({ "Components", "Bootstrap" }) do
 end
 
 --// The paths Bootstrap only runs when there is saved state or a live server:
---// a filled priority list, restored pins, and target pickers with entries.
+--// a filled priority list and target pickers with entries.
 local DataOk, DataErr = xpcall(function()
     local priority = Context.UIRef.PriorityComponent
     priority:SetPriority({ "Karkinos", "Drake" })
@@ -153,10 +151,6 @@ local DataOk, DataErr = xpcall(function()
     priority:MoveDown("Marina")
     priority:Remove("Drake")
     priority:Refresh()
-
-    Context.UIRef.PinPanel:SetState({ Items = { "Board", "Stone" }, Floating = true, Visible = true, X = 300, Y = 200 })
-    Context.UIRef.PinPanel:GetState()
-    Context.UIRef.PinPanel:ResetPosition()
 
     Context.AICCombat.GetDetectedPlayerTargets = function() return { "TestPlayer" } end
     Context.AICCombat.GetDetectedMobTargets = function() return { "Goblin" } end

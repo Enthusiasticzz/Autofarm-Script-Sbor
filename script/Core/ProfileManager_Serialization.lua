@@ -10,23 +10,14 @@ return {
         local AICConfig = Context.AICConfig
         local AICCombat = Context.AICCombat
         local AICFeature = Context.AICFeature
-        local AICUI = Context.AICUI
-        local AICDebug = Context.AICDebug
         local CONFIG = Context.CONFIG
         local Feature = Context.Feature
-        local UIRef = Context.UIRef
-        local PatrolState = Context.PatrolState
         local HttpService = Context.Services.HttpService
         local BasePlaceConfig = Runtime:GetBasePlaceConfig()
-        local PlaceConfig = Runtime:GetPlaceConfig()
 
         local PROFILE_FOLDER = "AutoFarmProfiles"
-        local PROFILE_FILE = PROFILE_FOLDER .. "/" .. tostring(game.PlaceId) .. ".json"
-        --// Not keyed by PlaceId: pinned items follow the player between places.
-        local PINNED_FILE = PROFILE_FOLDER .. "/PinnedItems.json"
         --// Global toggles and SaveConfig.GlobalSettings, shared by every
         --// profile and PlaceId.
-        local GLOBAL_FILE = PROFILE_FOLDER .. "/Global.json"
 
         --// Short keys for feature toggles in exported/imported profile text,
         --// taken from SaveConfig.Features so a new toggle exports on its own.

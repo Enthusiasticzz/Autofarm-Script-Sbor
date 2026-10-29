@@ -10,11 +10,16 @@
 #
 #   powershell -ExecutionPolicy Bypass -File tools/build-bundle.ps1
 #
-# PART_KB is the size each part is allowed to reach. Smaller parts mean shorter
-# stalls; more of them means more requests. ~100 KB is one quick request.
+# An executor's game:HttpGet blocks the whole client while it runs, so what the
+# boot costs is the number of requests multiplied by the round trip plus the
+# bytes. Parts of ~200 KB keep the request count near the half dozen the bundle
+# needs, and the comments are stripped before packing: they are most of the
+# source and none of what runs.
+#
+# PART_KB is the size each part is allowed to reach.
 
 param(
-    [int]$PartKB = 100
+    [int]$PartKB = 200
 )
 
 $ErrorActionPreference = "Stop"
@@ -61,9 +66,38 @@ function Save-Part {
 
 Start-Part
 
+# Drops what the client would spend time decoding and never run: whole-line
+# comments and blank lines, and the indentation in front of the code. Only
+# files with no long-bracket string are touched, because a line of prose inside
+# one of those is not a comment. Line numbers in a traceback move with this,
+# so the bundle is for running: the sources are what gets read and tested.
+function Compress-Source ([string]$source) {
+    # A documentation block at the top of a file is a comment, so it goes
+    # before the check below treats the [[ it starts with as a string.
+    $source = [regex]::Replace($source, '(?s)\A\s*--\[\[.*?\]\]\s*', '')
+
+    if ($source.Contains("[[") -or $source.Contains("[=[")) {
+        return $source
+    }
+
+    $out = New-Object System.Text.StringBuilder
+
+    foreach ($line in ($source -split "`r?`n")) {
+        $trimmed = $line.Trim()
+
+        if ($trimmed -eq "" -or $trimmed.StartsWith("--")) {
+            continue
+        }
+
+        [void]$out.Append($trimmed).Append("`n")
+    }
+
+    return $out.ToString()
+}
+
 foreach ($file in $files) {
     $relative = $file.FullName.Substring($scriptDir.Length + 1).Replace('\', '/')
-    $source = [System.IO.File]::ReadAllText($file.FullName)
+    $source = Compress-Source ([System.IO.File]::ReadAllText($file.FullName))
 
     if ($source.Contains("]======]")) {
         throw "$relative contains the bundle's long-bracket delimiter"

@@ -4,19 +4,52 @@
 #
 # Usage: powershell -ExecutionPolicy Bypass -File tests/run-boot-probe.ps1 -Luau <path-to-luau.exe>
 
+# -FromBundle runs the sources packed into script/Bundle instead of the files
+# under script/. The bundle is what the client downloads, and the packer edits
+# those sources (comments and indentation dropped), so this proves the bytes
+# that actually run still build the same window.
+#
+# Usage: powershell -ExecutionPolicy Bypass -File tests/run-boot-probe.ps1 -Luau <path-to-luau.exe> [-FromBundle]
+
 param(
-    [string]$Luau = "luau"
+    [string]$Luau = "luau",
+    [switch]$FromBundle
 )
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 
+$Packed = @{}
+
+if ($FromBundle) {
+    $bundleDir = Join-Path $root "script/Bundle"
+    $manifest = Get-Content (Join-Path $bundleDir "Manifest.lua") -Raw
+    $partCount = [int]([regex]::Match($manifest, "Parts\s*=\s*(\d+)").Groups[1].Value)
+
+    for ($index = 1; $index -le $partCount; $index++) {
+        $text = Get-Content (Join-Path $bundleDir ("Part{0}.lua" -f $index)) -Raw
+        $entries = [regex]::Matches($text, '(?s)\["([^"]+)"\] = \[======\]\r?\n(.*?)\r?\n\]======\],')
+
+        foreach ($entry in $entries) {
+            $Packed[$entry.Groups[1].Value] = $entry.Groups[2].Value
+        }
+    }
+}
+
+function Module-Source ([string]$packedPath, [string]$filePath) {
+    if ($Packed.ContainsKey($packedPath)) {
+        return $Packed[$packedPath]
+    }
+
+    return (Get-Content (Join-Path $root $filePath) -Raw)
+}
+
 $stub = Get-Content (Join-Path $PSScriptRoot "UiStub.lua") -Raw
-$library = Get-Content (Join-Path $root "script/UI/Utils.lua") -Raw
-$runtime = Get-Content (Join-Path $root "script/Core/Runtime.lua") -Raw
-$saveConfig = Get-Content (Join-Path $root "script/Core/SaveConfig.lua") -Raw
-$components = Get-Content (Join-Path $root "script/UI/Components.lua") -Raw
-$bootstrap = Get-Content (Join-Path $root "script/Core/Bootstrap.lua") -Raw
+$library = Module-Source "UI/Utils.lua" "script/UI/Utils.lua"
+$runtime = Module-Source "Core/Runtime.lua" "script/Core/Runtime.lua"
+$saveConfig = Module-Source "Core/SaveConfig.lua" "script/Core/SaveConfig.lua"
+$components = Module-Source "UI/Components.lua" "script/UI/Components.lua"
+$bootstrap = Module-Source "Core/Bootstrap.lua" "script/Core/Bootstrap.lua"
 $probe = Get-Content (Join-Path $PSScriptRoot "BootProbe.lua") -Raw
 
 # The stub keeps its world in locals (the UI smoke test runs in the same chunk).

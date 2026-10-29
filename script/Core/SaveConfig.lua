@@ -168,21 +168,6 @@ return {
             end
         end
 
-        local function NormalizePinnedState(Value)
-            if type(Value) ~= "table" then
-                return {}
-            end
-
-            return {
-                Items = type(Value.Items) == "table" and Value.Items or {},
-                Floating = Value.Floating == true,
-                --// Closed with its × and shown again from the Status tab.
-                Visible = Value.Visible ~= false,
-                X = tonumber(Value.X),
-                Y = tonumber(Value.Y),
-            }
-        end
-
         --// Settings, saved in the profile's SETTINGS table.
         --//   Key       : key in CONFIG (or the place config) and in the save
         --//   Default   : value before any profile is loaded
@@ -269,9 +254,6 @@ return {
             --// Materials Auto Smithing never uses below Keep.
             { Key = "SMITH_RESERVES", Default = {}, Normalize = NormalizeCountList("Keep", 0) },
 
-            --// Pinned item panel: items, popped out or not, and position.
-            --// Shared by every PlaceId, so it lives in its own file.
-            { Key = "PINNED_STATE", Default = {}, Normalize = NormalizePinnedState, Global = true },
         }
 
         --// Settings kept in ProfileManager's global file instead of a

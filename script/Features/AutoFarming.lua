@@ -8,11 +8,6 @@ return {
         local Players = Services.Players
         local Player = Context.Player
         local PlayerGui = Context.PlayerGui
-        local Replicated = Services.Replicated
-        local StarterGui = Services.StarterGui
-        local RunService = Services.RunService
-        local PathfindingService = Services.PathfindingService
-        local HttpService = Services.HttpService
         local CONFIG = Context.CONFIG
         local FeatureState = Context.Feature
         local AICConfig = Context.AICConfig
@@ -25,8 +20,6 @@ return {
         local UIRef = Context.UIRef
         local UI = Context.UI
         local PatrolState = Context.PatrolState
-        local MiningFeature = Context.MiningFeature
-        local NotifyAction = Context.NotifyAction
 
         local Feature = {
             Name = "AutoFarming",
@@ -139,6 +132,7 @@ return {
             if now - AICUI.S.LAST_TEXT_UPDATE_TIME >= CONFIG.TEXT_UPDATE_INTERVAL then
                 AICUI.S.LAST_TEXT_UPDATE_TIME = now
                 AICUI.updatePlayTime()
+                AICUI.updatePosition()
                 AICUI.updateEventCurrency()
 
                 if UIRef.WayPointLabel then

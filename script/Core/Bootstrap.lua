@@ -5,17 +5,8 @@ return {
         local Runtime = Context.Runtime
         local Services = Context.Services
         local Players = Services.Players
-        local Replicated = Services.Replicated
-        local StarterGui = Services.StarterGui
-        local RunService = Services.RunService
-        local UserInputService = Services.UserInputService
-        local MarketplaceService = Services.MarketplaceService
-        local PathfindingService = Services.PathfindingService
-        local HttpService = Services.HttpService
         local Player = Context.Player
-        local PlayerGui = Context.PlayerGui
         local CONFIG = Context.CONFIG
-        local AICConfig = Context.AICConfig
         local AICProfile = Context.AICProfile
         local AICCombatUtils = Context.AICCombatUtils
         local AICCombat = Context.AICCombat
@@ -23,16 +14,12 @@ return {
         local AICUI = Context.AICUI
         local AICDebug = Context.AICDebug
         local Feature = Context.Feature
-        local MiningFeature = Context.MiningFeature
         local UI = Context.UI
         local UIRef = Context.UIRef
         local PatrolState = Context.PatrolState
         local NotifyAction = Context.NotifyAction
-        local AICPlaceConfig = Runtime:GetPlaceConfig()
         local DEBUG_COLORS = Context.DEBUG_COLORS
         local BasePlaceConfig = Runtime:GetBasePlaceConfig()
-        local InputBindableFunction = Runtime:GetInputBindableFunction()
-        local FaceOrientation = Runtime:GetFaceOrientation()
 
         --// Bootstrap / composition root
         --//
@@ -311,66 +298,6 @@ return {
                 CONFIG.UI_TEXT_SCALE = Scale
                 AICProfile.WriteGlobalStore()
             end
-        end
-
-        --// Pinned items
-        --// Lives outside the tabs so the panel can be dragged or popped out.
-        --// One optional panel must never keep the rest of the menu down, so a
-        --// failure here is reported and skipped rather than raised.
-        local PinsOk, PinsError = pcall(function()
-            UIRef.PinPanel = UI:AddPin("Pinned Items")
-
-            --// Pins are global: restore them from their own file before any
-            --// profile loads, and write every change back there.
-            local StoredPinned = AICProfile.ReadPinnedState()
-
-            if StoredPinned then
-                AICProfile.S.HasGlobalPinnedState = true
-                CONFIG.PINNED_STATE = StoredPinned
-                UIRef.PinPanel:SetState(StoredPinned)
-            end
-
-            UIRef.PinnedSection = UIRef.StatusTab:AddSection{ Title = "Pinned Items" }
-
-            --// The only way to show the panel again once its × closed it.
-            UIRef.PinnedVisibleToggle = UIRef.PinnedSection:AddToggle{
-                Name = "Show Pinned Items",
-                Default = UIRef.PinPanel.Visible,
-                Callback = function(Value)
-                    UIRef.PinPanel:SetVisible(Value)
-                    CONFIG.PINNED_STATE = UIRef.PinPanel:GetState()
-                    AICProfile.QueuePinnedSave()
-                end,
-            }
-
-            UIRef.PinPanel.OnChanged = function()
-                CONFIG.PINNED_STATE = UIRef.PinPanel:GetState()
-                UIRef.PinnedVisibleToggle:Set(UIRef.PinPanel.Visible, false)
-                AICProfile.QueuePinnedSave()
-                AICProfile.QueueProfileSave()
-            end
-
-            UIRef.PinnedSection:AddButton{
-                Name = "Reset Pinned Items Position",
-                Callback = function()
-                    UIRef.PinPanel:ResetPosition()
-                    NotifyAction("Pinned Items", "Position reset")
-                end,
-            }
-
-            task.spawn(function()
-                local PlayerStats = Player:WaitForChild("PlayerStats", 30)
-                local Inventory = PlayerStats and PlayerStats:WaitForChild("Inventory", 30)
-
-                if Inventory then
-                    UI:BindPinToValue(UIRef.PinPanel, Inventory)
-                end
-            end)
-        end)
-
-        if not PinsOk then
-            warn("[AIC] Pinned items panel unavailable: " .. tostring(PinsError))
-            UIRef.PinPanel = nil
         end
 
         --// Breaks ties between mobs of equal priority. Disabled keeps nearest first.

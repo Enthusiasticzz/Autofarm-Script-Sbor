@@ -5,8 +5,6 @@ return {
         local Runtime = Context.Runtime
         local Services = Context.Services
         local Players = Services.Players
-        local Player = Context.Player
-        local PlayerGui = Context.PlayerGui
         local Replicated = Services.Replicated
         local StarterGui = Services.StarterGui
         local RunService = Services.RunService
@@ -14,18 +12,9 @@ return {
         local HttpService = Services.HttpService
         local CONFIG = Context.CONFIG
         local FeatureState = Context.Feature
-        local AICConfig = Context.AICConfig
-        local AICProfile = Context.AICProfile
         local AICCombatUtils = Context.AICCombatUtils
         local AICCombat = Context.AICCombat
         local AICFeature = Context.AICFeature
-        local AICUI = Context.AICUI
-        local AICDebug = Context.AICDebug
-        local UIRef = Context.UIRef
-        local UI = Context.UI
-        local PatrolState = Context.PatrolState
-        local MiningFeature = Context.MiningFeature
-        local NotifyAction = Context.NotifyAction
 
         local Module = Context.AICCombat
         function AICCombat.FaceGoblin(Goblin)

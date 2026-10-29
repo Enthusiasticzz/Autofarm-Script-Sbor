@@ -9,11 +9,6 @@ return {
         local AICDebug = Context.AICDebug
         local AICConfig = Context.AICConfig
         local UIRef = Context.UIRef
-        local UI = Context.UI
-        local Feature = Context.Feature
-        local AICFeature = Context.AICFeature
-        local AICCombat = Context.AICCombat
-        local BasePlaceConfig = Context.Runtime:GetBasePlaceConfig()
         local NotifyAction = Context.NotifyAction
         local function GetRootPart()
             local _, _, RootPart = Runtime:GetCharacter()
