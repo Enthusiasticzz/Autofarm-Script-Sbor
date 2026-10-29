@@ -374,7 +374,9 @@ end
 function Library:Label(parent, text, p)
 	p = p or {}
 	local baseSize = p.TextSize or p.Size or 14
-	local l = New("TextLabel", { BackgroundTransparency = 1, Text = text, TextSize = math.round(baseSize * (self.TextScale or 1)),
+	--// A nil Text assignment is accepted by a stub but throws in the client, so
+	--// every label goes through here with a real string.
+	local l = New("TextLabel", { BackgroundTransparency = 1, Text = text ~= nil and tostring(text) or "", TextSize = math.round(baseSize * (self.TextScale or 1)),
 		TextXAlignment = p.AlignRight and Enum.TextXAlignment.Right or Enum.TextXAlignment.Left,
 		Font = p.Bold and Fonts.Bold or Fonts.Medium, Position = p.Position or UDim2.new(),
 		Size = p.SizeUDim or UDim2.fromScale(1,1), TextTruncate = Enum.TextTruncate.AtEnd, Parent = parent })
@@ -1991,7 +1993,7 @@ function Section:AddPriority(name, values, options)
 	local maxValue = tonumber(options.Max) or math.huge
 
 	local header = self:_row((hasValues or hasChecks) and 46 or 34)
-	lib:Label(header, string.upper(name), {
+	lib:Label(header, string.upper(tostring(name or "")), {
 		Bold = true,
 		TextSize = 12,
 		Position = UDim2.fromOffset(14, 7),
@@ -2873,7 +2875,7 @@ local function PinPadding(parent, left, right, top, bottom)
 end
 local function PinTextLabel(parent, text, size, position, dimensions)
 	return New("TextLabel", {
-		Parent = parent, BackgroundTransparency = 1, Text = text, TextSize = math.round(size or 12),
+		Parent = parent, BackgroundTransparency = 1, Text = text ~= nil and tostring(text) or "", TextSize = math.round(size or 12),
 		Position = position, Size = dimensions, TextColor3 = PinTextColor, Font = Fonts.Regular,
 		TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Center,
 		ClipsDescendants = true,

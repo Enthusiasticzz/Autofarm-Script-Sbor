@@ -334,9 +334,20 @@ local function report(Fraction, Text)
 end
 
 local function fail(Message)
-    --// Only the first line fits on the loader; the full text is raised.
+    --// The first line names the module, the last line of a traceback is the
+    --// error itself. The loader only has room for a line, so it shows both
+    --// and the whole traceback goes to the console.
+    local Headline = string.match(Message, "^[^\n]*") or tostring(Message)
+    local Detail = string.match(Message, "([^\n]+)%s*$")
+
+    if Detail ~= Headline then
+        Headline = Headline .. "  //  " .. Detail
+    end
+
+    warn("[AIC] " .. tostring(Message))
+
     if UI then
-        UI:SetLoadingProgress(nil, "LOAD FAILED  //  " .. string.match(Message, "^[^\n]*"), true)
+        UI:SetLoadingProgress(nil, "LOAD FAILED  //  " .. Headline, true)
     end
 
     --// The session stays registered with the failed window up, so running the
