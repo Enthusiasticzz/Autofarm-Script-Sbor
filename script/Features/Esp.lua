@@ -31,7 +31,10 @@ return {
         --// measured again when it changes size (a respawn, a different rig).
         --// GetBoundingBox walks every part, so calling it per target per frame
         --// is what made mob boxes crawl behind their models.
-        local MEASURE_INTERVAL = 1
+        local MEASURE_INTERVAL = 2
+        --// Bounds re-measurement is spread over scans: doing every due mob in
+        --// one frame put a visible hitch in the same frame, every interval.
+        local MEASURE_PER_SCAN = 12
         --// Nothing is drawn past this range: a box on the other side of the
         --// map is a few pixels and not worth projecting every frame.
         local MAX_DRAW_DISTANCE = 900
@@ -183,29 +186,45 @@ return {
             return MinX, MinY, MaxX, MaxY
         end
 
-        --// The model's box relative to its pivot, so a moving (or turning)
-        --// target only costs one GetPivot per frame instead of a full
-        --// GetBoundingBox. Re-measured on the scan so a changed rig is picked
-        --// up, with the size kept if a measurement fails.
+        --// A part the box can follow. Reading Model:GetPivot looks cheap but
+        --// is only a single CFrame read when the model has a PrimaryPart: a
+        --// mob rig usually does not, so the engine walks every part to find
+        --// the bounding box centre on each call. Doing that per mob per frame
+        --// is exactly what left mob boxes and labels a step behind. A cached
+        --// part has the same position for one property read.
+        local function GetAnchor(Target)
+            --// HumanoidRootPart first: it is the part the rest of this script
+            --// already uses to follow a mob, so the box follows the same thing
+            --// the AI does.
+            local Root = Target:FindFirstChild("HumanoidRootPart")
+            if Root and Root:IsA("BasePart") then return Root end
+
+            if Target.PrimaryPart then return Target.PrimaryPart end
+
+            for _, Name in ipairs({ "Torso", "UpperTorso", "Head" }) do
+                local Candidate = Target:FindFirstChild(Name)
+                if Candidate and Candidate:IsA("BasePart") then return Candidate end
+            end
+
+            return Target:FindFirstChildWhichIsA("BasePart")
+        end
+
+        --// The model's box relative to its anchor part. Re-measured on the
+        --// scan so a changed rig is picked up and a lost anchor replaced.
         local function Measure(Target, Entry)
             Entry.NextMeasure = os.clock() + MEASURE_INTERVAL
 
+            local Anchor = GetAnchor(Target)
+            Entry.Anchor = (Anchor and Anchor.Parent) and Anchor or nil
+
             local Ok, CF, Size = pcall(Target.GetBoundingBox, Target)
-            if not Ok or not CF then return end
+            if not Ok or not CF then
+                Entry.LocalCF, Entry.Size = nil, nil
+                return
+            end
 
-            local OkPivot, Pivot = pcall(Target.GetPivot, Target)
-            if not OkPivot then return end
-
-            Entry.LocalCF = Pivot:ToObjectSpace(CF)
+            Entry.LocalCF = (Entry.Anchor and Entry.Anchor.CFrame or CF):ToObjectSpace(CF)
             Entry.Size = Size
-        end
-
-        local function DistanceTo(Target)
-            local Camera = workspace.CurrentCamera
-            if not Camera then return nil end
-            local Ok, Pivot = pcall(Target.GetPivot, Target)
-            if not Ok then return nil end
-            return (Pivot.Position - Camera.CFrame.Position).Magnitude
         end
 
         ----------------------------------------------------------------------
@@ -214,7 +233,7 @@ return {
 
         --// Name, then level, EXP and HP where the game exposes them, and the
         --// distance. Missing pieces are simply left out.
-        local function LabelText(Target, Kind)
+        local function LabelText(Target, Kind, Entry)
             local Lines = {}
             local Owner = Kind == "Player" and Players:GetPlayerFromCharacter(Target) or nil
             local Config = Kind == "Mob" and Target:FindFirstChild("Config") or nil
@@ -250,8 +269,10 @@ return {
                 table.insert(Lines, "HP " .. math.floor(Humanoid.Health) .. "/" .. math.floor(Humanoid.MaxHealth))
             end
 
-            local Distance = DistanceTo(Target)
-            if Distance then
+            local Anchor = Entry and Entry.Anchor
+            local Camera = workspace.CurrentCamera
+            if Camera and Anchor and Anchor.Parent then
+                local Distance = (Anchor.Position - Camera.CFrame.Position).Magnitude
                 table.insert(Lines, math.floor(Distance + 0.5) .. "m")
             end
 
@@ -264,7 +285,7 @@ return {
             for Target, Entry in pairs(S.Entries) do
                 local Label = Entry.Label
                 if Label and Label.Parent and Target.Parent then
-                    Label.Text = LabelText(Target, Entry.Kind)
+                    Label.Text = LabelText(Target, Entry.Kind, Entry)
                 end
             end
         end
@@ -317,7 +338,7 @@ return {
             Text.TextXAlignment = Enum.TextXAlignment.Center
             Text.Visible = false
             Text.ZIndex = 3
-            Text.Text = LabelText(Target, Kind)
+            Text.Text = LabelText(Target, Kind, Entry)
             Text.Parent = Root
             Entry.Label = Text
         end
@@ -331,6 +352,11 @@ return {
 
             local Entry = { Kind = Kind }
 
+            --// Measured first so the label can carry the distance straight away.
+            if C.Box or C.Label then
+                Measure(Target, Entry)
+            end
+
             --// Each piece is built on its own so one failure can't stop the other.
             if C.Outline then
                 pcall(AddOutline, Entry, Target, C, Kind)
@@ -340,10 +366,6 @@ return {
             end
             if C.Label then
                 pcall(AddLabel, Entry, Target, C, Kind)
-            end
-
-            if Entry.Frame or Entry.Label then
-                Measure(Target, Entry)
             end
 
             S.Entries[Target] = Entry
@@ -416,14 +438,16 @@ return {
             end
 
             --// Bounds are re-measured here, and label text rewritten, so both
-            --// follow the target without doing either every frame.
+            --// follow the target without doing either every frame. Only a few
+            --// are measured per scan; the rest wait their turn.
             local Now = os.clock()
+            local Measured = 0
             for Target, Entry in pairs(S.Entries) do
-                if Target.Parent then
-                    if (Entry.Frame or Entry.Label)
-                        and (not Entry.NextMeasure or Now >= Entry.NextMeasure) then
-                        Measure(Target, Entry)
-                    end
+                if Target.Parent and (Entry.Frame or Entry.Label)
+                    and (not Entry.NextMeasure or Now >= Entry.NextMeasure) then
+                    if Measured >= MEASURE_PER_SCAN then break end
+                    Measure(Target, Entry)
+                    Measured += 1
                 end
             end
 
@@ -457,16 +481,25 @@ return {
             if not Camera or not Root or not Root.Parent then return end
 
             local CameraPosition = Camera.CFrame.Position
+            local Viewport = Camera.ViewportSize
 
-            for Target, Entry in pairs(S.Entries) do
+            for _, Entry in pairs(S.Entries) do
                 local Frame, Label = Entry.Frame, Entry.Label
                 if Frame or Label then
                     local X1, Y1, X2, Y2
-                    local Ok, Pivot = pcall(Target.GetPivot, Target)
+                    local Anchor = Entry.Anchor
 
-                    if Ok and Entry.LocalCF and Entry.Size
-                        and (Pivot.Position - CameraPosition).Magnitude <= MAX_DRAW_DISTANCE then
-                        X1, Y1, X2, Y2 = Project(Pivot * Entry.LocalCF, Entry.Size, Camera)
+                    --// One live part is read per frame; the rest of the box is
+                    --// the measurement cached on the scan.
+                    if Anchor and Anchor.Parent and Entry.LocalCF and Entry.Size
+                        and (Anchor.Position - CameraPosition).Magnitude <= MAX_DRAW_DISTANCE then
+                        X1, Y1, X2, Y2 = Project(Anchor.CFrame * Entry.LocalCF, Entry.Size, Camera)
+                    end
+
+                    --// Off-screen targets are hidden rather than moved, so a
+                    --// busy zone does not pay for GUI it cannot see.
+                    if X1 and (X2 < 0 or Y2 < 0 or X1 > Viewport.X or Y1 > Viewport.Y) then
+                        X1 = nil
                     end
 
                     if Frame and Frame.Parent then

@@ -17,7 +17,8 @@ local UIRef = Context.UIRef
 local AICUI = Context.AICUI
 local RunService = game:GetService("RunService")
 local SCAN_INTERVAL = 0.5
-local MEASURE_INTERVAL = 1
+local MEASURE_INTERVAL = 2
+local MEASURE_PER_SCAN = 12
 local MAX_DRAW_DISTANCE = 900
 local KINDS = { "Player", "Mob", "Weapon" }
 local TITLES = { Player = "Players", Mob = "Mobs", Weapon = "Weapons" }
@@ -130,23 +131,29 @@ end
 if InFront == 0 then return nil end
 return MinX, MinY, MaxX, MaxY
 end
+local function GetAnchor(Target)
+local Root = Target:FindFirstChild("HumanoidRootPart")
+if Root and Root:IsA("BasePart") then return Root end
+if Target.PrimaryPart then return Target.PrimaryPart end
+for _, Name in ipairs({ "Torso", "UpperTorso", "Head" }) do
+local Candidate = Target:FindFirstChild(Name)
+if Candidate and Candidate:IsA("BasePart") then return Candidate end
+end
+return Target:FindFirstChildWhichIsA("BasePart")
+end
 local function Measure(Target, Entry)
 Entry.NextMeasure = os.clock() + MEASURE_INTERVAL
+local Anchor = GetAnchor(Target)
+Entry.Anchor = (Anchor and Anchor.Parent) and Anchor or nil
 local Ok, CF, Size = pcall(Target.GetBoundingBox, Target)
-if not Ok or not CF then return end
-local OkPivot, Pivot = pcall(Target.GetPivot, Target)
-if not OkPivot then return end
-Entry.LocalCF = Pivot:ToObjectSpace(CF)
+if not Ok or not CF then
+Entry.LocalCF, Entry.Size = nil, nil
+return
+end
+Entry.LocalCF = (Entry.Anchor and Entry.Anchor.CFrame or CF):ToObjectSpace(CF)
 Entry.Size = Size
 end
-local function DistanceTo(Target)
-local Camera = workspace.CurrentCamera
-if not Camera then return nil end
-local Ok, Pivot = pcall(Target.GetPivot, Target)
-if not Ok then return nil end
-return (Pivot.Position - Camera.CFrame.Position).Magnitude
-end
-local function LabelText(Target, Kind)
+local function LabelText(Target, Kind, Entry)
 local Lines = {}
 local Owner = Kind == "Player" and Players:GetPlayerFromCharacter(Target) or nil
 local Config = Kind == "Mob" and Target:FindFirstChild("Config") or nil
@@ -178,8 +185,10 @@ local Humanoid = Target:FindFirstChildOfClass("Humanoid")
 if Humanoid and Kind ~= "Weapon" then
 table.insert(Lines, "HP " .. math.floor(Humanoid.Health) .. "/" .. math.floor(Humanoid.MaxHealth))
 end
-local Distance = DistanceTo(Target)
-if Distance then
+local Anchor = Entry and Entry.Anchor
+local Camera = workspace.CurrentCamera
+if Camera and Anchor and Anchor.Parent then
+local Distance = (Anchor.Position - Camera.CFrame.Position).Magnitude
 table.insert(Lines, math.floor(Distance + 0.5) .. "m")
 end
 return table.concat(Lines, "\n")
@@ -188,7 +197,7 @@ local function RefreshLabels()
 for Target, Entry in pairs(S.Entries) do
 local Label = Entry.Label
 if Label and Label.Parent and Target.Parent then
-Label.Text = LabelText(Target, Entry.Kind)
+Label.Text = LabelText(Target, Entry.Kind, Entry)
 end
 end
 end
@@ -232,7 +241,7 @@ Text.TextYAlignment = Enum.TextYAlignment.Bottom
 Text.TextXAlignment = Enum.TextXAlignment.Center
 Text.Visible = false
 Text.ZIndex = 3
-Text.Text = LabelText(Target, Kind)
+Text.Text = LabelText(Target, Kind, Entry)
 Text.Parent = Root
 Entry.Label = Text
 end
@@ -242,6 +251,9 @@ if S.Entries[Target] then return end
 local C = S.Kinds[Kind]
 if not (C.Outline or C.Box or C.Label) then return end
 local Entry = { Kind = Kind }
+if C.Box or C.Label then
+Measure(Target, Entry)
+end
 if C.Outline then
 pcall(AddOutline, Entry, Target, C, Kind)
 end
@@ -250,9 +262,6 @@ pcall(AddBox, Entry, C, Kind)
 end
 if C.Label then
 pcall(AddLabel, Entry, Target, C, Kind)
-end
-if Entry.Frame or Entry.Label then
-Measure(Target, Entry)
 end
 S.Entries[Target] = Entry
 end
@@ -312,12 +321,13 @@ end
 end
 end
 local Now = os.clock()
+local Measured = 0
 for Target, Entry in pairs(S.Entries) do
-if Target.Parent then
-if (Entry.Frame or Entry.Label)
+if Target.Parent and (Entry.Frame or Entry.Label)
 and (not Entry.NextMeasure or Now >= Entry.NextMeasure) then
+if Measured >= MEASURE_PER_SCAN then break end
 Measure(Target, Entry)
-end
+Measured += 1
 end
 end
 RefreshLabels()
@@ -339,14 +349,18 @@ local function UpdateDrawings()
 local Camera = workspace.CurrentCamera
 if not Camera or not Root or not Root.Parent then return end
 local CameraPosition = Camera.CFrame.Position
-for Target, Entry in pairs(S.Entries) do
+local Viewport = Camera.ViewportSize
+for _, Entry in pairs(S.Entries) do
 local Frame, Label = Entry.Frame, Entry.Label
 if Frame or Label then
 local X1, Y1, X2, Y2
-local Ok, Pivot = pcall(Target.GetPivot, Target)
-if Ok and Entry.LocalCF and Entry.Size
-and (Pivot.Position - CameraPosition).Magnitude <= MAX_DRAW_DISTANCE then
-X1, Y1, X2, Y2 = Project(Pivot * Entry.LocalCF, Entry.Size, Camera)
+local Anchor = Entry.Anchor
+if Anchor and Anchor.Parent and Entry.LocalCF and Entry.Size
+and (Anchor.Position - CameraPosition).Magnitude <= MAX_DRAW_DISTANCE then
+X1, Y1, X2, Y2 = Project(Anchor.CFrame * Entry.LocalCF, Entry.Size, Camera)
+end
+if X1 and (X2 < 0 or Y2 < 0 or X1 > Viewport.X or Y1 > Viewport.Y) then
+X1 = nil
 end
 if Frame and Frame.Parent then
 if X1 then

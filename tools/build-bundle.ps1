@@ -29,8 +29,13 @@ $outDir = Join-Path $scriptDir "Bundle"
 $limit = $PartKB * 1024
 
 $skip = @("Init.lua", "Bundle.lua")
+# References holds example ESP implementations kept for reading, not modules
+# the loader starts; packing them would ship dead weight in every part.
 $files = Get-ChildItem -Path $scriptDir -Recurse -Filter *.lua |
-    Where-Object { $skip -notcontains $_.Name -and $_.DirectoryName -ne $outDir } |
+    Where-Object {
+        $skip -notcontains $_.Name -and $_.DirectoryName -ne $outDir -and
+        $_.FullName -notmatch '[\\/]References[\\/]'
+    } |
     Sort-Object FullName
 
 # The window library goes first and therefore ends up alone in Part1: the
