@@ -191,8 +191,7 @@ if os.clock() - BlockClock < .08 then return end             -- a control / pane
 self:_beginWindowDrag(start, sp)
 end)
 end)
-self.Sidebar = New("Frame", { Size = UDim2.new(0, SIDEBAR, 0, ROOT_H), BorderSizePixel = 0, Parent = self.Root })
-self:Themed(self.Sidebar, { BackgroundColor3 = "Window" })
+self.Sidebar = New("Frame", { Size = UDim2.new(0, SIDEBAR, 0, ROOT_H), BackgroundTransparency = 1, BorderSizePixel = 0, Parent = self.Root })
 local sline = New("Frame", { Size = UDim2.new(0,1,1,0), Position = UDim2.fromOffset(SIDEBAR - 1, 0), BorderSizePixel = 0, ZIndex = 2, Parent = self.Root })
 self.SidebarLine = sline
 self:Themed(sline, { BackgroundColor3 = "Border" })
@@ -1195,10 +1194,10 @@ end
 end
 local Section = {}
 Library.Section = Section
-function Section:_row(h)
+function Section:_row(h, noSeparator)
 self._n += 1
 local r = New("Frame", { Size = UDim2.new(1,0,0,h), BackgroundTransparency = 1, LayoutOrder = self._n, Parent = self.Frame })
-if self._n > 1 then
+if self._n > 1 and not noSeparator then
 local l = New("Frame", { Size = UDim2.new(1,0,0,1), BorderSizePixel = 0, Parent = r })
 self.Win:Themed(l, { BackgroundColor3 = "Border" })
 end
@@ -1909,7 +1908,7 @@ SizeUDim = UDim2.fromOffset(20, 12),
 })
 cap.TextXAlignment = Enum.TextXAlignment.Center
 end
-local listRow = self:_row(0)
+local listRow = self:_row(0, true)
 listRow.Size = UDim2.new(1, 0, 0, 0)
 local PRIORITY_LIST_MAX = 300
 local listFrame = New("ScrollingFrame", {
@@ -1932,7 +1931,7 @@ Parent = listFrame,
 New("UIPadding", {
 PaddingLeft = UDim.new(0, 10),
 PaddingRight = UDim.new(0, 10),
-PaddingTop = UDim.new(0, 2),
+PaddingTop = UDim.new(0, 6),
 PaddingBottom = UDim.new(0, 10),
 Parent = listFrame,
 })
@@ -1942,11 +1941,13 @@ Priority = {},
 Values = {},
 Checks = {},
 CountLabel = countLabel,
+Header = header,
 Frame = listRow,
 Holder = listFrame,
 Scroll = listFrame,
 Format = options.Format,
 OnChanged = nil,
+OnSelect = options.OnSelect,
 OnValueChanged = nil,
 OnCheckChanged = nil,
 }
@@ -2006,7 +2007,7 @@ end
 Fit()
 local Count = #component.Priority
 countLabel.Text = Count == 0 and "EMPTY" or (Count .. (Count == 1 and " ENTRY" or " ENTRIES"))
-local Total = 12
+local Total = 16
 if #component.Priority == 0 then
 local empty = New("Frame", {
 LayoutOrder = 1,
@@ -2099,6 +2100,16 @@ SizeUDim = UDim2.new(1, -(left + rightInset), 1, 0),
 title.Font = Fonts.Medium
 title.TextTruncate = Enum.TextTruncate.AtEnd
 end
+if component.OnSelect then
+local select = New("TextButton", {
+Name = "SelectEntry", BackgroundTransparency = 1, BorderSizePixel = 0,
+Text = "", AutoButtonColor = false, Position = UDim2.fromOffset(left, 0),
+Size = UDim2.new(1, -(left + rightInset), 1, 0), Parent = row,
+})
+select.MouseButton1Click:Connect(function()
+component.OnSelect(value)
+end)
+end
 if hasValues then
 local box = New("TextBox", {
 AnchorPoint = Vector2.new(1, .5),
@@ -2134,7 +2145,7 @@ end)
 end
 local up = IconButton(row, "▲", -66, false, 8)
 local down = IconButton(row, "▼", -38, false, 8)
-local remove = IconButton(row, "✕", -10, true)
+local remove = IconButton(row, "X", -10, true)
 lib:_Connect(up.MouseButton1Click, function()
 component:MoveUp(value)
 end)

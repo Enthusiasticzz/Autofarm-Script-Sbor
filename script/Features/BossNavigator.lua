@@ -733,7 +733,7 @@ return {
         --// Targets. Nothing is typed by hand.
         function AICUI.RefreshBossNames()
             local Component = UIRef.BossNamesComponent
-            local Section = UIRef.BossSection
+            local Section = UIRef.BossNamesSection
 
             if not Component or not Section then
                 return
@@ -898,7 +898,7 @@ return {
         --// Rebuilds the "Edit Boss Stop" picker, keeping its slot in the
         --// section, and follows the selected stop.
         function AICUI.RefreshBossRoutePickers()
-            if not UIRef.BossSection then
+            if not UIRef.BossEditorSection then
                 return
             end
 
@@ -921,7 +921,7 @@ return {
 
             UIRef.BossPicker = AICUI.ReplaceDropdown(
                 UIRef.BossPicker,
-                UIRef.BossSection,
+                UIRef.BossEditorSection,
                 "Edit Boss Stop",
                 Options,
                 function(Value)
@@ -2693,7 +2693,11 @@ return {
         --// UI
         ------------------------------------------------------------------------
 
-        UIRef.BossSection = UIRef.BossTab:AddSection{ Title = "Boss Route" }
+        UIRef.BossSection = UIRef.BossTab:AddSection{ Title = "Route Controls", Full = true }
+        UIRef.BossStopsSection = UIRef.BossTab:AddSection{ Title = "Boss Stops", Full = true }
+        UIRef.BossEditorSection = UIRef.BossTab:AddSection{ Title = "Selected Stop", Full = true }
+        UIRef.BossNamesSection = UIRef.BossTab:AddSection{ Title = "Boss Targets", Full = true }
+        UIRef.BossTravelSection = UIRef.BossTab:AddSection{ Title = "Teleport and Prompt", Full = true }
 
         UIRef.BossToggle = AICUI.BindFeatureToggle("BossRoute", "Boss Route", function(Enabled)
             if Enabled then
@@ -2728,7 +2732,7 @@ return {
             end,
         }
 
-        UIRef.BossSection:AddButton{
+        UIRef.BossStopsSection:AddButton{
             Name = "Add Boss Stop Here",
             Callback = function()
             local _, _, RootPart = Runtime:GetCharacter()
@@ -2767,7 +2771,7 @@ return {
             end,
         }
 
-        UIRef.BossSection:AddButton{
+        UIRef.BossStopsSection:AddButton{
             Name = "Clear Boss Route",
             Callback = function()
             if not CanEdit("DEFAULT PLACE_CONFIG IS READ-ONLY") then
@@ -2783,7 +2787,7 @@ return {
             end,
         }
 
-        UIRef.BossListComponent = UIRef.BossSection:AddPriority("Boss Route", BuildLabels(), {
+        UIRef.BossListComponent = UIRef.BossStopsSection:AddPriority("Boss Route", BuildLabels(), {
             --// Seconds held at the corpse before a reset that costs EXP. The
             --// reset is not held at all when it would cost nothing, unless
             --// Always Wait Before Reset is on.
@@ -2873,7 +2877,7 @@ return {
         --// Per stop edits. Each box writes the selected stop and commits it,
         --// so what the list shows and what the run reads can never differ.
         local function AddStopBox(Label, Write)
-            return UIRef.BossSection:AddTextBox{
+            return UIRef.BossEditorSection:AddTextBox{
                 Name = Label,
                 Default = "",
                 Callback = function(Value)
@@ -2966,7 +2970,7 @@ return {
         --// Reset once the boss is down, i.e. the character respawns at the
         --// usual spawn point before the next stop is travelled to. Off, the
         --// next stop starts from wherever the fight ended.
-        UIRef.BossResetAfterKillToggle = UIRef.BossSection:AddToggle{
+        UIRef.BossResetAfterKillToggle = UIRef.BossEditorSection:AddToggle{
             Name = "Reset After Kill",
             Default = true,
             Callback = function(Value)
@@ -2995,7 +2999,7 @@ return {
 
         --// The dodge is per stop: a boss whose effects never switch off can be
         --// fought with it off, instead of being run away from every time.
-        UIRef.BossDodgeToggle = UIRef.BossSection:AddToggle{
+        UIRef.BossDodgeToggle = UIRef.BossEditorSection:AddToggle{
             Name = "Dodge Skills",
             Default = true,
             Callback = function(Value)
@@ -3024,7 +3028,7 @@ return {
 
         --// Travel by the interaction prompt in front of the boss rather than a
         --// numbered waypoint. Off, the stop is walked or waypointed as before.
-        UIRef.BossPromptToggle = UIRef.BossSection:AddToggle{
+        UIRef.BossPromptToggle = UIRef.BossTravelSection:AddToggle{
             Name = "Teleport To Prompt",
             Default = false,
             Callback = function(Value)
@@ -3051,7 +3055,7 @@ return {
             end,
         }
 
-        UIRef.BossPromptLabel = UIRef.BossSection:AddLabel(
+        UIRef.BossPromptLabel = UIRef.BossTravelSection:AddLabel(
             "PROMPT:  NONE SAVED  (NEAREST TO THE STOP IS USED)"
         )
 
@@ -3060,7 +3064,7 @@ return {
         --// and a miss still saves the spot the player is standing on: that is
         --// where the game's prompt is, whether or not the game implements it
         --// as a ProximityPrompt.
-        UIRef.BossPromptButton = UIRef.BossSection:AddButton{
+        UIRef.BossPromptButton = UIRef.BossTravelSection:AddButton{
             Name = "Save Prompt Here",
             Callback = function()
             local Stop = SelectedStop()
@@ -3111,13 +3115,13 @@ return {
 
         --// Boss names come from a list of the mobs around the player, the same
         --// way Zone Targets does it, so nothing has to be typed.
-        UIRef.BossNamesComponent = UIRef.BossSection:AddPriority("Boss Names", {})
+        UIRef.BossNamesComponent = UIRef.BossNamesSection:AddPriority("Boss Names", {})
 
         --// Built here, before the refresh button, so the button sits directly
         --// under the picker: both take the next two slots of the section.
         AICUI.RefreshBossNames()
 
-        UIRef.BossRefreshButton = UIRef.BossSection:AddButton{
+        UIRef.BossRefreshButton = UIRef.BossNamesSection:AddButton{
             Name = "Refresh Nearby Bosses",
             Callback = function()
             AICUI.RefreshBossNames()
@@ -3177,7 +3181,7 @@ return {
             CommitNames(self)
         end
 
-        UIRef.BossSection:AddButton{
+        UIRef.BossEditorSection:AddButton{
             Name = "Move Stop Here",
             Callback = function()
             local Stop = SelectedStop()
@@ -3202,7 +3206,7 @@ return {
             end,
         }
 
-        UIRef.BossSection:AddButton{
+        UIRef.BossEditorSection:AddButton{
             Name = "Remove Stop",
             Callback = function()
             local Index = AICProfile.S.SelectedBossStopIndex
@@ -3246,7 +3250,7 @@ return {
         --// Path to Boss: the points walked to reach each stop
         ------------------------------------------------------------------------
 
-        UIRef.BossPathSection = UIRef.BossTab:AddSection{ Title = "Path to Boss" }
+        UIRef.BossPathSection = UIRef.BossTab:AddSection{ Title = "Path to Boss", Full = true }
         UIRef.BossPathLabel = UIRef.BossPathSection:AddLabel("PATH TO BOSS  NO STOP SELECTED")
 
         UIRef.BossPathSection:AddButton{

@@ -2395,6 +2395,8 @@ UIRef.TargetSection, "Safe Enemy Range", "SAFE_ENEMY_RANGE"
 UIRef.CloseCombatRangeSlider = AICUI.AddSettingSlider(
 UIRef.TargetSection, "Close Combat Range", "CLOSE_COMBAT_RANGE"
 )
+UIRef.SafeEnemyRangeSlider.Row.LayoutOrder = 70
+UIRef.CloseCombatRangeSlider.Row.LayoutOrder = 80
 end
 end
 Module:CreateUI()
@@ -2535,6 +2537,8 @@ UIRef.PriorityComponent = UIRef.TargetSection:AddPriority(
 "Enemy Priority",
 CONFIG.TARGET_ENTITY_PRIORITY
 )
+UIRef.PriorityComponent.Header.LayoutOrder = 10
+UIRef.PriorityComponent.Frame.LayoutOrder = 20
 CONFIG.TARGET_ENTITY_PRIORITY = UIRef.PriorityComponent.Priority
 AICUI.S.OriginalPriorityAdd      = UIRef.PriorityComponent.Add
 AICUI.S.OriginalPriorityRemove   = UIRef.PriorityComponent.Remove
@@ -2600,6 +2604,7 @@ Callback = function()
 AICUI.RefreshTargetDropdown()
 end,
 }
+UIRef.TargetRefreshButton.Row.LayoutOrder = 60
 if UI.SetFont then
 if CONFIG.UI_FONT ~= "" and not UI:SetFont(CONFIG.UI_FONT) then
 CONFIG.UI_FONT = ""
@@ -2653,6 +2658,7 @@ AICCombat.ResetTargetState()
 AICProfile.SaveActiveProfile()
 end,
 }
+UIRef.TargetTypeDropdown.Row.LayoutOrder = 50
 UIRef.TargetTypeDropdown:Set(tostring(CONFIG.TARGET_HP_MODE or "Disabled"), true)
 do
 local STATUS = {

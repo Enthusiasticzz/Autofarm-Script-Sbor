@@ -160,6 +160,50 @@ if not DataOk then
     error("BOOT DATA PATH ERROR:\n" .. tostring(DataErr))
 end
 
+local target = Context.UIRef
+assert(target.PriorityComponent.Header.LayoutOrder < target.PriorityComponent.Frame.LayoutOrder)
+assert(target.PriorityComponent.Frame.LayoutOrder < target.MobTargetDropdown.Row.LayoutOrder)
+assert(target.MobTargetDropdown.Row.LayoutOrder < target.PlayerTargetDropdown.Row.LayoutOrder)
+assert(target.PlayerTargetDropdown.Row.LayoutOrder < target.TargetTypeDropdown.Row.LayoutOrder)
+assert(target.TargetTypeDropdown.Row.LayoutOrder < target.TargetRefreshButton.Row.LayoutOrder)
+local priorOrder = target.MobTargetDropdown.Row.LayoutOrder
+Context.AICCombat.GetDetectedMobTargets = function() return { "Goblin", "Boss" } end
+Context.AICUI.RefreshTargetDropdown()
+assert(target.MobTargetDropdown.Row.LayoutOrder == priorOrder, "rebuilt mob picker changed order")
+
+-- Clicking the name area copies a player's ID; the X only removes the row.
+local clipboard, notices = nil, {}
+setclipboard = function(value) clipboard = value end
+Context.NotifyAction = function(_, text) table.insert(notices, text) end
+local players = game:GetService("Players")
+players.GetPlayerByUserId = function() return { Name = "Tester" } end
+local list = target.TargetSection:AddPriority("Test whitelist", { "123456" })
+AICUI.ShowUserNames(list)
+local row
+for _, child in ipairs(list.Holder:GetChildren()) do
+    if child:IsA("Frame") then row = child end
+end
+assert(row and row:FindFirstChild("SelectEntry"), "player row is not clickable")
+row:FindFirstChild("SelectEntry").MouseButton1Click:Fire()
+assert(clipboard == "123456", "click did not copy the user ID")
+assert(#list.Priority == 1, "copy changed the list")
+local remove
+for _, child in ipairs(row:GetChildren()) do
+    if child:IsA("TextButton") and child.Text == "X" then remove = child end
+end
+assert(remove, "plain X remove button missing")
+remove.MouseButton1Click:Fire()
+assert(#list.Priority == 0, "X did not remove the player")
+assert(clipboard == "123456", "removing a player changed the clipboard")
+setclipboard = nil
+list:Add("456")
+row = nil
+for _, child in ipairs(list.Holder:GetChildren()) do
+    if child:IsA("Frame") then row = child end
+end
+row:FindFirstChild("SelectEntry").MouseButton1Click:Fire()
+assert(notices[#notices]:find("not available", 1, true), "missing clipboard was not reported")
+
 -- Profile dropdown redraws must not invoke the selection handler: that handler
 -- loads/reset the profile and refreshes the dropdown again during boot.
 local profileLoads, defaultLoads = 0, 0

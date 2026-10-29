@@ -150,6 +150,9 @@ return {
             CONFIG.TARGET_ENTITY_PRIORITY
         )
         
+        UIRef.PriorityComponent.Header.LayoutOrder = 10
+        UIRef.PriorityComponent.Frame.LayoutOrder = 20
+
         -- Keep CONFIG and the Utils priority component on the same table.
         CONFIG.TARGET_ENTITY_PRIORITY = UIRef.PriorityComponent.Priority
         
@@ -239,6 +242,8 @@ return {
             end,
         }
 
+        UIRef.TargetRefreshButton.Row.LayoutOrder = 60
+
         --// UI font, picked in Configuration and kept in the global file.
         if UI.SetFont then
             if CONFIG.UI_FONT ~= "" and not UI:SetFont(CONFIG.UI_FONT) then
@@ -311,6 +316,7 @@ return {
             end,
         }
         
+        UIRef.TargetTypeDropdown.Row.LayoutOrder = 50
         UIRef.TargetTypeDropdown:Set(tostring(CONFIG.TARGET_HP_MODE or "Disabled"), true)
 
         --// Status grid: the icon row in the sidebar, above the divider. Each

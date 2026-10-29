@@ -31,6 +31,7 @@ if not win then
 end
 
 Check("theme aliases", function()
+    Expect(win.Sidebar.BackgroundTransparency == 1, "sidebar covers the rounded window corner")
     Expect(win.Theme.Cyan == win.Theme.Accent, "Cyan alias")
     Expect(win.Theme.TextSecondary == win.Theme.SubText, "TextSecondary alias")
     Expect(win.Theme.BorderDim == win.Theme.Border, "BorderDim alias")
@@ -191,6 +192,10 @@ Check("a priority row can show a name and a second line", function()
         return "User 123"
     end
     priority:Refresh()
+    Expect(priority.Holder:FindFirstChildOfClass("UIPadding").PaddingTop.Offset >= 6, "first row has no top inset")
+    for _, child in ipairs(priority.Frame:GetChildren()) do
+        Expect(not child:IsA("Frame"), "separator overlaps the first priority row")
+    end
 
     local texts = {}
 

@@ -908,12 +908,13 @@ end
 end
 function Browser:BuildLateUI()
 if UIRef.TargetSection then
-UIRef.TargetSection:AddButton{
+local Button = UIRef.TargetSection:AddButton{
 Name = "Open Mob Dictionary",
 Callback = function()
 Browser:Toggle()
 end,
 }
+Button.Row.LayoutOrder = 90
 end
 end
 return Browser

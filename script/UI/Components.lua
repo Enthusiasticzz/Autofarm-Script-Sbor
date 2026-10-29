@@ -215,6 +215,19 @@ return {
             --// names arrive: who it is on top, the id underneath. Only
             --// characters a Row's font always has, so a name can never come
             --// out as stray bytes.
+            Component.OnSelect = function(Value)
+                local Id = tostring(Value)
+                if not Id:match("^%d+$") then return end
+
+                if type(setclipboard) ~= "function" then
+                    Context.NotifyAction("User ID", "Clipboard is not available in this executor", 4)
+                    return
+                end
+
+                local Ok = pcall(setclipboard, Id)
+                Context.NotifyAction("User ID", Ok and ("Copied " .. Id) or "Could not copy to clipboard", 3)
+            end
+
             Component.Format = function(Value)
                 local Id = tostring(Value)
                 local Name, Reason = AICUI.GetUserName(Value, Redraw)
@@ -449,6 +462,7 @@ return {
                 Dropdown.Row.LayoutOrder = Order
             end
 
+            Dropdown.Row.LayoutOrder = Kind == "Mob" and 30 or 40
             UIRef[Picker.Ref] = Dropdown
             AICUI.S.TargetPickerSignature[Kind] = Signature
         end

@@ -1060,6 +1060,8 @@ return {
                 UIRef.CloseCombatRangeSlider = AICUI.AddSettingSlider(
                     UIRef.TargetSection, "Close Combat Range", "CLOSE_COMBAT_RANGE"
                 )
+                UIRef.SafeEnemyRangeSlider.Row.LayoutOrder = 70
+                UIRef.CloseCombatRangeSlider.Row.LayoutOrder = 80
             end
         end
 
