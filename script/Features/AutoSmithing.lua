@@ -181,6 +181,12 @@ return {
             S.Failed += 1
             S.Failures[Name] = (S.Failures[Name] or 0) + 1
 
+            --// A failed craft is tried again after a beat, not on the very next
+            --// frame. Retrying instantly walked the whole recipe list in three
+            --// frames when nothing could be crafted, which read as a burst of
+            --// notifications on start.
+            S.LastSelect = now + 1
+
             if S.Failures[Name] >= MAX_FAILURES then
                 S.Failures[Name] = 0
                 S.PausedUntil[Name] = now + FAILURE_PAUSE

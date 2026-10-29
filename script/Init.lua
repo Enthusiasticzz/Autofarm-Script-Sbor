@@ -327,6 +327,40 @@ if Lifetime.Env then
     Lifetime.Env.AICSession = Lifetime
 end
 
+--// A loop that throws every frame becomes a flood of executor messages, and
+--// the executor's own reporter ends up printing only its re-entrancy warning.
+--// The first few errors are named here, with the line that threw, and then it
+--// stays quiet so the console is readable again.
+do
+    local Ok, ScriptContext = pcall(function()
+        return game:GetService("ScriptContext")
+    end)
+
+    if Ok and ScriptContext and ScriptContext.Error then
+        local Shown, Count, Since = 0, 0, os.clock()
+
+        Lifetime.Connect(ScriptContext.Error, function(Message, Trace)
+            Count += 1
+
+            if Shown < 5 then
+                Shown += 1
+                local Where = string.match(tostring(Trace or ""), "^[^\n]*") or "?"
+                print("[AIC] error #" .. Shown .. ": " .. tostring(Message) .. "   @ " .. tostring(Where))
+            end
+
+            local Now = os.clock()
+
+            if Now - Since >= 1 then
+                if Count > 10 then
+                    print(string.format("[AIC] %d errors in one second, see above", Count))
+                end
+
+                Count, Since = 0, Now
+            end
+        end)
+    end
+end
+
 --// The window is built first so its boot loader can report real progress:
 --// fetching takes the first half of the bar, starting modules the rest.
 local UI = nil

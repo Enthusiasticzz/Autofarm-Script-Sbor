@@ -580,9 +580,18 @@ local RunService = {
     Heartbeat = Signal.new(),
     Stepped = Signal.new(),
 }
-function RunService:UnbindFromRenderStep() end
-function RunService:UnbindFromBindToRenderStep() end
-function RunService:BindToRenderStep() end
+--// Render steps are recorded so a test can run the window's own per-frame
+--// work (the mouse handling) the way the client would.
+RunService.Steps = {}
+function RunService:UnbindFromRenderStep(name)
+    self.Steps[name] = nil
+end
+function RunService:UnbindFromBindToRenderStep(name)
+    self.Steps[name] = nil
+end
+function RunService:BindToRenderStep(name, _, fn)
+    self.Steps[name] = fn
+end
 
 local UserInputService = {
     InputBegan = Signal.new(),

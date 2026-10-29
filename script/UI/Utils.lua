@@ -279,7 +279,11 @@ function Library.new(o)
 	self:_buildCursor()
 	self:Bind(function() self:_paintTabs(true) end)
 
-	self.ModalButton = New("TextButton", { BackgroundTransparency = 1, Text = "", Modal = true, Size = UDim2.new(), Parent = self.Gui })
+	--// Kept for the API, but never modal. A Modal GuiButton takes every input
+	--// on the screen, and with it the right mouse drag that turns the camera -
+	--// which is why the camera felt dead the whole time the menu was up. The
+	--// window itself (Root.Active) still takes the clicks that land on it.
+	self.ModalButton = New("TextButton", { BackgroundTransparency = 1, Text = "", Modal = false, Size = UDim2.new(), Parent = self.Gui })
 
 	-- global input
 	table.insert(self._conns, UIS.InputChanged:Connect(function(i)
@@ -308,9 +312,10 @@ function Library.new(o)
 	end))
 	pcall(function()
 		RunService:BindToRenderStep("UILibUnlock" .. self.Title, Enum.RenderPriority.Last.Value, function()
-			--// Only a menu you can actually click takes the mouse. A minimised
-			--// window is a title bar, and leaving it modal locked the whole
-			--// screen: no camera, and clicks went nowhere.
+			--// An open menu frees the cursor so it can be clicked, and takes
+			--// nothing else: the game keeps receiving input outside the window,
+			--// so a right drag still turns the camera. A minimised window is a
+			--// title bar and does not even do that.
 			local open = self.Root.Visible and not self._minimized
 
 			if open then
@@ -320,16 +325,14 @@ function Library.new(o)
 					self._mouseUnlocked = true
 					self._prevMouseBehavior = UIS.MouseBehavior
 				end
-				self.ModalButton.Modal = true
-				UIS.MouseBehavior = Enum.MouseBehavior.Default
-			else
+
 				self.ModalButton.Modal = false
-				if self._mouseUnlocked then
-					self._mouseUnlocked = false
-					pcall(function()
-						UIS.MouseBehavior = self._prevMouseBehavior or Enum.MouseBehavior.Default
-					end)
-				end
+				UIS.MouseBehavior = Enum.MouseBehavior.Default
+			elseif self._mouseUnlocked then
+				self._mouseUnlocked = false
+				pcall(function()
+					UIS.MouseBehavior = self._prevMouseBehavior or Enum.MouseBehavior.Default
+				end)
 			end
 		end)
 	end)
@@ -1813,8 +1816,42 @@ function Library:SetNotificationPosition(p)
 	L.HorizontalAlignment = center and Enum.HorizontalAlignment.Center or (right and Enum.HorizontalAlignment.Right or Enum.HorizontalAlignment.Left)
 	L.VerticalAlignment = bottom and Enum.VerticalAlignment.Bottom or Enum.VerticalAlignment.Top
 end
+--// At most this many cards at once. A loop that reports one thing per entry
+--// (every recipe, every ore) used to stack them all, and every card is a frame
+--// with a tween and a delayed task of its own.
+local MAX_NOTIFS = 4
+
 function Library:Notify(o)
 	if not self.Notifications.Enabled and not o.Force then return end
+
+	self._notifs = self._notifs or {}
+
+	local title = o.Title or self.Text.Notification
+	local text = o.Text or ""
+
+	--// The same message already on screen is not news: the card stays as it is
+	--// and nothing new is built.
+	for Index = #self._notifs, 1, -1 do
+		local Entry = self._notifs[Index]
+
+		if not Entry.Wrap.Parent then
+			table.remove(self._notifs, Index)
+		elseif Entry.Title == title and Entry.Text == text then
+			return Entry
+		end
+	end
+
+	--// Oldest leaves early once the stack is full, rather than off the screen.
+	while #self._notifs >= MAX_NOTIFS do
+		local Oldest = table.remove(self._notifs, 1)
+
+		if Oldest and Oldest.Wrap then
+			pcall(function()
+				Oldest.Wrap:Destroy()
+			end)
+		end
+	end
+
 	self._nid = (self._nid or 0) + 1
 	local dur = o.Duration or 4
 	local wrap = New("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1,0,0,54), LayoutOrder = self._nid, Parent = self.NotifHolder })
@@ -1823,17 +1860,28 @@ function Library:Notify(o)
 	Round(card, 8)
 	self:Themed(card, { BackgroundColor3 = "Panel" })
 	self:Themed(Stroke(card), { Color = "Border" })
-	self:Label(card, o.Title or self.Text.Notification, { Bold = true, Position = UDim2.fromOffset(12,8), SizeUDim = UDim2.new(1,-24,0,16) })
-	self:Label(card, o.Text or "", { Color = "SubText", TextSize = 12, Position = UDim2.fromOffset(12,26), SizeUDim = UDim2.new(1,-24,0,16) })
+	self:Label(card, title, { Bold = true, Position = UDim2.fromOffset(12,8), SizeUDim = UDim2.new(1,-24,0,16) })
+	self:Label(card, text, { Color = "SubText", TextSize = 12, Position = UDim2.fromOffset(12,26), SizeUDim = UDim2.new(1,-24,0,16) })
 	local bar = New("Frame", { Position = UDim2.new(0,8,1,-4), Size = UDim2.new(1,-16,0,2), BorderSizePixel = 0, Parent = card })
 	Round(bar, 1)
 	self:Bind(function() bar.BackgroundColor3 = self.Theme.Accent end, bar)
 	self:Tween(card, { Position = UDim2.new() }, .35, Enum.EasingStyle.Quint)
 	TweenService:Create(bar, TweenInfo.new(dur, Enum.EasingStyle.Linear), { Size = UDim2.new(0,0,0,2) }):Play()
+	local entry = { Title = title, Text = text, Wrap = wrap }
+	table.insert(self._notifs, entry)
+
 	task.delay(dur, function()
 		self:Tween(card, { Position = UDim2.fromOffset(right and 300 or -300, 0) }, .25)
 		task.wait(.3 / math.max(self.AnimSpeed, .1)); wrap:Destroy()
+
+		local Index = table.find(self._notifs, entry)
+
+		if Index then
+			table.remove(self._notifs, Index)
+		end
 	end)
+
+	return entry
 end
 
 function Library:_buildWatermark()

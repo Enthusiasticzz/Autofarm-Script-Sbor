@@ -830,10 +830,74 @@ return {
         UIRef.QuestSection = UIRef.QuestTab:AddSection{ Title = "Assign Quest" }
         UIRef.QuestHelperSection = UIRef.QuestTab:AddSection{ Title = "Quest Helper" }
         
-        local function NotifyAction(Action, Message, Duration)
+        --// Notifications are throttled: at most one every GAP seconds. A loop
+        --// that reports one thing per recipe used to churn the cards (and the
+        --// frames behind them) dozens of times a second, which reads as a
+        --// hang. A burst collapses into its newest message instead.
+        local NotifyState = {
+            GAP = 0.4,
+            Last = -10,
+            PendingAction = nil,
+            PendingMessage = nil,
+            PendingDuration = nil,
+            Queued = false,
+            Dropped = 0,
+            Since = 0,
+            Shown = 0,
+        }
+
+        local function ShowNotification(Action, Message, Duration)
             if UI and type(UI.Notify) == "function" then
                 UI:Notify{ Title = Action, Text = Message, Duration = Duration or 2.5 }
             end
+
+            NotifyState.Last = os.clock()
+
+            --// The first few of a session are printed, so a message that keeps
+            --// coming back can be named instead of watched.
+            if NotifyState.Shown < 5 then
+                NotifyState.Shown += 1
+                print("[AIC] notify: " .. tostring(Action) .. " / " .. tostring(Message))
+            end
+        end
+
+        local function FlushPending()
+            NotifyState.Queued = false
+
+            local Action, Message = NotifyState.PendingAction, NotifyState.PendingMessage
+            local Duration = NotifyState.PendingDuration
+            NotifyState.PendingAction, NotifyState.PendingMessage, NotifyState.PendingDuration = nil, nil, nil
+
+            if Action then
+                ShowNotification(Action, Message, Duration)
+            end
+        end
+
+        local function NotifyAction(Action, Message, Duration)
+            local Now = os.clock()
+
+            if Now - NotifyState.Since >= 1 then
+                if NotifyState.Dropped > 0 then
+                    print(string.format("[AIC] %d notifications collapsed into one", NotifyState.Dropped))
+                end
+
+                NotifyState.Dropped, NotifyState.Since = 0, Now
+            end
+
+            if Now - NotifyState.Last < NotifyState.GAP then
+                NotifyState.PendingAction, NotifyState.PendingMessage = Action, Message
+                NotifyState.PendingDuration = Duration
+                NotifyState.Dropped += 1
+
+                if not NotifyState.Queued then
+                    NotifyState.Queued = true
+                    task.delay(NotifyState.GAP, FlushPending)
+                end
+
+                return
+            end
+
+            ShowNotification(Action, Message, Duration)
         end
         
         

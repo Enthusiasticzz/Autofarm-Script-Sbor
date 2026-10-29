@@ -234,8 +234,58 @@ Check("search", function()
     win:_search("")
 end)
 
-Check("notifications", function()
-    win:Notify({ Title = "Test", Text = "Hello", Duration = 2 })
+Check("the menu never takes the camera's mouse away", function()
+    --// A Modal GuiButton grabs every input on the screen, so the right mouse
+    --// drag that turns the camera does nothing anywhere. The window must
+    --// never put one up.
+    local step
+
+    for _, fn in pairs(RunService.Steps or {}) do
+        step = fn
+    end
+
+    Expect(step ~= nil, "the window registered no render step")
+
+    win:Toggle(true)
+    step()
+    Expect(win.ModalButton.Modal == false, "a modal button swallowed the screen")
+    Expect(UserInputService.MouseBehavior == Enum.MouseBehavior.Default, "the menu did not free the cursor")
+
+    --// Nothing else full-screen may be modal either.
+    for _, obj in ipairs(win.Gui:GetDescendants()) do
+        if obj:IsA("TextButton") and obj.Modal == true then
+            error("modal button in the window: " .. tostring(obj.Name))
+        end
+    end
+
+    win:Toggle(false)
+    step()
+    Expect(win.ModalButton.Modal == false, "closing left the screen modal")
+end)
+
+Check("notifications stay bounded", function()
+    --// A loop that reports one thing per recipe used to stack a card each.
+    for i = 1, 12 do
+        win:Notify({ Title = "AUTO SMITHING", Text = "Recipe " .. i .. " failed 3 times; paused 60s", Duration = 2 })
+    end
+
+    Expect(#win._notifs == 4, "the notification stack is not capped: " .. #win._notifs)
+
+    local cards = 0
+
+    for _, child in ipairs(win.NotifHolder:GetChildren()) do
+        if child:IsA("Frame") then
+            cards += 1
+        end
+    end
+
+    Expect(cards == 4, "the holder kept " .. cards .. " cards")
+
+    --// The same message twice is one card, not two.
+    win:Notify({ Title = "Same", Text = "message", Duration = 2 })
+    local before = #win._notifs
+    win:Notify({ Title = "Same", Text = "message", Duration = 2 })
+    Expect(#win._notifs == before, "an identical message stacked a second card")
 end)
 
 Check("appearance setters", function()
