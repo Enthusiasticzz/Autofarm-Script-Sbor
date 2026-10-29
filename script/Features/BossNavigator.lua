@@ -452,21 +452,18 @@ return {
             return math.min(90, math.floor(Level / 100) * 10)
         end
 
-        --// The size of a level's EXP bar: the EXP that level asks for, which
-        --// is the difference between its own point on the curve and the one
-        --// before it (AICUI.neededExp is a running total, not a bar). That is
-        --// the number a player reads as "I needed 1,300 to level up": about
-        --// 1,302 at level 216, 3,606 at 600, 5,406 at 900. Taking the running
-        --// total itself - millions - as the bar is what made every reset look
-        --// free below level 900: 1,200 of 141,909 read as 0.8% of the bar
-        --// instead of 92% of the 1,302 it actually asks for.
-        --// Cached per level: that curve is a loop, and this is read every
-        --// frame of a hold.
+        --// The size of a level's EXP bar is the level's max EXP: the number the
+        --// HUD prints after the slash, AICUI.neededExp(Level), and the EXP
+        --// stat is counted against that same number. The share a reset keeps
+        --// is taken from it directly. It used to be the gap between this level
+        --// and the one before (about 1,300), a much smaller number than the
+        --// real max, which made every EXP value look like it sat above the
+        --// protected part and so every reset look like it would lose EXP.
+        --// Cached per level, since this is read every frame of a hold.
         local LevelBars = {}
 
-        --// Reach: the running total at which this level is done (the number the
-        --// HUD prints after the slash). Floor: the total the level started at.
-        --// Bar: what the level itself asks for, Reach - Floor.
+        --// Reach: the max EXP of this level. Floor: always 0, the stat starts
+        --// each level from nothing. Bar: Reach, what the level itself asks for.
         local function GetLevelBar(Level)
             if not Level or Level <= 0 then
                 return nil, 0, 0
@@ -484,13 +481,15 @@ return {
                 return nil, 0, 0
             end
 
-            local Reach = math.max(1, Needed(Level))
-            local Floor = Level > 1 and math.max(0, Needed(Level - 1)) or 0
-            local Bar = math.max(1, Reach - Floor)
+            local Reach = tonumber(Needed(Level))
 
-            LevelBars[Level] = { Reach = Reach, Bar = Bar, Floor = Floor }
+            if not Reach or Reach <= 0 then
+                return nil, 0, 0
+            end
 
-            return Reach, Bar, Floor
+            LevelBars[Level] = { Reach = Reach, Bar = Reach, Floor = 0 }
+
+            return Reach, Reach, 0
         end
 
         --// How far into its bar the character's EXP is, 0..bar. A value that
@@ -522,16 +521,14 @@ return {
             return nil, Bar
         end
 
-        --// What a reset has been *seen* to leave behind, one share per level:
-        --// What a reset would cost where the character is standing: the EXP it
-        --// would take, the size of one level's EXP bar, and that loss as a share
-        --// of the bar. The bar is whatever the level's own requirement is (the
-        --// curve moves, so nothing here is a fixed EXP amount), and the game
-        --// keeps a share of it: 10% for each completed hundred levels, 90%
-        --// from level 900 up. At level 216 that share is the first 20% of the
-        --// bar, so 1,200 of a 1,300 bar sits above it, the reset takes the
-        --// 1,200 above the 260 it keeps, and the route holds for it instead of
-        --// resetting the instant the boss drops.
+        --// What a reset would cost where the character is standing. The level
+        --// gives the share a reset keeps (70% at 700 to 799, 90% from 900 up),
+        --// the bar is the level's max EXP, and the protected amount is that
+        --// share of the max. Loss is the character's EXP minus that amount:
+        --// zero or more means the EXP is at or past the line, so the route
+        --// holds for it; below zero means everything is inside the protected
+        --// part and the reset is free. Returned are the loss, the bar, the loss
+        --// as a share of the bar and the level.
         --//
         --// nil means the cost cannot be read (no stats yet, a number that fits
         --// no bar) and is waited out, never taken for free.
@@ -543,9 +540,10 @@ return {
                 return nil
             end
 
-            --// An empty bar has nothing to take.
+            --// An empty bar has nothing to take, whatever share is kept, so
+            --// it is below the line and free.
             if Exp <= 0 then
-                return 0, 0, 0, Level
+                return -1, 0, -1, Level
             end
 
             local Progress, Bar = GetBarProgress(Exp, Level)
@@ -555,7 +553,7 @@ return {
             end
 
             local Keep = GetKeepPercent(Level) / 100
-            local Loss = math.max(0, Progress - Bar * Keep)
+            local Loss = Progress - Bar * Keep
 
             return Loss, Bar, Loss / Bar, Level
         end
@@ -585,7 +583,9 @@ return {
                 return Wait + RESET_HOLD_EXTRA
             end
 
-            if Loss <= 0 then
+            --// Below the protected line the reset is free. At the line or
+            --// past it, the wait is held.
+            if Loss < 0 then
                 return 0
             end
 
@@ -2488,7 +2488,7 @@ return {
                         --// so say that rather than "LOSE 0 EXP".
                         local Risk = Loss == nil and "COST UNKNOWN"
                             or (Loss > 0 and string.format("LOSE %d EXP", math.floor(Loss + 0.5))
-                                or "NO EXP AT RISK")
+                                or (Loss == 0 and "AT THE LIMIT" or "NO EXP AT RISK"))
 
                         SetStatus(string.format(
                             "STOP %d/%d  CLEARING  %ds  %s%s",
