@@ -133,7 +133,9 @@ end
 local function LabelText(Target, Kind)
 local Lines = {}
 local Owner = Kind == "Player" and Players:GetPlayerFromCharacter(Target) or nil
-table.insert(Lines, Owner and Owner.Name or Target.Name)
+local MobEntity = Kind == "Mob" and Target:FindFirstChild("Config") and Target.Config:FindFirstChild("Entity") or nil
+local Name = Owner and Owner.Name or (MobEntity and MobEntity:IsA("StringValue") and MobEntity.Value ~= "" and MobEntity.Value) or Target.Name
+table.insert(Lines, Name)
 local Level
 if Owner then
 local Stats = Owner:FindFirstChild("PlayerStats")
@@ -236,9 +238,9 @@ Text.Font = Enum.Font.GothamBold
 Text.TextSize = 12
 Text.TextYAlignment = Enum.TextYAlignment.Bottom
 Text.Text = LabelText(Target, Kind)
-Text.Parent = Gui
+Text.Parent = LabelGui
 Entry.Label = Text
-table.insert(Entry.Instances, Gui)
+table.insert(Entry.Instances, LabelGui)
 end
 end
 S.Highlights[Target] = Entry
