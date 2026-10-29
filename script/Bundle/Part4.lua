@@ -108,15 +108,20 @@ Highlight.Parent = Target
 table.insert(Entry.Instances, Highlight)
 end
 if C.Box then
+for _, Part in ipairs(Target:GetDescendants()) do
+if Part:IsA("BasePart") then
 local Box = Instance.new("SelectionBox")
 Box.Name = "AICEspBox" .. Kind
-Box.Adornee = Target
+Box.Adornee = Part
 Box.Color3 = C.Color
-Box.LineThickness = 0.04
+Box.LineThickness = 0.03
 Box.SurfaceTransparency = 1
+Box.SurfaceColor3 = C.Color
 Box.AlwaysOnTop = true
-Box.Parent = Target
+Box.Parent = Part
 table.insert(Entry.Instances, Box)
+end
+end
 end
 if C.Label then
 local Part = PartOf(Target)
@@ -127,7 +132,7 @@ Gui.Adornee = Part
 Gui.AlwaysOnTop = true
 Gui.Size = UDim2.fromOffset(180, 70)
 Gui.StudsOffset = Vector3.new(0, 3, 0)
-Gui.Parent = Target
+Gui.Parent = Part
 local Text = Instance.new("TextLabel")
 Text.BackgroundTransparency = 1
 Text.Size = UDim2.fromScale(1, 1)
@@ -232,32 +237,34 @@ if not Enabled(Kind) then
 ClearHighlights(Kind)
 end
 end
-if UIRef.EspSection then
+local SectionTitles = { Player = "Players", Mob = "Mobs", Weapon = "Weapons" }
+if UIRef.EspTab then
 for _, Kind in ipairs(KINDS) do
 local C = S.Kinds[Kind]
 local Name = Kind
-UIRef.EspSection:AddToggle{
+local Sec = UIRef.EspTab:AddSection{ Title = SectionTitles[Kind] }
+Sec:AddToggle{
 Name = Name .. " ESP",
 Bold = true,
 Default = false,
 Callback = function(Value) SetKind(Kind, Value) end,
 }
-UIRef.EspSection:AddToggle{
+Sec:AddToggle{
 Name = Name .. " outline",
 Default = C.Outline,
 Callback = function(Value) C.Outline = Value; ClearHighlights(Kind) end,
 }
-UIRef.EspSection:AddToggle{
+Sec:AddToggle{
 Name = Name .. " box",
 Default = C.Box,
 Callback = function(Value) C.Box = Value; ClearHighlights(Kind) end,
 }
-UIRef.EspSection:AddToggle{
+Sec:AddToggle{
 Name = Name .. " label (level, EXP, HP)",
 Default = C.Label,
 Callback = function(Value) C.Label = Value; ClearHighlights(Kind) end,
 }
-UIRef.EspSection:AddColorPicker{
+Sec:AddColorPicker{
 Name = Name .. " colour",
 Default = C.Color,
 Callback = function(Color)

@@ -3861,7 +3861,6 @@ UIRef.StatusTab = UI:AddTab{ Name = "Status", Description = "Live readout: farm 
 UIRef.FarmTab = UI:AddTab{ Name = "Farming", Description = "Waypoints, targets, combat and the rules the farm follows" }
 UIRef.BossTab = UI:AddTab{ Name = "Bosses", Description = "Boss stops, their timers and when a reset is taken" }
 UIRef.EspTab = UI:AddTab{ Name = "ESP", Description = "Outline players, mobs and equipped weapons in the world" }
-UIRef.EspSection = UIRef.EspTab:AddSection{ Title = "ESP" }
 UIRef.MineTab = UI:AddTab{ Name = "Mining", Description = "Ore priority and the mine zones Auto Mining works in" }
 UIRef.CraftTab = UI:AddTab{ Name = "Crafting", Description = "Recipe priority, the materials kept in reserve and the tables" }
 UIRef.PartyTab = UI:AddTab{ Name = "Party", Description = "Follow the leader between servers" }

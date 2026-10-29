@@ -43,6 +43,7 @@ return {
                 Color = COLORS[Kind],
                 Outline = true,
                 Box = false,
+                BoxStyle = "3D",
                 Tracer = false,
                 Label = false,
             }
@@ -66,6 +67,83 @@ return {
                         Instance:Destroy()
                     end
                     S.Highlights[Target] = nil
+                end
+            end
+        end
+
+        --// 2D and corner boxes are screen-space frames, so they live in one
+        --// ScreenGui and are moved every frame from the target's projected box.
+        local Gui
+        local CORNERS = {}
+        for _, X in ipairs({ -0.5, 0.5 }) do
+            for _, Y in ipairs({ -0.5, 0.5 }) do
+                for _, Z in ipairs({ -0.5, 0.5 }) do
+                    table.insert(CORNERS, Vector3.new(X, Y, Z))
+                end
+            end
+        end
+
+        local function GetGui()
+            if Gui and Gui.Parent then return Gui end
+            local PlayerGui = Player:FindFirstChildOfClass("PlayerGui")
+            if not PlayerGui then return nil end
+            Gui = Instance.new("ScreenGui")
+            Gui.Name = "AICEspScreen"
+            Gui.IgnoreGuiInset = true
+            Gui.ResetOnSpawn = false
+            Gui.DisplayOrder = 50
+            Gui.Parent = PlayerGui
+            return Gui
+        end
+
+        --// Screen rectangle around a target, or nil when any corner is behind
+        --// the camera (a half-visible box would be wrong, so it is hidden).
+        local function ProjectBox(Target)
+            local Camera = workspace.CurrentCamera
+            if not Camera then return nil end
+            local CF, Size = Target:GetBoundingBox()
+            local MinX, MinY, MaxX, MaxY = math.huge, math.huge, -math.huge, -math.huge
+            for _, Corner in ipairs(CORNERS) do
+                local World = CF:PointToWorldSpace(Vector3.new(Corner.X * Size.X, Corner.Y * Size.Y, Corner.Z * Size.Z))
+                local Point, _ = Camera:WorldToViewportPoint(World)
+                if Point.Z <= 0 then return nil end
+                MinX = math.min(MinX, Point.X)
+                MinY = math.min(MinY, Point.Y)
+                MaxX = math.max(MaxX, Point.X)
+                MaxY = math.max(MaxY, Point.Y)
+            end
+            return MinX, MinY, MaxX, MaxY
+        end
+
+        local function UpdateScreenBoxes()
+            for Target, Entry in pairs(S.Highlights) do
+                local Screen = Entry.Screen
+                if Screen and Target.Parent then
+                    local X1, Y1, X2, Y2 = ProjectBox(Target)
+                    if not X1 then
+                        for _, F in ipairs(Screen.Frames) do F.Visible = false end
+                    elseif Screen.Style == "2D" then
+                        local F = Screen.Frames[1]
+                        F.Visible = true
+                        F.Position = UDim2.fromOffset(X1, Y1)
+                        F.Size = UDim2.fromOffset(X2 - X1, Y2 - Y1)
+                    else
+                        local W, H = X2 - X1, Y2 - Y1
+                        local A = math.max(4, math.min(W, H) * 0.25)
+                        local T = 2
+                        local Segs = {
+                            { X1, Y1, A, T }, { X1, Y1, T, A },
+                            { X2 - A, Y1, A, T }, { X2 - T, Y1, T, A },
+                            { X1, Y2 - T, A, T }, { X1, Y2 - A, T, A },
+                            { X2 - A, Y2 - T, A, T }, { X2 - T, Y2 - A, T, A },
+                        }
+                        for I, F in ipairs(Screen.Frames) do
+                            local Seg = Segs[I]
+                            F.Visible = true
+                            F.Position = UDim2.fromOffset(Seg[1], Seg[2])
+                            F.Size = UDim2.fromOffset(Seg[3], Seg[4])
+                        end
+                    end
                 end
             end
         end
@@ -132,27 +210,62 @@ return {
             end
 
             if C.Box then
-                local Box = Instance.new("SelectionBox")
-                Box.Name = "AICEspBox" .. Kind
-                Box.Adornee = Target
-                Box.Color3 = C.Color
-                Box.LineThickness = 0.04
-                Box.SurfaceTransparency = 1
-                Box.AlwaysOnTop = true
-                Box.Parent = Target
-                table.insert(Entry.Instances, Box)
+                --// SelectionBox only draws on a BasePart, so each part of the
+                --// model gets its own box in the kind's colour.
+                for _, Part in ipairs(Target:GetDescendants()) do
+                    if Part:IsA("BasePart") then
+                        local Box = Instance.new("SelectionBox")
+                        Box.Name = "AICEspBox" .. Kind
+                        Box.Adornee = Part
+                        Box.Color3 = C.Color
+                        Box.LineThickness = 0.03
+                        Box.SurfaceTransparency = 1
+                        Box.SurfaceColor3 = C.Color
+                        Box.AlwaysOnTop = true
+                        Box.Parent = Part
+                        table.insert(Entry.Instances, Box)
+                    end
+                end
+            end
+
+            if C.Box and C.BoxStyle ~= "3D" then
+                local ScreenGui = GetGui()
+                if ScreenGui then
+                    local Frames = {}
+                    local Count = C.BoxStyle == "Corner" and 8 or 1
+                    for _ = 1, Count do
+                        local F = Instance.new("Frame")
+                        F.BorderSizePixel = 0
+                        F.Visible = false
+                        F.Parent = ScreenGui
+                        if C.BoxStyle == "2D" then
+                            F.BackgroundTransparency = 1
+                            local Stroke = Instance.new("UIStroke")
+                            Stroke.Color = C.Color
+                            Stroke.Thickness = 1.5
+                            Stroke.Parent = F
+                        else
+                            F.BackgroundColor3 = C.Color
+                        end
+                        table.insert(Frames, F)
+                        table.insert(Entry.Instances, F)
+                    end
+                    Entry.Screen = { Style = C.BoxStyle, Frames = Frames }
+                end
             end
 
             if C.Label then
                 local Part = PartOf(Target)
                 if Part then
+                    --// A BillboardGui only renders under a part, so it lives on the
+                    --// head (or the first part found) rather than the model.
                     local Gui = Instance.new("BillboardGui")
                     Gui.Name = "AICEspLabel" .. Kind
                     Gui.Adornee = Part
                     Gui.AlwaysOnTop = true
                     Gui.Size = UDim2.fromOffset(180, 70)
                     Gui.StudsOffset = Vector3.new(0, 3, 0)
-                    Gui.Parent = Target
+                    Gui.Parent = Part
 
                     local Text = Instance.new("TextLabel")
                     Text.BackgroundTransparency = 1
@@ -262,6 +375,7 @@ return {
 
         function Feature:Update(DeltaTime)
             if not AnyEnabled() then return end
+            UpdateScreenBoxes()
             S.Timer += DeltaTime
             if S.Timer < SCAN_INTERVAL then return end
             S.Timer = 0
@@ -276,33 +390,41 @@ return {
             end
         end
 
-        if UIRef.EspSection then
+        local SectionTitles = { Player = "Players", Mob = "Mobs", Weapon = "Weapons" }
+        if UIRef.EspTab then
             for _, Kind in ipairs(KINDS) do
                 local C = S.Kinds[Kind]
                 local Name = Kind
+                local Sec = UIRef.EspTab:AddSection{ Title = SectionTitles[Kind] }
 
-                UIRef.EspSection:AddToggle{
+                Sec:AddToggle{
                     Name = Name .. " ESP",
                     Bold = true,
                     Default = false,
                     Callback = function(Value) SetKind(Kind, Value) end,
                 }
-                UIRef.EspSection:AddToggle{
+                Sec:AddToggle{
                     Name = Name .. " outline",
                     Default = C.Outline,
                     Callback = function(Value) C.Outline = Value; ClearHighlights(Kind) end,
                 }
-                UIRef.EspSection:AddToggle{
+                Sec:AddToggle{
                     Name = Name .. " box",
                     Default = C.Box,
                     Callback = function(Value) C.Box = Value; ClearHighlights(Kind) end,
                 }
-                UIRef.EspSection:AddToggle{
+                Sec:AddDropdown{
+                    Name = Name .. " box style",
+                    Options = { "2D", "3D", "Corner" },
+                    Default = C.BoxStyle,
+                    Callback = function(Value) C.BoxStyle = Value; ClearHighlights(Kind) end,
+                }
+                Sec:AddToggle{
                     Name = Name .. " label (level, EXP, HP)",
                     Default = C.Label,
                     Callback = function(Value) C.Label = Value; ClearHighlights(Kind) end,
                 }
-                UIRef.EspSection:AddColorPicker{
+                Sec:AddColorPicker{
                     Name = Name .. " colour",
                     Default = C.Color,
                     Callback = function(Color)
@@ -313,7 +435,10 @@ return {
             end
         end
 
-        Context.Lifetime.OnEnd(ClearHighlights)
+        Context.Lifetime.OnEnd(function()
+            ClearHighlights()
+            if Gui then Gui:Destroy() end
+        end)
 
         return Feature
     end,
