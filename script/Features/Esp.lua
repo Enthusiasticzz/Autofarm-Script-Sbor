@@ -31,7 +31,7 @@ return {
         local KINDS = { "Player", "Mob", "Weapon" }
 
         --// Per-kind settings. Each kind has its own on/off, colour, and the
-        --// drawing style it uses: outline (Highlight), box, tracer, or label.
+        --// drawing style it uses: outline (Highlight), box, or label.
         local S = {
             Kinds = {},
             Highlights = {},   -- [Target] = { Kind = ..., Instance = Highlight }
@@ -44,7 +44,6 @@ return {
                 Outline = true,
                 Box = false,
                 BoxStyle = "3D",
-                Tracer = false,
                 Label = false,
             }
         end
@@ -259,13 +258,13 @@ return {
                 if Part then
                     --// A BillboardGui only renders under a part, so it lives on the
                     --// head (or the first part found) rather than the model.
-                    local Gui = Instance.new("BillboardGui")
-                    Gui.Name = "AICEspLabel" .. Kind
-                    Gui.Adornee = Part
-                    Gui.AlwaysOnTop = true
-                    Gui.Size = UDim2.fromOffset(180, 70)
-                    Gui.StudsOffset = Vector3.new(0, 3, 0)
-                    Gui.Parent = Part
+                    local LabelGui = Instance.new("BillboardGui")
+                    LabelGui.Name = "AICEspLabel" .. Kind
+                    LabelGui.Adornee = Part
+                    LabelGui.AlwaysOnTop = true
+                    LabelGui.Size = UDim2.fromOffset(180, 70)
+                    LabelGui.StudsOffset = Vector3.new(0, 3, 0)
+                    LabelGui.Parent = Part
 
                     local Text = Instance.new("TextLabel")
                     Text.BackgroundTransparency = 1
