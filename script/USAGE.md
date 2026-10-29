@@ -828,6 +828,11 @@ Everything here is shared by every profile and PlaceId, so none of it is part of
 
 - **Auto Start Game** (off, global) — clicks through the title screen into the game. Shared by every profile: it runs before a profile has been loaded.
 - **FPS Boost** (off, global) — turns off shadows, post effects, particles, lights and water waves for frames. Shared by every profile; it is about the machine, not the farm.
+- **Dismiss Death Prompt** (on, global) — presses **No** on the confirm notice the game puts up
+  when the character dies (`PlayerGui.GameGui.Confirm2`), so it never holds the run at a dialog.
+  It only looks for the notice for 30 s after a death, so a confirm opened by hand at any other
+  time is never pressed. Executor only: pressing it needs one of the click methods GuiClick uses
+  (`getconnections`, `firesignal`, `VirtualInputManager`, the real mouse).
 
 #### Webhook
 

@@ -6415,6 +6415,144 @@ return Feature
 end,
 }
 ]======],
+	["Features/DeathPrompt.lua"] = [======[
+return {
+Name = "DeathPrompt",
+IsFeature = true,
+Dependencies = {"Runtime", "SaveConfig", "GuiClick"},
+Start = function(Context)
+local Runtime = Context.Runtime
+local PlayerGui = Context.PlayerGui
+local GuiClick = Context.GuiClick
+local FeatureState = Context.Feature
+local AICUI = Context.AICUI
+local UIRef = Context.UIRef
+local NotifyAction = Context.NotifyAction
+local GUI_NAME = "GameGui"
+local NOTICE_NAME = "Confirm2"
+local ROW_NAME = "C"
+local BUTTON_NAME = "No"
+local WATCH_SECONDS = 30
+local VERIFY_SECONDS = 0.7
+local RETRY_SECONDS = 2
+local Feature = {
+Name = "DeathPrompt",
+IsFeature = true,
+}
+local S = {
+Dead = false,
+ArmedUntil = 0,
+Clicking = false,
+NextAttemptAt = 0,
+LastMethod = nil,
+Warned = false,
+}
+Feature.S = S
+local function FindNoticeButton()
+local GameGui = PlayerGui:FindFirstChild(GUI_NAME)
+local Notice = GameGui and GameGui:FindFirstChild(NOTICE_NAME)
+if not Notice then
+return nil
+end
+local Row = Notice:FindFirstChild(ROW_NAME)
+local Button = Row and Row:FindFirstChild(BUTTON_NAME)
+if Button and not Button:IsA("GuiButton") then
+local Click = nil
+for _, Descendant in ipairs(Button:GetDescendants()) do
+if Descendant:IsA("GuiButton") then
+Click = Descendant
+break
+end
+end
+Button = Click
+end
+if not Button then
+for _, Descendant in ipairs(Notice:GetDescendants()) do
+if Descendant:IsA("GuiButton") and Descendant.Name == BUTTON_NAME then
+Button = Descendant
+break
+end
+end
+end
+if Button and GuiClick.IsOnScreen(Button) then
+return Button
+end
+return nil
+end
+local function IsNoticeGone()
+return FindNoticeButton() == nil
+end
+local function WaitClosed(Seconds)
+local Deadline = os.clock() + Seconds
+while os.clock() < Deadline do
+if IsNoticeGone() then
+return true
+end
+task.wait(0.05)
+end
+return IsNoticeGone()
+end
+local function Press(Button)
+for _, Method in ipairs(GuiClick.GetOrderedMethods(S.LastMethod)) do
+if not Button.Parent or not GuiClick.IsOnScreen(Button) then
+return true
+end
+if Method.Click(Button) then
+S.LastMethod = Method.Name
+if WaitClosed(VERIFY_SECONDS) then
+return true
+end
+end
+end
+return IsNoticeGone()
+end
+local function Run(Button)
+local Ok, Pressed = pcall(Press, Button)
+S.Clicking = false
+if Ok and Pressed then
+print("[DeathPrompt] Pressed No on the death notice")
+return
+end
+S.NextAttemptAt = os.clock() + RETRY_SECONDS
+if not S.Warned then
+S.Warned = true
+warn("[DeathPrompt] Could not press No on the death notice; press it yourself")
+NotifyAction("Dismiss Death Prompt", "Could not press No on the death notice.", 5)
+end
+end
+function Feature:Update()
+if not FeatureState.DeathPrompt.Enabled then
+return
+end
+local Character, Humanoid = Runtime:GetCharacter()
+local Dead = Character == nil or Humanoid == nil or Humanoid.Health <= 0
+local Now = os.clock()
+if Dead and not S.Dead then
+S.Dead = true
+S.ArmedUntil = Now + WATCH_SECONDS
+S.NextAttemptAt = 0
+elseif not Dead and S.Dead then
+S.Dead = false
+end
+if S.Clicking or Now >= S.ArmedUntil or Now < S.NextAttemptAt then
+return
+end
+local Button = FindNoticeButton()
+if not Button then
+return
+end
+S.Clicking = true
+task.spawn(Run, Button)
+end
+AICUI.BindFeatureToggle("DeathPrompt", "Dismiss Death Prompt", function(Enabled)
+if not Enabled then
+S.ArmedUntil = 0
+end
+end, UIRef.UtilitySection)
+return Feature
+end,
+}
+]======],
 	["Features/DebugVisualizer.lua"] = [======[
 return {
 Name = "DebugVisualizer",

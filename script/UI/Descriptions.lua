@@ -25,6 +25,7 @@ return {
             ["Safe Booster Reset"] = "Refill Booster waits until no mob is hitting you",
             ["Refresh Boosters"] = "Looks again for boosters in PlayerStats and lists any new ones",
             ["Auto Start Game"] = "Clicks through the title screen into the game",
+            ["Dismiss Death Prompt"] = "Presses No on the confirm notice that appears when you die",
             ["FPS Boost"] = "Turns off shadows, effects, particles and lights for more FPS",
             ["Party System"] = "Follows the Leader to their server with the tp friend command",
             ["Waypoint Loop"] = "Farms only the zones paired with waypoints, walking between them",

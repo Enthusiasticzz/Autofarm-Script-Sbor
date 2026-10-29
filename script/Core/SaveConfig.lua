@@ -58,6 +58,11 @@ return {
             --// Click through the title screen (AutoStartGame). Shared by every
             --// profile: it runs before the farm's profile matters.
             { Name = "AutoStartGame",     Default = false, Key = "u", Global = true },
+            --// Presses No on the confirm notice the game puts up when the
+            --// character dies (DeathPrompt). Shared by every profile, like the
+            --// other Utility tab controls, so every export key stays free for
+            --// a toggle that belongs to a profile.
+            { Name = "DeathPrompt",       Default = true, Global = true },
             --// Block Whitelist players never make Auto Block hop (even when
             --// blocked) or Leave On Danger Group leave. Owned by AutoBlock;
             --// shared by every profile, like the Block Whitelist.

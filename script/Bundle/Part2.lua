@@ -4698,6 +4698,7 @@ SaveConfig.Features = {
 { Name = "FollowerGuard",     Default = true,  Key = "y", Global = true },
 { Name = "MobGather",         Default = false, Key = "t" },
 { Name = "AutoStartGame",     Default = false, Key = "u", Global = true },
+{ Name = "DeathPrompt",       Default = true, Global = true },
 { Name = "WhitelistSkipsSafety", Default = true, Key = "v", Global = true },
 { Name = "AutoBlockLeaveOnly", Default = false, Global = true },
 { Name = "RandomLeaveDelay", Default = true, Global = true },

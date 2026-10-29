@@ -107,6 +107,7 @@ local MODULES = {
     "Features/AntiAFK.lua",
     "Features/FpsBoost.lua",
     "Features/AutoStartGame.lua",
+    "Features/DeathPrompt.lua",
     "Features/Minezone.lua",
     "Features/WalkController.lua",
     "Features/AutoMining.lua",
