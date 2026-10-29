@@ -1,7 +1,10 @@
 -- Esp outlines players, mobs and equipped weapons in the world.
 --
--- Each enabled kind can draw any mix of: an outline (Highlight), a box
--- (3D SelectionBox, or screen-space 2D / Corner frames), and a label.
+-- Each enabled kind can draw an outline (Highlight) and/or a 2D box.
+-- Everything lives under one ScreenGui: the highlights sit in a folder inside
+-- it, and the 2D boxes are Frames moved every render frame from the target's
+-- projected bounding box.
+--
 -- Players are the models directly in workspace that have a Humanoid. Mobs are
 -- the models in workspace.Mobs. Weapons are the Sword and Sword2 models on a
 -- player, or the mob's Weapon model.
@@ -15,11 +18,9 @@ return {
     },
 
     Start = function(Context)
-        local Services = Context.Services
-        local Players = Services.Players
         local Player = Context.Player
         local UIRef = Context.UIRef
-        local AICUI = Context.AICUI
+        local RunService = game:GetService("RunService")
 
         local SCAN_INTERVAL = 0.5
 
@@ -33,7 +34,7 @@ return {
 
         local S = {
             Kinds = {},
-            Entries = {}, -- [Target] = { Kind, Instances, Screen?, Label? }
+            Entries = {}, -- [Target] = { Kind, Highlight?, Frame?, Stroke? }
             Timer = 0,
         }
         for _, Kind in ipairs(KINDS) do
@@ -42,8 +43,6 @@ return {
                 Color = COLORS[Kind],
                 Outline = true,
                 Box = false,
-                BoxStyle = "3D",
-                Label = false,
             }
         end
 
@@ -63,9 +62,8 @@ return {
         end
 
         local function Remove(Target, Entry)
-            for _, Item in ipairs(Entry.Instances) do
-                pcall(function() Item:Destroy() end)
-            end
+            if Entry.Highlight then pcall(function() Entry.Highlight:Destroy() end) end
+            if Entry.Frame then pcall(function() Entry.Frame:Destroy() end) end
             S.Entries[Target] = nil
         end
 
@@ -77,19 +75,68 @@ return {
             end
         end
 
-        --// Dropdowns and pickers may hand back a table or a plain value.
-        local function Unwrap(Value)
-            if type(Value) == "table" then
-                return Value[1] or Value.Value or Value.Color
+        ----------------------------------------------------------------------
+        -- ScreenGui root
+        ----------------------------------------------------------------------
+
+        local Root, HighlightFolder
+
+        local function TryParent(Gui, Parent)
+            if not Parent then return false end
+            local Ok = pcall(function() Gui.Parent = Parent end)
+            return Ok and Gui.Parent == Parent
+        end
+
+        --// One ScreenGui holds everything. It goes in a hidden UI container
+        --// when the executor has one, then CoreGui, then PlayerGui. If it is
+        --// ever lost (PlayerGui reset, etc.) it is rebuilt and all entries
+        --// are redrawn on the same scan.
+        local function GetRoot()
+            if Root and Root.Parent and HighlightFolder and HighlightFolder.Parent then
+                return Root
             end
-            return Value
+
+            if Root then
+                pcall(function() Root:Destroy() end)
+            end
+            Root, HighlightFolder = nil, nil
+            Clear()
+
+            local Gui = Instance.new("ScreenGui")
+            Gui.Name = "AICEsp"
+            Gui.IgnoreGuiInset = true
+            Gui.ResetOnSpawn = false
+            Gui.ClipToDeviceSafeArea = false
+            Gui.DisplayOrder = 999999
+
+            local Parented = false
+            if type(gethui) == "function" then
+                local Ok, Hui = pcall(gethui)
+                if Ok then Parented = TryParent(Gui, Hui) end
+            end
+            if not Parented then
+                Parented = TryParent(Gui, game:GetService("CoreGui"))
+            end
+            if not Parented then
+                Parented = TryParent(Gui, Player:FindFirstChildOfClass("PlayerGui"))
+            end
+            if not Parented then
+                Gui:Destroy()
+                return nil
+            end
+
+            local Folder = Instance.new("Folder")
+            Folder.Name = "Outlines"
+            Folder.Parent = Gui
+
+            Root, HighlightFolder = Gui, Folder
+            return Root
         end
 
         ----------------------------------------------------------------------
-        -- Screen-space boxes (2D / Corner)
+        -- 2D boxes
         ----------------------------------------------------------------------
 
-        local Gui
         local CORNERS = {}
         for _, X in ipairs({ -0.5, 0.5 }) do
             for _, Y in ipairs({ -0.5, 0.5 }) do
@@ -99,141 +146,51 @@ return {
             end
         end
 
-        --// One ScreenGui holds every 2D / Corner frame. It goes in a hidden
-        --// UI container when one exists, otherwise PlayerGui.
-        local function GetGui()
-            if Gui and Gui.Parent then return Gui end
-
-            local NewGui = Instance.new("ScreenGui")
-            NewGui.Name = "AICEspScreen"
-            NewGui.IgnoreGuiInset = true
-            NewGui.ResetOnSpawn = false
-            NewGui.DisplayOrder = 50
-
-            local Parented = false
-            if type(gethui) == "function" then
-                Parented = pcall(function() NewGui.Parent = gethui() end) and NewGui.Parent ~= nil
-            end
-            if not Parented then
-                local PlayerGui = Player:FindFirstChildOfClass("PlayerGui")
-                if not PlayerGui then
-                    NewGui:Destroy()
-                    return nil
-                end
-                NewGui.Parent = PlayerGui
-            end
-
-            Gui = NewGui
-            return Gui
-        end
-
-        --// Screen rectangle around a target, or nil when any corner is behind
-        --// the camera (a half-visible box would be wrong, so it is hidden).
+        --// Screen rectangle around a target. Corners behind the camera are
+        --// skipped (their projection is mirrored); nil when none are in front.
         local function ProjectBox(Target)
             local Camera = workspace.CurrentCamera
             if not Camera then return nil end
 
-            local CF, Size = Target:GetBoundingBox()
+            local Ok, CF, Size = pcall(Target.GetBoundingBox, Target)
+            if not Ok then return nil end
+
             local MinX, MinY = math.huge, math.huge
             local MaxX, MaxY = -math.huge, -math.huge
+            local InFront = 0
 
             for _, Corner in ipairs(CORNERS) do
-                local World = CF:PointToWorldSpace(Corner * Size)
-                local Point = Camera:WorldToViewportPoint(World)
-                if Point.Z <= 0 then return nil end
-                MinX = math.min(MinX, Point.X)
-                MinY = math.min(MinY, Point.Y)
-                MaxX = math.max(MaxX, Point.X)
-                MaxY = math.max(MaxY, Point.Y)
+                local Point = Camera:WorldToViewportPoint(CF:PointToWorldSpace(Corner * Size))
+                if Point.Z > 0 then
+                    InFront += 1
+                    MinX = math.min(MinX, Point.X)
+                    MinY = math.min(MinY, Point.Y)
+                    MaxX = math.max(MaxX, Point.X)
+                    MaxY = math.max(MaxY, Point.Y)
+                end
             end
 
+            if InFront == 0 then return nil end
             return MinX, MinY, MaxX, MaxY
         end
 
-        local function HideFrames(Frames)
-            for _, F in ipairs(Frames) do F.Visible = false end
-        end
-
-        local function UpdateScreenBoxes()
+        local function UpdateBoxes()
             for Target, Entry in pairs(S.Entries) do
-                local Screen = Entry.Screen
-                if Screen and Target.Parent then
-                    local X1, Y1, X2, Y2 = ProjectBox(Target)
-                    if not X1 then
-                        HideFrames(Screen.Frames)
-                    elseif Screen.Style == "2D" then
-                        local F = Screen.Frames[1]
-                        F.Visible = true
-                        F.Position = UDim2.fromOffset(X1, Y1)
-                        F.Size = UDim2.fromOffset(X2 - X1, Y2 - Y1)
+                local Frame = Entry.Frame
+                if Frame then
+                    local X1, Y1, X2, Y2
+                    if Target.Parent then
+                        X1, Y1, X2, Y2 = ProjectBox(Target)
+                    end
+                    if X1 then
+                        Frame.Position = UDim2.fromOffset(X1, Y1)
+                        Frame.Size = UDim2.fromOffset(X2 - X1, Y2 - Y1)
+                        Frame.Visible = true
                     else
-                        local A = math.max(4, math.min(X2 - X1, Y2 - Y1) * 0.25)
-                        local T = 2
-                        local Segs = {
-                            { X1, Y1, A, T }, { X1, Y1, T, A },
-                            { X2 - A, Y1, A, T }, { X2 - T, Y1, T, A },
-                            { X1, Y2 - T, A, T }, { X1, Y2 - A, T, A },
-                            { X2 - A, Y2 - T, A, T }, { X2 - T, Y2 - A, T, A },
-                        }
-                        for I, F in ipairs(Screen.Frames) do
-                            local Seg = Segs[I]
-                            F.Visible = true
-                            F.Position = UDim2.fromOffset(Seg[1], Seg[2])
-                            F.Size = UDim2.fromOffset(Seg[3], Seg[4])
-                        end
+                        Frame.Visible = false
                     end
                 end
             end
-        end
-
-        ----------------------------------------------------------------------
-        -- Labels
-        ----------------------------------------------------------------------
-
-        local function PartOf(Target)
-            return Target:FindFirstChild("Head")
-                or Target.PrimaryPart
-                or Target:FindFirstChildWhichIsA("BasePart")
-        end
-
-        --// Name, then level, EXP and HP where the game exposes them.
-        --// Missing pieces are simply left out.
-        local function LabelText(Target, Kind)
-            local Lines = {}
-            local Owner = Kind == "Player" and Players:GetPlayerFromCharacter(Target) or nil
-            local Config = Kind == "Mob" and Target:FindFirstChild("Config") or nil
-            local MobEntity = Config and Config:FindFirstChild("Entity")
-
-            local Name = Owner and Owner.Name
-                or (MobEntity and MobEntity:IsA("StringValue") and MobEntity.Value ~= "" and MobEntity.Value)
-                or Target.Name
-            table.insert(Lines, Name)
-
-            if Owner then
-                local Stats = Owner:FindFirstChild("PlayerStats")
-                local LevelStat = Stats and Stats:FindFirstChild("Level")
-                local ExpStat = Stats and Stats:FindFirstChild("EXP")
-                local Level = LevelStat and tonumber(LevelStat.Value)
-                if Level then
-                    table.insert(Lines, "Lv " .. Level)
-                    if ExpStat and type(AICUI.neededExp) == "function" then
-                        local Needed = tonumber(AICUI.neededExp(Level)) or 0
-                        table.insert(Lines, "EXP " .. math.floor(ExpStat.Value) .. "/" .. math.floor(Needed))
-                    end
-                end
-            elseif Config then
-                local LvlStat = Config:FindFirstChild("LVL")
-                if LvlStat then
-                    table.insert(Lines, "Lv " .. tostring(LvlStat.Value))
-                end
-            end
-
-            local Humanoid = Target:FindFirstChildOfClass("Humanoid")
-            if Humanoid and Kind ~= "Weapon" then
-                table.insert(Lines, "HP " .. math.floor(Humanoid.Health) .. "/" .. math.floor(Humanoid.MaxHealth))
-            end
-
-            return table.concat(Lines, "\n")
         end
 
         ----------------------------------------------------------------------
@@ -242,82 +199,32 @@ return {
 
         local function AddOutline(Entry, Target, C, Kind)
             local Highlight = Instance.new("Highlight")
-            Highlight.Name = "AICEsp" .. Kind
+            Highlight.Name = Kind
             Highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
             Highlight.FillTransparency = 1
             Highlight.OutlineColor = C.Color
             Highlight.OutlineTransparency = 0
             Highlight.Adornee = Target
-            Highlight.Parent = Target
-            table.insert(Entry.Instances, Highlight)
+            Highlight.Parent = HighlightFolder
+            Entry.Highlight = Highlight
         end
 
-        --// One SelectionBox around the whole model. It is parented to the
-        --// model itself so it is cleaned up with it.
-        local function Add3DBox(Entry, Target, C, Kind)
-            local Box = Instance.new("SelectionBox")
-            Box.Name = "AICEspBox" .. Kind
-            Box.Adornee = Target
-            Box.Color3 = C.Color
-            Box.LineThickness = 0.03
-            Box.SurfaceTransparency = 1
-            Box.Parent = Target
-            table.insert(Entry.Instances, Box)
-        end
+        local function AddBox(Entry, C, Kind)
+            local Frame = Instance.new("Frame")
+            Frame.Name = Kind .. "Box"
+            Frame.BackgroundTransparency = 1
+            Frame.BorderSizePixel = 0
+            Frame.Visible = false
+            Frame.ZIndex = 2
 
-        local function AddScreenBox(Entry, C)
-            local ScreenGui = GetGui()
-            if not ScreenGui then return end
+            local Stroke = Instance.new("UIStroke")
+            Stroke.Color = C.Color
+            Stroke.Thickness = 1.5
+            Stroke.Parent = Frame
 
-            local Frames = {}
-            local Count = C.BoxStyle == "Corner" and 8 or 1
-            for _ = 1, Count do
-                local F = Instance.new("Frame")
-                F.BorderSizePixel = 0
-                F.Visible = false
-                if C.BoxStyle == "2D" then
-                    F.BackgroundTransparency = 1
-                    local Stroke = Instance.new("UIStroke")
-                    Stroke.Color = C.Color
-                    Stroke.Thickness = 1.5
-                    Stroke.Parent = F
-                else
-                    F.BackgroundColor3 = C.Color
-                end
-                F.Parent = ScreenGui
-                table.insert(Frames, F)
-                table.insert(Entry.Instances, F)
-            end
-            Entry.Screen = { Style = C.BoxStyle, Frames = Frames }
-        end
-
-        --// A BillboardGui only renders under a part, so it lives on the head
-        --// (or the first part found) rather than on the model.
-        local function AddLabel(Entry, Target, C, Kind)
-            local Part = PartOf(Target)
-            if not Part then return end
-
-            local LabelGui = Instance.new("BillboardGui")
-            LabelGui.Name = "AICEspLabel" .. Kind
-            LabelGui.Adornee = Part
-            LabelGui.AlwaysOnTop = true
-            LabelGui.Size = UDim2.fromOffset(180, 70)
-            LabelGui.StudsOffset = Vector3.new(0, 3, 0)
-            LabelGui.Parent = Part
-
-            local Text = Instance.new("TextLabel")
-            Text.BackgroundTransparency = 1
-            Text.Size = UDim2.fromScale(1, 1)
-            Text.TextColor3 = C.Color
-            Text.TextStrokeTransparency = 0.4
-            Text.Font = Enum.Font.GothamBold
-            Text.TextSize = 12
-            Text.TextYAlignment = Enum.TextYAlignment.Bottom
-            Text.Text = LabelText(Target, Kind)
-            Text.Parent = LabelGui
-
-            Entry.Label = Text
-            table.insert(Entry.Instances, LabelGui)
+            Frame.Parent = Root
+            Entry.Frame = Frame
+            Entry.Stroke = Stroke
         end
 
         local function Mark(Target, Kind)
@@ -325,21 +232,16 @@ return {
             if S.Entries[Target] then return end
 
             local C = S.Kinds[Kind]
-            local Entry = { Kind = Kind, Instances = {} }
+            if not (C.Outline or C.Box) then return end
 
-            --// Each piece is built on its own so one failure can't stop the rest.
+            local Entry = { Kind = Kind }
+
+            --// Each piece is built on its own so one failure can't stop the other.
             if C.Outline then
                 pcall(AddOutline, Entry, Target, C, Kind)
             end
             if C.Box then
-                if C.BoxStyle == "3D" then
-                    pcall(Add3DBox, Entry, Target, C, Kind)
-                else
-                    pcall(AddScreenBox, Entry, C)
-                end
-            end
-            if C.Label then
-                pcall(AddLabel, Entry, Target, C, Kind)
+                pcall(AddBox, Entry, C, Kind)
             end
 
             S.Entries[Target] = Entry
@@ -370,6 +272,8 @@ return {
         end
 
         local function Scan()
+            if not GetRoot() then return end
+
             local WantPlayer = IsEnabled("Player")
             local WantMob = IsEnabled("Mob")
             local WantWeapon = IsEnabled("Weapon")
@@ -409,13 +313,6 @@ return {
                 end
             end
 
-            --// Labels are rewritten each scan so level, EXP and HP stay current.
-            for Target, Entry in pairs(S.Entries) do
-                if Entry.Label and Entry.Label.Parent and Target.Parent then
-                    Entry.Label.Text = LabelText(Target, Entry.Kind)
-                end
-            end
-
             Prune()
         end
 
@@ -432,27 +329,45 @@ return {
         function Feature:Update(DeltaTime)
             if not AnyEnabled() then return end
 
-            UpdateScreenBoxes()
-
             S.Timer += DeltaTime
             if S.Timer < SCAN_INTERVAL then return end
             S.Timer = 0
             Scan()
         end
 
+        --// Boxes follow the camera, so they move on RenderStepped rather than
+        --// on the slower scan (otherwise they trail behind the target).
+        local RenderConnection = RunService.RenderStepped:Connect(function()
+            if AnyEnabled() then
+                UpdateBoxes()
+            end
+        end)
+
         local function SetKind(Kind, Value)
             S.Kinds[Kind].Enabled = Value == true
-            --// Turning a kind off removes its drawings at once, not on the next scan.
-            if not IsEnabled(Kind) then
+            if IsEnabled(Kind) then
+                S.Timer = SCAN_INTERVAL
+            else
+                --// Turning a kind off removes its drawings at once.
                 Clear(Kind)
             end
         end
 
-        --// Changing any drawing option rebuilds that kind on the next scan,
-        --// and a scan is forced so the change shows straight away.
+        --// Toggling outline or box rebuilds that kind on the next update.
         local function Rebuild(Kind)
             Clear(Kind)
             S.Timer = SCAN_INTERVAL
+        end
+
+        --// Colour changes are applied live, with no rebuild.
+        local function Recolor(Kind)
+            local Color = S.Kinds[Kind].Color
+            for _, Entry in pairs(S.Entries) do
+                if Entry.Kind == Kind then
+                    if Entry.Highlight then Entry.Highlight.OutlineColor = Color end
+                    if Entry.Stroke then Entry.Stroke.Color = Color end
+                end
+            end
         end
 
         ----------------------------------------------------------------------
@@ -468,10 +383,7 @@ return {
                     Name = Kind .. " ESP",
                     Bold = true,
                     Default = false,
-                    Callback = function(Value)
-                        SetKind(Kind, Value)
-                        S.Timer = SCAN_INTERVAL
-                    end,
+                    Callback = function(Value) SetKind(Kind, Value) end,
                 }
                 Sec:AddToggle{
                     Name = Kind .. " outline",
@@ -482,30 +394,10 @@ return {
                     end,
                 }
                 Sec:AddToggle{
-                    Name = Kind .. " box",
+                    Name = Kind .. " 2D box",
                     Default = C.Box,
                     Callback = function(Value)
                         C.Box = Value == true
-                        Rebuild(Kind)
-                    end,
-                }
-                Sec:AddDropdown{
-                    Name = Kind .. " box style",
-                    Options = { "2D", "3D", "Corner" },
-                    Default = C.BoxStyle,
-                    Callback = function(Value)
-                        Value = Unwrap(Value)
-                        if Value == "2D" or Value == "3D" or Value == "Corner" then
-                            C.BoxStyle = Value
-                            Rebuild(Kind)
-                        end
-                    end,
-                }
-                Sec:AddToggle{
-                    Name = Kind .. " label (level, EXP, HP)",
-                    Default = C.Label,
-                    Callback = function(Value)
-                        C.Label = Value == true
                         Rebuild(Kind)
                     end,
                 }
@@ -513,10 +405,12 @@ return {
                     Name = Kind .. " colour",
                     Default = C.Color,
                     Callback = function(Color)
-                        Color = Unwrap(Color)
+                        if type(Color) == "table" then
+                            Color = Color.Color or Color.Value or Color[1]
+                        end
                         if typeof(Color) == "Color3" then
                             C.Color = Color
-                            Rebuild(Kind)
+                            Recolor(Kind)
                         end
                     end,
                 }
@@ -524,8 +418,9 @@ return {
         end
 
         Context.Lifetime.OnEnd(function()
+            RenderConnection:Disconnect()
             Clear()
-            if Gui then Gui:Destroy() end
+            if Root then Root:Destroy() end
         end)
 
         return Feature
