@@ -832,8 +832,9 @@ Everything here is shared by every profile and PlaceId, so none of it is part of
 - **FPS Boost** (off, global) — turns off shadows, post effects, particles, lights and water waves for frames. Shared by every profile; it is about the machine, not the farm.
 - **Dismiss Death Prompt** (on, global) — presses **No** on the confirm notice the game puts up
   when the character dies, so it never holds the run at a dialog. The notice is looked for at
-  `PlayerGui.GameGui.Confirm2` first and then as any `Confirm2` under a ScreenGui, and the **No**
-  side is clicked whether it is a button or the frame the label sits in. A death or a respawn
+  `PlayerGui.GameGui.Confirm2` first and then as a `Confirm` or `Confirm2` anywhere under a
+  ScreenGui, and the **No** side is clicked whether it is a button or the frame the label sits
+  in. A death or a respawn
   (`CharacterAdded`) opens a 30 s window, so a confirm opened by hand at any other time is never
   pressed. When nothing matches, the console lists the on-screen buttons it could see, once per
   death. Executor only: pressing it needs one of the click methods GuiClick uses

@@ -6425,7 +6425,7 @@ local AICUI = Context.AICUI
 local UIRef = Context.UIRef
 local NotifyAction = Context.NotifyAction
 local GUI_NAME = "GameGui"
-local NOTICE_NAME = "Confirm2"
+local NOTICE_NAMES = { "Confirm2", "Confirm" }
 local ROW_NAME = "C"
 local BUTTON_NAME = "No"
 local BUTTON_LOWER = string.lower(BUTTON_NAME)
@@ -6455,9 +6455,13 @@ Feature.S = S
 local NOTICE_CACHE_TIME = 0.25
 local function FindNotice()
 local GameGui = PlayerGui:FindFirstChild(GUI_NAME)
-local Notice = GameGui and GameGui:FindFirstChild(NOTICE_NAME)
-if Notice then
-return Notice
+if GameGui then
+for _, Name in ipairs(NOTICE_NAMES) do
+local Found = GameGui:FindFirstChild(Name)
+if Found then
+return Found
+end
+end
 end
 local Now = os.clock()
 if Now - S.NoticeAt < NOTICE_CACHE_TIME then
@@ -6467,10 +6471,12 @@ S.NoticeAt = Now
 S.NoticeCache = nil
 for _, Root in ipairs(PlayerGui:GetChildren()) do
 if Root:IsA("LayerCollector") then
-local Found = Root:FindFirstChild(NOTICE_NAME, true)
+for _, Name in ipairs(NOTICE_NAMES) do
+local Found = Root:FindFirstChild(Name, true)
 if Found then
 S.NoticeCache = Found
 return Found
+end
 end
 end
 end
@@ -6524,7 +6530,7 @@ local function DumpVisible()
 local Notice = FindNotice()
 local Root = Notice or PlayerGui:FindFirstChild(GUI_NAME)
 if not Root then
-print("[DeathPrompt] No Confirm2 and no GameGui in PlayerGui: nothing to click and nothing to list")
+print("[DeathPrompt] No Confirm, no Confirm2 and no GameGui in PlayerGui: nothing to click and nothing to list")
 return
 end
 print("[DeathPrompt] No No button found under " .. Root:GetFullName() .. ". On screen:")

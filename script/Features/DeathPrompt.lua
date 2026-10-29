@@ -2,11 +2,13 @@
 -- character dies: PlayerGui.GameGui.Confirm2, with its buttons in the C row
 -- and the one to press named No.
 --
--- The notice is looked for at that path first and then as any Confirm2 under a
--- ScreenGui, and the No side is clicked whether it is a GuiButton or the Frame
--- the label sits in - the game's dialogs are not all built the same way. When
--- nothing matches, what is on screen is printed once, so a notice in a shape
--- this does not know can be fixed from the real paths rather than guessed at.
+-- The notice is looked for at that path first, then as a Confirm or Confirm2
+-- anywhere under a ScreenGui - the death dialog is one of those two names, and
+-- not always in GameGui. The No side is clicked whether it is a GuiButton or
+-- the Frame the label sits in: the game's dialogs are not all built the same
+-- way. When nothing matches, what is on screen is printed once, so a notice in
+-- a shape this does not know can be fixed from the real paths rather than
+-- guessed at.
 --
 -- It is armed by a death and looks for the notice only inside that window, so
 -- a confirm the user opens themselves at any other time is never pressed.
@@ -29,7 +31,11 @@ return {
 
         --// PlayerGui.GameGui.Confirm2.C.No
         local GUI_NAME = "GameGui"
-        local NOTICE_NAME = "Confirm2"
+        --// The death dialog answers to either name, and Confirm2 wins when both
+        --// are on screen: the plain Confirm is also used for other dialogs, so
+        --// it is only looked at as a whole node named Confirm, never as a
+        --// prefix of something else.
+        local NOTICE_NAMES = { "Confirm2", "Confirm" }
         local ROW_NAME = "C"
         local BUTTON_NAME = "No"
 
@@ -87,15 +93,21 @@ return {
         --// is cached: the GameGui path is two lookups and stays live.
         local NOTICE_CACHE_TIME = 0.25
 
-        --// The notice itself, while it is up. GameGui.Confirm2 first, then any
-        --// Confirm2 under a ScreenGui: a reskin that moves it to another screen
-        --// gui used to mean the notice was never seen at all.
+        --// The notice itself, while it is up. GameGui's Confirm2, then its
+        --// Confirm, then either of them anywhere under a ScreenGui: a reskin
+        --// that moves it to another screen gui used to mean the notice was
+        --// never seen at all.
         local function FindNotice()
             local GameGui = PlayerGui:FindFirstChild(GUI_NAME)
-            local Notice = GameGui and GameGui:FindFirstChild(NOTICE_NAME)
 
-            if Notice then
-                return Notice
+            if GameGui then
+                for _, Name in ipairs(NOTICE_NAMES) do
+                    local Found = GameGui:FindFirstChild(Name)
+
+                    if Found then
+                        return Found
+                    end
+                end
             end
 
             local Now = os.clock()
@@ -109,11 +121,13 @@ return {
 
             for _, Root in ipairs(PlayerGui:GetChildren()) do
                 if Root:IsA("LayerCollector") then
-                    local Found = Root:FindFirstChild(NOTICE_NAME, true)
+                    for _, Name in ipairs(NOTICE_NAMES) do
+                        local Found = Root:FindFirstChild(Name, true)
 
-                    if Found then
-                        S.NoticeCache = Found
-                        return Found
+                        if Found then
+                            S.NoticeCache = Found
+                            return Found
+                        end
                     end
                 end
             end
@@ -199,7 +213,7 @@ return {
             local Root = Notice or PlayerGui:FindFirstChild(GUI_NAME)
 
             if not Root then
-                print("[DeathPrompt] No Confirm2 and no GameGui in PlayerGui: nothing to click and nothing to list")
+                print("[DeathPrompt] No Confirm, no Confirm2 and no GameGui in PlayerGui: nothing to click and nothing to list")
                 return
             end
 
