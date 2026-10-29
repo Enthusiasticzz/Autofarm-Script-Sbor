@@ -2853,6 +2853,7 @@ Connection = nil,
 Failing = {},
 }
 local SLOW_FEATURE = 0.008
+local FIRST_TICK_SLOTS = 12
 function Heartbeat:Start(Features)
 local RunService =
 Context.Services
@@ -2862,18 +2863,24 @@ if self.Connection then
 self.Connection:Disconnect()
 end
 local Watch = { Since = os.clock(), Total = 0, Frames = 0, Worst = 0 }
+local FirstFrame, Frame = {}, 0
 self.Connection = RunService.Heartbeat:Connect(function(DeltaTime)
 local Lifetime = Context.Lifetime
 if Lifetime and Lifetime.Alive == false then
 self:Destroy()
 return
 end
-for _, Feature in ipairs(Features or {}) do
+Frame += 1
+for Index, Feature in ipairs(Features or {}) do
 if type(Feature.Update) == "function" then
 local Name = Feature.Name
 local Key = Name or Feature
-local State = self.Failing[Key]
 local Now = os.clock()
+local Ready = FirstFrame[Key]
+if Ready == nil then
+FirstFrame[Key] = 1 + (Index % FIRST_TICK_SLOTS)
+elseif Frame >= Ready then
+local State = self.Failing[Key]
 if not State or Now >= State.Until then
 local Started = os.clock()
 local Ok, Error = xpcall(Feature.Update, debug.traceback, Feature, DeltaTime)
@@ -2896,6 +2903,7 @@ warn(
 .. " failed to update: "
 .. tostring(Error)
 )
+end
 end
 end
 end
@@ -3144,7 +3152,7 @@ CONFIG.CURRENT_WAYPOINT_TARGET = 1
 AICFeature.S.WaypointWaitUntil = nil
 if AICFeature.ResetWaypointLoop then AICFeature.ResetWaypointLoop() end
 if AICFeature.ResetBossRoute then AICFeature.ResetBossRoute() end
-AICCombat.ResetTargetReposition()
+if AICCombat.ResetTargetReposition then AICCombat.ResetTargetReposition() end
 AICFeature.S.DeadzoneEscapePosition = nil
 PatrolState.PatrolPosition = nil
 AICFeature.S.FarmReturnPosition = nil
@@ -3415,6 +3423,9 @@ continue
 end
 local Data = Feature[Entry.Name]
 local Value = State[Entry.Name]
+if type(Data) ~= "table" then
+continue
+end
 if type(Value) ~= "boolean" then
 if Entry.Name == "AutoBlock" then
 Value = Data.Enabled == true
@@ -3427,8 +3438,14 @@ end
 AICFeature.S.Enabled = Feature.AutoFarm.Enabled
 for _, Entry in ipairs(SaveConfig.Features) do
 local Module = Context.Modules[Entry.Name]
-if type(Module) == "table" and Module.Enabled ~= nil and Entry.Name ~= "AutoBlock" and not Entry.Global then
-Module.Enabled = Feature[Entry.Name].Enabled
+local Stored = Feature[Entry.Name]
+if type(Module) == "table"
+and type(Stored) == "table"
+and Module.Enabled ~= nil
+and Entry.Name ~= "AutoBlock"
+and not Entry.Global
+then
+Module.Enabled = Stored.Enabled
 end
 end
 AICFeature.S.BlockEnabled = Feature.AutoBlock.Enabled

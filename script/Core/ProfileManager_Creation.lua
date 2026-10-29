@@ -182,7 +182,7 @@ return {
             if AICFeature.ResetWaypointLoop then AICFeature.ResetWaypointLoop() end
             --// The new profile brings its own Boss Route with it.
             if AICFeature.ResetBossRoute then AICFeature.ResetBossRoute() end
-            AICCombat.ResetTargetReposition()
+            if AICCombat.ResetTargetReposition then AICCombat.ResetTargetReposition() end
             AICFeature.S.DeadzoneEscapePosition = nil
             PatrolState.PatrolPosition = nil
             AICFeature.S.FarmReturnPosition = nil

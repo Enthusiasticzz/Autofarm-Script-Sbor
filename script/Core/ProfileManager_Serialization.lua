@@ -118,6 +118,12 @@ return {
                 local Data = Feature[Entry.Name]
                 local Value = State[Entry.Name]
 
+                --// A saved state naming a toggle this build no longer has used
+                --// to index nil here, and the throw aborted the whole restore.
+                if type(Data) ~= "table" then
+                    continue
+                end
+
                 --// AutoBlock's fallback is the place's AUTOBLOCK setting,
                 --// which ApplyProfileData has already put on the toggle.
                 if type(Value) ~= "boolean" then
@@ -137,8 +143,15 @@ return {
             for _, Entry in ipairs(SaveConfig.Features) do
                 local Module = Context.Modules[Entry.Name]
 
-                if type(Module) == "table" and Module.Enabled ~= nil and Entry.Name ~= "AutoBlock" and not Entry.Global then
-                    Module.Enabled = Feature[Entry.Name].Enabled
+                local Stored = Feature[Entry.Name]
+
+                if type(Module) == "table"
+                    and type(Stored) == "table"
+                    and Module.Enabled ~= nil
+                    and Entry.Name ~= "AutoBlock"
+                    and not Entry.Global
+                then
+                    Module.Enabled = Stored.Enabled
                 end
             end
 

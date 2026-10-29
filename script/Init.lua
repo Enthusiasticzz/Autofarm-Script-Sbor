@@ -327,39 +327,12 @@ if Lifetime.Env then
     Lifetime.Env.AICSession = Lifetime
 end
 
---// A loop that throws every frame becomes a flood of executor messages, and
---// the executor's own reporter ends up printing only its re-entrancy warning.
---// The first few errors are named here, with the line that threw, and then it
---// stays quiet so the console is readable again.
-do
-    local Ok, ScriptContext = pcall(function()
-        return game:GetService("ScriptContext")
-    end)
-
-    if Ok and ScriptContext and ScriptContext.Error then
-        local Shown, Count, Since = 0, 0, os.clock()
-
-        Lifetime.Connect(ScriptContext.Error, function(Message, Trace)
-            Count += 1
-
-            if Shown < 5 then
-                Shown += 1
-                local Where = string.match(tostring(Trace or ""), "^[^\n]*") or "?"
-                print("[AIC] error #" .. Shown .. ": " .. tostring(Message) .. "   @ " .. tostring(Where))
-            end
-
-            local Now = os.clock()
-
-            if Now - Since >= 1 then
-                if Count > 10 then
-                    print(string.format("[AIC] %d errors in one second, see above", Count))
-                end
-
-                Count, Since = 0, Now
-            end
-        end)
-    end
-end
+--// ScriptContext.Error is deliberately NOT hooked. An executor runs its own
+--// handler for that signal, and printing from a second one re-enters it: the
+--// reported failure was a C stack overflow, which takes the whole client down
+--// instead of showing an error. Errors are reported where they are caught
+--// instead (the heartbeat and the boot stages below), which is the only place
+--// that knows which module they came from.
 
 --// The window is built first so its boot loader can report real progress:
 --// fetching takes the first half of the bar, starting modules the rest.
@@ -798,11 +771,20 @@ for _ in pairs(Specs) do
 end
 
 local Started = {}
+local Starting = {}
 local StartedCount = 0
 
 local function start(Name)
     if Started[Name] then
         return Context.Modules[Name]
+    end
+
+    --// A dependency loop (A needs B, B needs A) used to recurse until the
+    --// stack overflowed, which crashes the client rather than reporting an
+    --// error. The second visit to a module that is still starting stops it.
+    if Starting[Name] then
+        warn("[AIC] Dependency loop: " .. tostring(Name) .. " needs itself")
+        return nil
     end
 
     --// A newer run stopped this one while it was still starting. Building more
@@ -830,7 +812,9 @@ local function start(Name)
         "STARTING  //  " .. Name
     )
 
+    Starting[Name] = true
     local Ok, Module = xpcall(Spec.Start, debug.traceback, Context)
+    Starting[Name] = nil
 
     if not Ok then
         --// The error's own type is worth reporting: a module that raises a
@@ -892,7 +876,16 @@ for _, Name in ipairs(START_ORDER) do
     local Module = Context.Modules[Name]
 
     if type(Module) == "table" and type(Module.BuildLateUI) == "function" then
-        Module:BuildLateUI()
+        --// A control that cannot be placed must not take the boot with it:
+        --// everything after this point is unprotected, and an error thrown
+        --// here escaped to the executor (which crashed the client) instead
+        --// of showing a line on the loader.
+        local Ok, Error = xpcall(Module.BuildLateUI, debug.traceback, Module)
+
+        if not Ok then
+            warn("[AIC] " .. tostring(Name) .. " could not build its late controls: " .. tostring(Error))
+        end
+
         task.wait()
     end
 end
@@ -907,7 +900,15 @@ for _, Name in ipairs(START_ORDER) do
     local Module = Context.Modules[Name]
 
     if type(Module) == "table" and type(Module.Finalize) == "function" then
-        Module:Finalize()
+        --// Finalize restores the saved profile, which touches controls owned
+        --// by a dozen other modules. A saved setting from an older version
+        --// can throw here; that has to leave the menu usable, not end the run.
+        local Ok, Error = xpcall(Module.Finalize, debug.traceback, Module)
+
+        if not Ok then
+            warn("[AIC] " .. tostring(Name) .. " could not finish setting up: " .. tostring(Error))
+        end
+
         task.wait()
     end
 end
@@ -922,12 +923,30 @@ if not Lifetime.Alive then
     return nil
 end
 
-Context.Heartbeat:Start(Context.Features)
+--// The last unprotected step. Starting the loop is what turns a module's
+--// stored state into action, so it is the most likely place for a throw.
+do
+    local HeartbeatModule = Context.Heartbeat
+
+    --// Indexed outside the xpcall on purpose would throw before it ran, so a
+    --// missing module is checked first.
+    if type(HeartbeatModule) ~= "table" or type(HeartbeatModule.Start) ~= "function" then
+        fail("Heartbeat module is missing")
+    end
+
+    local Ok, Error = xpcall(HeartbeatModule.Start, debug.traceback, HeartbeatModule, Context.Features)
+
+    if not Ok then
+        fail("Heartbeat failed to start\n" .. tostring(Error))
+    end
+end
 
 --// Added last, so it runs first when the run ends: stop acting before the
 --// modules tear down their own parts and the window goes.
 Lifetime.OnEnd(function()
-    Context.Heartbeat:Destroy()
+    if Context.Heartbeat then
+        Context.Heartbeat:Destroy()
+    end
 
     local Character = Context.Player and Context.Player.Character
     local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
@@ -939,7 +958,13 @@ Lifetime.OnEnd(function()
 end)
 
 if Context.UI then
-    Context.UI:FinishLoading()
+    local Ok, Error = pcall(function()
+        Context.UI:FinishLoading()
+    end)
+
+    if not Ok then
+        warn("[AIC] The loading screen could not be closed: " .. tostring(Error))
+    end
 end
 
 return Context

@@ -19,6 +19,15 @@ return {
         --// thing that makes this kind of report cost a whole evening.
         local SLOW_FEATURE = 0.008
 
+        --// The first Update of a feature is where its one-time setup happens
+        --// (finding a target, opening a table, starting a loop). Running all
+        --// of them in the frame the loop starts is the spike that froze the
+        --// client the moment the loader reached "STARTING". They are spread
+        --// over the first dozen frames instead; from then on every feature
+        --// updates every frame as before. Counted in frames, not seconds, so
+        --// the spread does not change with the frame rate.
+        local FIRST_TICK_SLOTS = 12
+
         function Heartbeat:Start(Features)
             local RunService =
                 Context.Services
@@ -30,6 +39,7 @@ return {
             end
 
             local Watch = { Since = os.clock(), Total = 0, Frames = 0, Worst = 0 }
+            local FirstFrame, Frame = {}, 0
 
             self.Connection = RunService.Heartbeat:Connect(function(DeltaTime)
                 --// A run that ended while this connection was still bound stops
@@ -41,41 +51,49 @@ return {
                     return
                 end
 
-                for _, Feature in ipairs(Features or {}) do
+                Frame += 1
+
+                for Index, Feature in ipairs(Features or {}) do
                     if type(Feature.Update) == "function" then
                         --// Keyed by the feature itself when it carries no Name.
                         local Name = Feature.Name
                         local Key = Name or Feature
-                        local State = self.Failing[Key]
                         local Now = os.clock()
+                        local Ready = FirstFrame[Key]
 
-                        if not State or Now >= State.Until then
-                            local Started = os.clock()
-                            local Ok, Error = xpcall(Feature.Update, debug.traceback, Feature, DeltaTime)
-                            local Cost = os.clock() - Started
+                        if Ready == nil then
+                            FirstFrame[Key] = 1 + (Index % FIRST_TICK_SLOTS)
+                        elseif Frame >= Ready then
+                            local State = self.Failing[Key]
 
-                            Watch.Total += Cost
+                            if not State or Now >= State.Until then
+                                local Started = os.clock()
+                                local Ok, Error = xpcall(Feature.Update, debug.traceback, Feature, DeltaTime)
+                                local Cost = os.clock() - Started
 
-                            if Cost > Watch.Worst then
-                                Watch.Worst, Watch.Name = Cost, Name
-                            end
+                                Watch.Total += Cost
 
-                            if Ok then
-                                self.Failing[Key] = nil
-                            else
-                                State = State or { Count = 0 }
-                                State.Count += 1
-                                --// 2 s, 4 s, 8 s ... capped at 30 s.
-                                State.Until = Now + math.min(2 ^ State.Count, 30)
-                                self.Failing[Key] = State
+                                if Cost > Watch.Worst then
+                                    Watch.Worst, Watch.Name = Cost, Name
+                                end
 
-                                if State.Count <= 3 then
-                                    warn(
-                                        "[AIC] "
-                                        .. tostring(Name or "A feature")
-                                        .. " failed to update: "
-                                        .. tostring(Error)
-                                    )
+                                if Ok then
+                                    self.Failing[Key] = nil
+                                else
+                                    State = State or { Count = 0 }
+                                    State.Count += 1
+                                    --// 2 s, 4 s, 8 s ... capped at 30 s.
+                                    State.Until = Now + math.min(2 ^ State.Count, 30)
+                                    self.Failing[Key] = State
+
+                                    if State.Count <= 3 then
+                                        warn(
+                                            "[AIC] "
+                                            .. tostring(Name or "A feature")
+                                            .. " failed to update: "
+                                            .. tostring(Error)
+                                        )
+                                    end
                                 end
                             end
                         end

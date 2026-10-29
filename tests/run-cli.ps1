@@ -231,10 +231,19 @@ Check("Heartbeat isolates a failing feature", function()
     }
 
     Hb:Start(Features)
+
+    --// The first tick of every feature is spread over the first dozen frames
+    --// so the loop does not start all of them in one frame; get past that
+    --// spread, then measure the steady state exactly.
+    for _ = 1, 13 do
+        Handler(0.1)
+    end
+
+    local GoodBefore = Good
     Handler(0.1)
     Handler(0.1)
 
-    Equal(Good, 2, "a good feature kept updating past a failing one")
+    Equal(Good - GoodBefore, 2, "a good feature kept updating past a failing one")
     Equal(Bad, 1, "a failing feature is backed off instead of retried every frame")
     Equal(Hb.Failing["Bad"].Count, 1, "the failure was recorded once")
     Equal(Hb.Failing["Good"], nil, "a feature that works was not marked")
