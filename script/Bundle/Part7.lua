@@ -597,7 +597,9 @@ return {
 
                         AICCombatUtils.S.LAST_STUCK_POSITION = nil
                         AICCombatUtils.S.LAST_STUCK_TIME = now
-                        AICDebug.UpdateDebugWaypointColors()
+                        --// Forced: the route moved on, so the colours change now
+                        --// instead of waiting for the next heartbeat paint.
+                        AICDebug.UpdateDebugWaypointColors(true)
 
                         --// Waypoint wait: hold here before heading on. The
                         --// check at the top of the route stands still until then.

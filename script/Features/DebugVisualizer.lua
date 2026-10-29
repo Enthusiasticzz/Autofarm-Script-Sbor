@@ -261,16 +261,6 @@ return {
                 return
             end
         
-            if FromData.NextBeam then
-                FromData.NextBeam:Destroy()
-                FromData.NextBeam = nil
-            end
-        
-            if FromData.Arrow then
-                FromData.Arrow:Destroy()
-                FromData.Arrow = nil
-            end
-        
             local FromPart = FromData.MarkerPart
             local ToPart = ToData.MarkerPart
         
@@ -294,45 +284,66 @@ return {
                 ToAttachment.Parent = ToPart
             end
         
-            local Beam = Instance.new("Beam")
-            Beam.Name = "WaypointPath"
-            Beam.Attachment0 = FromAttachment
-            Beam.Attachment1 = ToAttachment
-            Beam.FaceCamera = true
-            Beam.LightEmission = 0.65
-            Beam.LightInfluence = 0
-            Beam.Segments = 1
-            Beam.Width0 = 0.045
-            Beam.Width1 = 0.045
-            Beam.Transparency = NumberSequence.new(0.15)
-            Beam.Color = ColorSequence.new(DEBUG_COLORS.WaypointLine)
-            Beam.Parent = FromPart
+            --// The beam and the arrow are reused. This is called from the
+            --// heartbeat, and destroying and rebuilding two instances for
+            --// every pair of waypoints on every frame is what froze the game
+            --// once the heartbeat started.
+            local Beam = FromData.NextBeam
+
+            if Beam and Beam.Parent then
+                Beam.Attachment0 = FromAttachment
+                Beam.Attachment1 = ToAttachment
+            else
+                Beam = Instance.new("Beam")
+                Beam.Name = "WaypointPath"
+                Beam.Attachment0 = FromAttachment
+                Beam.Attachment1 = ToAttachment
+                Beam.FaceCamera = true
+                Beam.LightEmission = 0.65
+                Beam.LightInfluence = 0
+                Beam.Segments = 1
+                Beam.Width0 = 0.045
+                Beam.Width1 = 0.045
+                Beam.Transparency = NumberSequence.new(0.15)
+                Beam.Color = ColorSequence.new(DEBUG_COLORS.WaypointLine)
+                Beam.Parent = FromPart
+
+                FromData.NextBeam = Beam
+            end
         
             --// Small directional cone at the destination so the route visibly points
             --// from this waypoint to the next one.
             local DirectionVector = ToPart.Position - FromPart.Position
             local Distance = DirectionVector.Magnitude
+            local Arrow = FromData.Arrow
         
             if Distance > 0.1 then
                 local Direction = DirectionVector.Unit
-                local Arrow = Instance.new("Part")
-                Arrow.Name = "WaypointArrow"
-                Arrow.Anchored = true
-                Arrow.CanCollide = false
-                Arrow.CanTouch = false
-                Arrow.CanQuery = false
-                Arrow.CastShadow = false
-                Arrow.Material = Enum.Material.Neon
-                Arrow.Color = DEBUG_COLORS.WaypointLine
-                Arrow.Shape = Enum.PartType.Wedge
-                Arrow.Size = Vector3.new(0.16, 0.42, 0.16)
-                Arrow.CFrame = CFrame.lookAt(ToPart.Position - Direction * 0.32, ToPart.Position) * CFrame.Angles(math.rad(90), 0, 0)
-                Arrow.Parent = AICDebug.GetDebugAdorneeParent()
-        
-                FromData.Arrow = Arrow
+                local Placement = CFrame.lookAt(ToPart.Position - Direction * 0.32, ToPart.Position) * CFrame.Angles(math.rad(90), 0, 0)
+
+                if Arrow and Arrow.Parent then
+                    Arrow.CFrame = Placement
+                else
+                    Arrow = Instance.new("Part")
+                    Arrow.Name = "WaypointArrow"
+                    Arrow.Anchored = true
+                    Arrow.CanCollide = false
+                    Arrow.CanTouch = false
+                    Arrow.CanQuery = false
+                    Arrow.CastShadow = false
+                    Arrow.Material = Enum.Material.Neon
+                    Arrow.Color = DEBUG_COLORS.WaypointLine
+                    Arrow.Shape = Enum.PartType.Wedge
+                    Arrow.Size = Vector3.new(0.16, 0.42, 0.16)
+                    Arrow.CFrame = Placement
+                    Arrow.Parent = AICDebug.GetDebugAdorneeParent()
+
+                    FromData.Arrow = Arrow
+                end
+            elseif Arrow then
+                Arrow:Destroy()
+                FromData.Arrow = nil
             end
-        
-            FromData.NextBeam = Beam
         end
         function AICDebug.ResetDebugWaypoints()
             for _, Data in AICDebug.S.DebugWaypointData do
@@ -356,9 +367,23 @@ return {
                 end
             end
         end
-        function AICDebug.UpdateDebugWaypointColors()
-        local PlaceConfig = Runtime:GetPlaceConfig()
-            for Index, Data in AICDebug.S.DebugWaypointData do
+        --// How often the route is repainted, in seconds. This runs from the
+        --// heartbeat, and the colours only change when the walk moves on to
+        --// another waypoint, so sixty times a second was pure waste.
+        local WAYPOINT_PAINT_INTERVAL = 0.1
+
+        function AICDebug.UpdateDebugWaypointColors(Force)
+            local Now = os.clock()
+
+            if not Force and Now - (AICDebug.S.LastWaypointPaint or 0) < WAYPOINT_PAINT_INTERVAL then
+                return
+            end
+
+            AICDebug.S.LastWaypointPaint = Now
+
+            local PlaceConfig = Runtime:GetPlaceConfig()
+
+            for Index, Data in ipairs(AICDebug.S.DebugWaypointData) do
                 local AccentColor = DEBUG_COLORS.WaypointPending
                 local TextColor = DEBUG_COLORS.BillboardText
                 local StateText = "NEXT"
@@ -380,21 +405,30 @@ return {
                     Data.Visited = false
                 end
         
-                if Data.Label then
+                --// Only what actually changed is written: assigning the same
+                --// colour again still costs the client a render pass.
+                if Data.Label and Data.Label.TextColor3 ~= TextColor then
                     Data.Label.TextColor3 = TextColor
                 end
         
                 if Data.State then
-                    Data.State.Text = StateText
-                    Data.State.TextColor3 = StateColor
+                    if Data.State.Text ~= StateText then
+                        Data.State.Text = StateText
+                    end
+
+                    if Data.State.TextColor3 ~= StateColor then
+                        Data.State.TextColor3 = StateColor
+                    end
                 end
         
-                if Data.Accent then
+                if Data.Accent and Data.Accent.BackgroundColor3 ~= AccentColor then
                     Data.Accent.BackgroundColor3 = AccentColor
                 end
             end
-        
+
             --// Route direction is always WP 1 -> WP 2 -> WP 3 -> ...
+            --// The links reuse their beam and arrow, so this is only a property
+            --// refresh rather than instance churn.
             for Index = 1, #AICDebug.S.DebugWaypointData - 1 do
                 AICDebug.CreateDebugWaypointLink(Index, AICDebug.S.DebugWaypointData[Index], AICDebug.S.DebugWaypointData[Index + 1])
             end
@@ -576,7 +610,9 @@ return {
             end
         
             AICDebug.RebuildDebugZones()
-            AICDebug.UpdateDebugWaypointColors()
+            --// Forced: the route was just rebuilt, so its colours are due now
+            --// rather than on the next heartbeat paint.
+            AICDebug.UpdateDebugWaypointColors(true)
             AICDebug.SetDebugVisualizerVisible(true)
         end
 

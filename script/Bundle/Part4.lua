@@ -1204,7 +1204,7 @@ return {
             AICFeature.S.WaypointWaitUntil = nil
             if AICFeature.ResetWaypointLoop then AICFeature.ResetWaypointLoop() end
             AICDebug.ResetDebugWaypoints()
-            AICDebug.UpdateDebugWaypointColors()
+            AICDebug.UpdateDebugWaypointColors(true)
             AICCombat.S.ClosestTarget = nil
             Runtime:SetInputBindableFunction(nil)
             AICFeature.S.BlockValue = nil
@@ -1809,6 +1809,11 @@ return {
             Failing = {},
         }
 
+        --// A feature that eats the frame is named in the console, at most once
+        --// a second. A freeze that never said which loop caused it is the one
+        --// thing that makes this kind of report cost a whole evening.
+        local SLOW_FEATURE = 0.008
+
         function Heartbeat:Start(Features)
             local RunService =
                 Context.Services
@@ -1818,6 +1823,8 @@ return {
             if self.Connection then
                 self.Connection:Disconnect()
             end
+
+            local Watch = { Since = os.clock(), Total = 0, Frames = 0, Worst = 0 }
 
             self.Connection = RunService.Heartbeat:Connect(function(DeltaTime)
                 --// A run that ended while this connection was still bound stops
@@ -1838,7 +1845,15 @@ return {
                         local Now = os.clock()
 
                         if not State or Now >= State.Until then
+                            local Started = os.clock()
                             local Ok, Error = xpcall(Feature.Update, debug.traceback, Feature, DeltaTime)
+                            local Cost = os.clock() - Started
+
+                            Watch.Total += Cost
+
+                            if Cost > Watch.Worst then
+                                Watch.Worst, Watch.Name = Cost, Name
+                            end
 
                             if Ok then
                                 self.Failing[Key] = nil
@@ -1860,6 +1875,24 @@ return {
                             end
                         end
                     end
+                end
+
+                Watch.Frames += 1
+
+                local Finished = os.clock()
+
+                if Finished - Watch.Since >= 1 then
+                    if Watch.Worst >= SLOW_FEATURE then
+                        warn(string.format(
+                            "[AIC] heartbeat: %s took %.1f ms in one frame (%d features, %.1f ms each on average)",
+                            tostring(Watch.Name or "a feature"),
+                            Watch.Worst * 1000,
+                            #(Features or {}),
+                            Watch.Total / math.max(1, Watch.Frames) * 1000
+                        ))
+                    end
+
+                    Watch.Since, Watch.Total, Watch.Frames, Watch.Worst, Watch.Name = Finished, 0, 0, 0, nil
                 end
             end)
         end

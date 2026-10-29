@@ -927,16 +927,6 @@ return {
                 return
             end
         
-            if FromData.NextBeam then
-                FromData.NextBeam:Destroy()
-                FromData.NextBeam = nil
-            end
-        
-            if FromData.Arrow then
-                FromData.Arrow:Destroy()
-                FromData.Arrow = nil
-            end
-        
             local FromPart = FromData.MarkerPart
             local ToPart = ToData.MarkerPart
         
@@ -960,45 +950,66 @@ return {
                 ToAttachment.Parent = ToPart
             end
         
-            local Beam = Instance.new("Beam")
-            Beam.Name = "WaypointPath"
-            Beam.Attachment0 = FromAttachment
-            Beam.Attachment1 = ToAttachment
-            Beam.FaceCamera = true
-            Beam.LightEmission = 0.65
-            Beam.LightInfluence = 0
-            Beam.Segments = 1
-            Beam.Width0 = 0.045
-            Beam.Width1 = 0.045
-            Beam.Transparency = NumberSequence.new(0.15)
-            Beam.Color = ColorSequence.new(DEBUG_COLORS.WaypointLine)
-            Beam.Parent = FromPart
+            --// The beam and the arrow are reused. This is called from the
+            --// heartbeat, and destroying and rebuilding two instances for
+            --// every pair of waypoints on every frame is what froze the game
+            --// once the heartbeat started.
+            local Beam = FromData.NextBeam
+
+            if Beam and Beam.Parent then
+                Beam.Attachment0 = FromAttachment
+                Beam.Attachment1 = ToAttachment
+            else
+                Beam = Instance.new("Beam")
+                Beam.Name = "WaypointPath"
+                Beam.Attachment0 = FromAttachment
+                Beam.Attachment1 = ToAttachment
+                Beam.FaceCamera = true
+                Beam.LightEmission = 0.65
+                Beam.LightInfluence = 0
+                Beam.Segments = 1
+                Beam.Width0 = 0.045
+                Beam.Width1 = 0.045
+                Beam.Transparency = NumberSequence.new(0.15)
+                Beam.Color = ColorSequence.new(DEBUG_COLORS.WaypointLine)
+                Beam.Parent = FromPart
+
+                FromData.NextBeam = Beam
+            end
         
             --// Small directional cone at the destination so the route visibly points
             --// from this waypoint to the next one.
             local DirectionVector = ToPart.Position - FromPart.Position
             local Distance = DirectionVector.Magnitude
+            local Arrow = FromData.Arrow
         
             if Distance > 0.1 then
                 local Direction = DirectionVector.Unit
-                local Arrow = Instance.new("Part")
-                Arrow.Name = "WaypointArrow"
-                Arrow.Anchored = true
-                Arrow.CanCollide = false
-                Arrow.CanTouch = false
-                Arrow.CanQuery = false
-                Arrow.CastShadow = false
-                Arrow.Material = Enum.Material.Neon
-                Arrow.Color = DEBUG_COLORS.WaypointLine
-                Arrow.Shape = Enum.PartType.Wedge
-                Arrow.Size = Vector3.new(0.16, 0.42, 0.16)
-                Arrow.CFrame = CFrame.lookAt(ToPart.Position - Direction * 0.32, ToPart.Position) * CFrame.Angles(math.rad(90), 0, 0)
-                Arrow.Parent = AICDebug.GetDebugAdorneeParent()
-        
-                FromData.Arrow = Arrow
+                local Placement = CFrame.lookAt(ToPart.Position - Direction * 0.32, ToPart.Position) * CFrame.Angles(math.rad(90), 0, 0)
+
+                if Arrow and Arrow.Parent then
+                    Arrow.CFrame = Placement
+                else
+                    Arrow = Instance.new("Part")
+                    Arrow.Name = "WaypointArrow"
+                    Arrow.Anchored = true
+                    Arrow.CanCollide = false
+                    Arrow.CanTouch = false
+                    Arrow.CanQuery = false
+                    Arrow.CastShadow = false
+                    Arrow.Material = Enum.Material.Neon
+                    Arrow.Color = DEBUG_COLORS.WaypointLine
+                    Arrow.Shape = Enum.PartType.Wedge
+                    Arrow.Size = Vector3.new(0.16, 0.42, 0.16)
+                    Arrow.CFrame = Placement
+                    Arrow.Parent = AICDebug.GetDebugAdorneeParent()
+
+                    FromData.Arrow = Arrow
+                end
+            elseif Arrow then
+                Arrow:Destroy()
+                FromData.Arrow = nil
             end
-        
-            FromData.NextBeam = Beam
         end
         function AICDebug.ResetDebugWaypoints()
             for _, Data in AICDebug.S.DebugWaypointData do
@@ -1022,9 +1033,23 @@ return {
                 end
             end
         end
-        function AICDebug.UpdateDebugWaypointColors()
-        local PlaceConfig = Runtime:GetPlaceConfig()
-            for Index, Data in AICDebug.S.DebugWaypointData do
+        --// How often the route is repainted, in seconds. This runs from the
+        --// heartbeat, and the colours only change when the walk moves on to
+        --// another waypoint, so sixty times a second was pure waste.
+        local WAYPOINT_PAINT_INTERVAL = 0.1
+
+        function AICDebug.UpdateDebugWaypointColors(Force)
+            local Now = os.clock()
+
+            if not Force and Now - (AICDebug.S.LastWaypointPaint or 0) < WAYPOINT_PAINT_INTERVAL then
+                return
+            end
+
+            AICDebug.S.LastWaypointPaint = Now
+
+            local PlaceConfig = Runtime:GetPlaceConfig()
+
+            for Index, Data in ipairs(AICDebug.S.DebugWaypointData) do
                 local AccentColor = DEBUG_COLORS.WaypointPending
                 local TextColor = DEBUG_COLORS.BillboardText
                 local StateText = "NEXT"
@@ -1046,21 +1071,30 @@ return {
                     Data.Visited = false
                 end
         
-                if Data.Label then
+                --// Only what actually changed is written: assigning the same
+                --// colour again still costs the client a render pass.
+                if Data.Label and Data.Label.TextColor3 ~= TextColor then
                     Data.Label.TextColor3 = TextColor
                 end
         
                 if Data.State then
-                    Data.State.Text = StateText
-                    Data.State.TextColor3 = StateColor
+                    if Data.State.Text ~= StateText then
+                        Data.State.Text = StateText
+                    end
+
+                    if Data.State.TextColor3 ~= StateColor then
+                        Data.State.TextColor3 = StateColor
+                    end
                 end
         
-                if Data.Accent then
+                if Data.Accent and Data.Accent.BackgroundColor3 ~= AccentColor then
                     Data.Accent.BackgroundColor3 = AccentColor
                 end
             end
-        
+
             --// Route direction is always WP 1 -> WP 2 -> WP 3 -> ...
+            --// The links reuse their beam and arrow, so this is only a property
+            --// refresh rather than instance churn.
             for Index = 1, #AICDebug.S.DebugWaypointData - 1 do
                 AICDebug.CreateDebugWaypointLink(Index, AICDebug.S.DebugWaypointData[Index], AICDebug.S.DebugWaypointData[Index + 1])
             end
@@ -1242,7 +1276,9 @@ return {
             end
         
             AICDebug.RebuildDebugZones()
-            AICDebug.UpdateDebugWaypointColors()
+            --// Forced: the route was just rebuilt, so its colours are due now
+            --// rather than on the next heartbeat paint.
+            AICDebug.UpdateDebugWaypointColors(true)
             AICDebug.SetDebugVisualizerVisible(true)
         end
 
@@ -2509,222 +2545,6 @@ return {
         end, UIRef.CombatSection)
 
         return Feature
-    end,
-}
-]======],
-	["Features/Minezone.lua"] = [======[
--- Minezone owns the mine zone editor on the Mining tab. Mine zones are
--- stored on the place config (MINE_ZONES) like farm zones and deadzones, so
--- they save and export with the profile. Auto Mining only mines inside them.
-return {
-    Name = "Minezone",
-    Dependencies = {"Runtime", "ProfileManager", "Components", "DebugVisualizer"},
-
-    Start = function(Context)
-        local Runtime = Context.Runtime
-        local AICConfig = Context.AICConfig
-        local AICProfile = Context.AICProfile
-        local AICUI = Context.AICUI
-        local AICDebug = Context.AICDebug
-        local UIRef = Context.UIRef
-        local NotifyAction = Context.NotifyAction
-
-        local DEFAULT_RADIUS = 60
-        local MIN_RADIUS = 5
-        local MAX_RADIUS = 300
-
-        local Module = { Name = "Minezone" }
-
-        AICProfile.S.SelectedMineZoneIndex = 1
-
-        local function GetMineZones()
-            return Runtime:GetPlaceConfig().MINE_ZONES
-        end
-
-        local function GetLabels()
-            return AICUI.BuildZoneLabels(GetMineZones(), "Mine")
-        end
-
-        --// Every edit needs a profile to write to; the place preset is
-        --// read-only, the same rule as farm zones and deadzones.
-        local function CanEdit(Message)
-            if AICProfile.S.ActiveProfileName then
-                return true
-            end
-
-            AICUI.SetProfileStatus(Message or "CREATE / LOAD PROFILE FIRST")
-            return false
-        end
-
-        local function Commit(Status)
-            Runtime:SetPlaceConfig(AICConfig.NormalizePlaceConfig(Runtime:GetPlaceConfig()))
-            AICUI.RefreshMineZoneList()
-            AICUI.RefreshMineZonePicker()
-            AICProfile.SaveActiveProfile()
-            AICDebug.UpdateDebugVisualizer()
-            AICUI.SetProfileStatus(Status)
-        end
-
-        UIRef.MineZoneSection = UIRef.MineTab:AddSection{ Title = "Mine Zone" }
-
-        UIRef.MineRadiusSlider = UIRef.MineZoneSection:AddSlider{
-            Name = "Mine Zone Radius",
-            Default = DEFAULT_RADIUS,
-            Min = MIN_RADIUS,
-            Max = MAX_RADIUS,
-            Callback = function(Value)
-                local Zone = GetMineZones()[AICProfile.S.SelectedMineZoneIndex]
-
-                if not Zone or not AICProfile.S.ActiveProfileName then
-                    return
-                end
-
-                Zone.Radius = Value
-                AICUI.RefreshMineZoneList()
-                AICDebug.UpdateDebugVisualizer()
-                AICProfile.QueueProfileSave()
-            end,
-        }
-
-        UIRef.MineZoneSection:AddButton{
-            Name = "Add Mine Zone Here",
-            Callback = function()
-                local _, _, RootPart = Runtime:GetCharacter()
-
-                if not RootPart then
-                    AICUI.SetProfileStatus("CHARACTER NOT READY")
-                    return
-                end
-
-                if not CanEdit() then
-                    return
-                end
-
-                table.insert(GetMineZones(), {
-                    Center = AICConfig.RoundVector3(RootPart.Position),
-                    Radius = UIRef.MineRadiusSlider:Get(),
-                })
-
-                AICProfile.S.SelectedMineZoneIndex = #GetMineZones()
-                Commit("MINE ZONE ADDED #" .. tostring(#GetMineZones()))
-            end,
-        }
-
-        UIRef.MineZoneSection:AddButton{
-            Name = "Clear Mine Zones",
-            Callback = function()
-                if not CanEdit() then
-                    return
-                end
-
-                table.clear(GetMineZones())
-                AICProfile.S.SelectedMineZoneIndex = 1
-                Commit("MINE ZONES CLEARED")
-                NotifyAction("Mine Zone", "Cleared all mine zones")
-            end,
-        }
-
-        UIRef.MineZoneListComponent = UIRef.MineZoneSection:AddPriority("All Mine Zones", GetLabels())
-
-        local OriginalMoveUp = UIRef.MineZoneListComponent.MoveUp
-        local OriginalMoveDown = UIRef.MineZoneListComponent.MoveDown
-        local OriginalRemove = UIRef.MineZoneListComponent.Remove
-
-        --// Swaps a zone with its neighbour Delta (-1 up, +1 down) away.
-        local function MoveZone(Component, Label, Delta, Original, Status)
-            if not CanEdit("DEFAULT PLACE_CONFIG IS READ-ONLY") then
-                return
-            end
-
-            local Zones = GetMineZones()
-            local Index = table.find(GetLabels(), Label)
-            local Other = Index and Index + Delta
-
-            if not Other or Other < 1 or Other > #Zones then
-                return
-            end
-
-            Zones[Index], Zones[Other] = Zones[Other], Zones[Index]
-            Original(Component, Label)
-            AICProfile.S.SelectedMineZoneIndex = Other
-            Commit(Status)
-        end
-
-        function UIRef.MineZoneListComponent:MoveUp(Label)
-            MoveZone(self, Label, -1, OriginalMoveUp, "MINE ZONE MOVED UP")
-        end
-
-        function UIRef.MineZoneListComponent:MoveDown(Label)
-            MoveZone(self, Label, 1, OriginalMoveDown, "MINE ZONE MOVED DOWN")
-        end
-
-        function UIRef.MineZoneListComponent:Remove(Label)
-            if not CanEdit("DEFAULT PLACE_CONFIG IS READ-ONLY") then
-                return
-            end
-
-            local Index = table.find(GetLabels(), Label)
-
-            if not Index then
-                return
-            end
-
-            table.remove(GetMineZones(), Index)
-            OriginalRemove(self, Label)
-            AICProfile.S.SelectedMineZoneIndex = math.clamp(Index, 1, math.max(1, #GetMineZones()))
-            Commit("MINE ZONE REMOVED #" .. tostring(Index))
-        end
-
-        function AICUI.RefreshMineZoneList()
-            AICUI.ReplacePriorityList(UIRef.MineZoneListComponent, GetLabels())
-        end
-
-        --// Picks which zone the radius slider edits. Rebuilt whenever the
-        --// zone count changes, like the farm zone and deadzone pickers.
-        function AICUI.RefreshMineZonePicker()
-            local Zones = GetMineZones()
-            local Options = AICUI.GetZonePickerOptions(Zones, "Mine")
-            local Old = UIRef.MineZonePicker
-            --// A new dropdown is appended to the section; it takes the old
-            --// one's slot instead.
-            local Order = Old and Old.Row and Old.Row.LayoutOrder
-
-            if Old then
-                Old:Remove()
-            end
-
-            AICProfile.S.SelectedMineZoneIndex = math.clamp(AICProfile.S.SelectedMineZoneIndex, 1, math.max(1, #Zones))
-
-            UIRef.MineZonePicker = UIRef.MineZoneSection:AddDropdown{
-                Name = "Edit Mine Zone",
-                Options = Options,
-                Callback = function(Value)
-                    local Index = table.find(Options, Value)
-                    local Zone = Index and GetMineZones()[Index]
-
-                    if not Zone then
-                        return
-                    end
-
-                    AICProfile.S.SelectedMineZoneIndex = Index
-                    UIRef.MineRadiusSlider:Set(tonumber(Zone.Radius) or DEFAULT_RADIUS, false)
-                end,
-            }
-
-            if Order and UIRef.MineZonePicker.Row then
-                UIRef.MineZonePicker.Row.LayoutOrder = Order
-            end
-
-            local Selected = Options[AICProfile.S.SelectedMineZoneIndex] or Options[1]
-
-            if Selected then
-                UIRef.MineZonePicker:Set(Selected)
-            end
-        end
-
-        AICUI.RefreshMineZonePicker()
-
-        return Module
     end,
 }
 ]======],

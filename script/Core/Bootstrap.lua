@@ -64,7 +64,7 @@ return {
             AICFeature.S.WaypointWaitUntil = nil
             if AICFeature.ResetWaypointLoop then AICFeature.ResetWaypointLoop() end
             AICDebug.ResetDebugWaypoints()
-            AICDebug.UpdateDebugWaypointColors()
+            AICDebug.UpdateDebugWaypointColors(true)
             AICCombat.S.ClosestTarget = nil
             Runtime:SetInputBindableFunction(nil)
             AICFeature.S.BlockValue = nil
