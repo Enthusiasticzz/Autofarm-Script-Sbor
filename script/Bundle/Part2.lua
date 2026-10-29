@@ -4818,7 +4818,6 @@ end },
 { Key = "ESP_AUTO_THICKNESS", Default = true },
 { Key = "ESP_RANGE", Default = 900, Min = 100, Max = 2000 },
 { Key = "ESP_BOX_STYLE", Default = "Full", Options = { "Full", "Corners" } },
-{ Key = "ESP_HEALTH_BAR", Default = true },
 }
 SaveConfig.GlobalSettings = {
 { Key = "BOSS_PATH_VISIBLE", Default = true },

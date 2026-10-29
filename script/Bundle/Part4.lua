@@ -33,8 +33,6 @@ local BOX_STYLES = { "Full box", "Corners" }
 local BOX_STYLE_KEYS = { ["Full box"] = "Full", Corners = "Corners", Full = "Full" }
 local BOX_STYLE_NAMES = { Full = "Full box", Corners = "Corners" }
 local BLACK = Color3.fromRGB(0, 0, 0)
-local HEALTH_LOW = Color3.fromRGB(255, 60, 60)
-local HEALTH_HIGH = Color3.fromRGB(60, 220, 90)
 local S = {
 Kinds = {},
 Entries = {},
@@ -44,7 +42,6 @@ Thickness = 1.5, -- box thickness at close range
 AutoThickness = true,
 Range = 900, -- studs; nothing past this is drawn
 BoxStyle = "Full",
-HealthBar = true,
 },
 Timer = 0,
 LabelRefresh = 0,
@@ -132,17 +129,12 @@ if Part.Draw then pcall(function() Part.Draw:Remove() end) end
 if Part.Gui then pcall(function() Part.Gui:Destroy() end) end
 end
 end
-for _, Key in ipairs({ "BoxLines", "BoxShadow", "HealthLines" }) do
+for _, Key in ipairs({ "BoxLines", "BoxShadow" }) do
 local List = Entry[Key]
 if List then
 for _, Object in ipairs(List) do
 pcall(function() Object:Remove() end)
 end
-end
-end
-if Entry.HealthFrames then
-for _, Frame in ipairs(Entry.HealthFrames) do
-pcall(function() Frame:Destroy() end)
 end
 end
 S.Entries[Target] = nil
@@ -162,7 +154,6 @@ end
 S.Settings.Thickness = ReadSetting("ESP_THICKNESS", S.Settings.Thickness)
 S.Settings.AutoThickness = ReadSetting("ESP_AUTO_THICKNESS", S.Settings.AutoThickness) == true
 S.Settings.Range = ReadSetting("ESP_RANGE", S.Settings.Range)
-S.Settings.HealthBar = ReadSetting("ESP_HEALTH_BAR", S.Settings.HealthBar) == true
 S.Settings.BoxStyle = BOX_STYLE_KEYS[ReadSetting("ESP_BOX_STYLE", nil) or ""] or "Full"
 for _, Kind in ipairs(KINDS) do
 local C = S.Kinds[Kind]
@@ -182,7 +173,6 @@ if Controls.Text[Kind] then Controls.Text[Kind]:Set(C.Label, true) end
 if Controls.Colors[Kind] then Controls.Colors[Kind]:Set(C.Color, true) end
 end
 if Controls.BoxStyle then Controls.BoxStyle:Set(BOX_STYLE_NAMES[S.Settings.BoxStyle], true) end
-if Controls.HealthBar then Controls.HealthBar:Set(S.Settings.HealthBar, true) end
 if Controls.Thickness then Controls.Thickness:Set(S.Settings.Thickness, true) end
 if Controls.AutoThickness then Controls.AutoThickness:Set(S.Settings.AutoThickness, true) end
 if Controls.Range then Controls.Range:Set(S.Settings.Range, true) end
@@ -253,6 +243,13 @@ return OkWrite and OkRead and Back == true
 end
 local LineSupported = ProbeDrawing("Line")
 local TextSupported = ProbeDrawing("Text")
+local TextFont = 2
+do
+local Ok, Plex = pcall(function() return DrawingApi.Fonts.Plex end)
+if Ok and Plex ~= nil then
+TextFont = Plex
+end
+end
 local function NewLine()
 if not LineSupported then return nil end
 local Ok, Line = pcall(DrawingApi.new, "Line")
@@ -369,9 +366,9 @@ local function CornerLength(Distance)
 if Distance == math.huge then return 8 end
 return math.clamp(600 / math.max(Distance, 1), 8, 40)
 end
-local function TextSizeFor(Distance)
-if Distance == math.huge then return 12 end
-return math.clamp(1000 / math.max(Distance, 1), 6, 16)
+local TEXT_SIZE = 18
+local function TextSizeFor()
+return TEXT_SIZE
 end
 local function SegmentAt(Style, Index, X1, Y1, X2, Y2, Arm)
 if Style == "Corners" then
@@ -388,9 +385,6 @@ if Index == 1 then return X1, Y1, X2, Y1 end
 if Index == 2 then return X2, Y1, X2, Y2 end
 if Index == 3 then return X2, Y2, X1, Y2 end
 return X1, Y2, X1, Y1
-end
-local function HealthColor(Fraction)
-return HEALTH_LOW:Lerp(HEALTH_HIGH, math.clamp(Fraction, 0, 1))
 end
 local MOB_EXP_NAMES = { "EXP", "Exp", "XP", "ExpGive", "EXPGive", "ExpReward", "EXPReward", "Experience" }
 local function FindMobExp(Target, Config)
@@ -414,6 +408,11 @@ local MobEntity = Config and Config:FindFirstChild("Entity")
 local Name = Owner and Owner.Name
 or (MobEntity and MobEntity:IsA("StringValue") and MobEntity.Value ~= "" and MobEntity.Value)
 or Target.Name
+local Top = Name
+local Humanoid = Target:FindFirstChildOfClass("Humanoid")
+if Humanoid and Kind ~= "Weapon" then
+Top = Top .. "\n" .. math.floor(Humanoid.Health) .. " / " .. math.floor(Humanoid.MaxHealth) .. " HP"
+end
 local Right = {}
 if Owner then
 local Stats = Owner:FindFirstChild("PlayerStats")
@@ -444,7 +443,7 @@ if Camera and Anchor and Anchor.Parent then
 local Distance = (Anchor.Position - Camera.CFrame.Position).Magnitude
 Bottom = math.floor(Distance + 0.5) .. "m"
 end
-return { Top = Name, Right = table.concat(Right, "\n"), Bottom = Bottom }
+return { Top = Top, Right = table.concat(Right, "\n"), Bottom = Bottom }
 end
 local function SetLabelText(Target, Kind, Entry)
 if not Entry.TextParts then return end
@@ -462,15 +461,8 @@ end
 end
 local function RefreshLabels()
 for Target, Entry in pairs(S.Entries) do
-if Target.Parent then
-local Humanoid = Entry.Health
-if Humanoid and Humanoid.Parent then
-local Max = Humanoid.MaxHealth
-Entry.HealthFrac = Max > 0 and math.clamp(Humanoid.Health / Max, 0, 1) or 1
-end
-if Entry.TextParts then
+if Target.Parent and Entry.TextParts then
 SetLabelText(Target, Entry.Kind, Entry)
-end
 end
 end
 end
@@ -510,33 +502,6 @@ Highlight.Adornee = Target
 Highlight.Parent = HighlightFolder
 Entry.Highlight = Highlight
 end
-local function AddHealth(Entry, Target)
-local Humanoid = Target:FindFirstChildOfClass("Humanoid")
-if not Humanoid then return end
-local Max = Humanoid.MaxHealth
-Entry.Health = Humanoid
-Entry.HealthFrac = Max > 0 and math.clamp(Humanoid.Health / Max, 0, 1) or 1
-local Lines = MakeLines(2, BLACK, 2)
-if Lines then
-Entry.HealthLines = Lines
-return
-end
-local Track = Instance.new("Frame")
-Track.Name = "HealthTrack"
-Track.BackgroundColor3 = BLACK
-Track.BorderSizePixel = 0
-Track.Visible = false
-Track.ZIndex = 1
-Track.Parent = Root
-local Fill = Instance.new("Frame")
-Fill.Name = "HealthFill"
-Fill.BackgroundColor3 = HEALTH_HIGH
-Fill.BorderSizePixel = 0
-Fill.Visible = false
-Fill.ZIndex = 2
-Fill.Parent = Root
-Entry.HealthFrames = { Track, Fill }
-end
 local function AddBox(Entry, Target, C, Kind)
 local Style = S.Settings.BoxStyle
 local Count = Style == "Corners" and 8 or 4
@@ -573,9 +538,6 @@ Frame.Parent = Root
 Entry.Frame, Entry.Stroke = Frame, Stroke
 Entry.ShadowFrame, Entry.ShadowStroke = ShadowFrame, ShadowStroke
 end
-if S.Settings.HealthBar then
-AddHealth(Entry, Target)
-end
 end
 local function AddLabel(Entry, Target, C, Kind)
 local Keys = Kind == "Weapon" and { "Top", "Bottom" } or { "Top", "Right", "Bottom" }
@@ -586,7 +548,8 @@ local DrawText = NewText()
 if DrawText then
 SetProps(DrawText, {
 Color = C.Color,
-Size = 13,
+Size = TEXT_SIZE,
+Font = TextFont,
 Center = Key ~= "Right",
 Transparency = 1,
 Visible = false,
@@ -602,12 +565,12 @@ Text.TextColor3 = C.Color
 Text.TextStrokeColor3 = BLACK
 Text.TextStrokeTransparency = 0
 Text.Font = Enum.Font.GothamBold
-Text.TextSize = 12
+Text.TextSize = TEXT_SIZE
 Text.Visible = false
 Text.ZIndex = 3
 if Key == "Top" then
 Text.AnchorPoint = Vector2.new(0.5, 1)
-Text.Size = UDim2.fromOffset(340, 40)
+Text.Size = UDim2.fromOffset(340, 80)
 Text.TextXAlignment = Enum.TextXAlignment.Center
 Text.TextYAlignment = Enum.TextYAlignment.Bottom
 elseif Key == "Bottom" then
@@ -740,8 +703,7 @@ for _, Entry in pairs(S.Entries) do
 local Frame, ShadowFrame = Entry.Frame, Entry.ShadowFrame
 local TextParts = Entry.TextParts
 local Lines, Shadow = Entry.BoxLines, Entry.BoxShadow
-local HealthLines, HealthFrames = Entry.HealthLines, Entry.HealthFrames
-if Frame or TextParts or Lines or HealthLines or HealthFrames then
+if Frame or TextParts or Lines then
 local X1, Y1, X2, Y2
 local Anchor = Entry.Anchor
 local Distance = math.huge
@@ -755,7 +717,7 @@ if X1 and (X2 < 0 or Y2 < 0 or X1 > Viewport.X or Y1 > Viewport.Y) then
 X1 = nil
 end
 local Thickness = ThicknessFor(Distance)
-local TextSize = TextSizeFor(Distance)
+local TextSize = TextSizeFor()
 local Style = Entry.BoxStyle or "Full"
 local Count = Style == "Corners" and 8 or 4
 local Arm = CornerLength(Distance)
@@ -806,44 +768,6 @@ Frame.Visible = false
 if ShadowFrame then ShadowFrame.Visible = false end
 end
 end
-if HealthLines then
-if X1 then
-local Fraction = math.clamp(Entry.HealthFrac or 1, 0, 1)
-local BarX = X1 - 6
-local Height = Y2 - Y1
-local Track, Fill = HealthLines[1], HealthLines[2]
-SetLine(Track, BarX, Y1, BarX, Y2)
-SetLine(Fill, BarX, Y2, BarX, Y2 - Height * Fraction)
-Track.Thickness = 3
-Fill.Thickness = 2
-Fill.Color = HealthColor(Fraction)
-Track.Visible = true
-Fill.Visible = true
-else
-for _, Line in ipairs(HealthLines) do
-Line.Visible = false
-end
-end
-end
-if HealthFrames then
-if X1 then
-local Fraction = math.clamp(Entry.HealthFrac or 1, 0, 1)
-local BarX = X1 - 8
-local Height = Y2 - Y1
-local Track, Fill = HealthFrames[1], HealthFrames[2]
-Track.Position = UDim2.fromOffset(BarX, Y1)
-Track.Size = UDim2.fromOffset(4, Height)
-Track.Visible = true
-Fill.Position = UDim2.fromOffset(BarX, Y2 - Height * Fraction)
-Fill.Size = UDim2.fromOffset(4, math.max(1, Height * Fraction))
-Fill.BackgroundColor3 = HealthColor(Fraction)
-Fill.Visible = true
-else
-for _, Item in ipairs(HealthFrames) do
-Item.Visible = false
-end
-end
-end
 if TextParts then
 local Pad = 6 + Thickness
 local CenterX = X1 and (X1 + X2) * 0.5
@@ -851,7 +775,7 @@ local MiddleY = X1 and (Y1 + Y2) * 0.5
 for _, Part in ipairs(TextParts) do
 local Show = X1 ~= nil and not Part.Empty
 local Key = Part.Key
-local Size = Key == "Top" and TextSize or math.max(6, TextSize * 0.85)
+local Size = TextSize
 local Block = Part.Lines * (Size + 2) * 0.5
 if Part.Draw then
 if Show then
@@ -949,16 +873,6 @@ Default = BOX_STYLE_NAMES[S.Settings.BoxStyle],
 Callback = function(Value)
 S.Settings.BoxStyle = BOX_STYLE_KEYS[Value] or "Full"
 SaveSetting("ESP_BOX_STYLE", S.Settings.BoxStyle)
-Clear()
-S.Timer = SCAN_INTERVAL
-end,
-}
-Controls.HealthBar = SettingsSection:AddToggle{
-Name = "Health bar",
-Default = S.Settings.HealthBar,
-Callback = function(Value)
-S.Settings.HealthBar = Value == true
-SaveSetting("ESP_HEALTH_BAR", S.Settings.HealthBar)
 Clear()
 S.Timer = SCAN_INTERVAL
 end,
