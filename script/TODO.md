@@ -1416,3 +1416,15 @@ were added.
 > - The held status reads `CLEARING  10s  ALWAYS WAIT` when the toggle is what holds a reset the EXP check called free, keeping `LOSE n EXP` / `COST UNKNOWN` for the real cases.
 > - Docs: `USAGE.md` (*Boss Route*, the list row, *What a stop does*) and `UI/Descriptions.lua` renamed and rewritten.
 > - Checks: `luau-compile` clean on `Features/BossNavigator.lua` and `UI/Descriptions.lua`; bundle rebuilt, `tests/run-bundle-check.ps1` reports 0 compile failures. Not clicked in game.
+
+### [x] Death prompt: the No button is not being clicked
+
+> **Reported:** the confirm notice that comes up after a reset is left standing — **Dismiss Death Prompt** does not press **No**.
+> **Cause:** the finder knew exactly one shape. It looked only at `PlayerGui.GameGui.Confirm2.C.No` and only accepted a `GuiButton`. A notice under another ScreenGui, a differently named row, or a **No** that is a Frame with the label inside it (this game's dialogs are built that way) returned `nil` every frame, silently: no click, no warning, nothing in the console.
+> **Changed (v3.80):**
+> - `FindNotice` takes `GameGui.Confirm2` if it is there, otherwise searches every ScreenGui for a `Confirm2`. `FindNoticeButton` keeps the `C.No` fast path and then takes the first node called `No` inside that notice, in any case and at any depth.
+> - `GetClickTarget` clicks the answer whatever it is: the node itself when it is a GuiButton, a GuiButton inside it, the GuiButton wrapping it, and finally the node itself (a Frame) — the signal methods have nothing to fire on a frame and step aside, and the synthetic mouse/VirtualInputManager methods land on any GuiObject.
+> - The window is armed by a respawn as well as by health reaching 0 (`AICFeature.S.DEATH_COUNT`, bumped on `CharacterAdded`), because the game can hand the body back before health is ever read as 0.
+> - When the window is open and nothing has matched 4 s in, `DumpVisible` prints the on-screen buttons and any node named `No` under the notice (or `GameGui`), once per death, capped at 30 lines — so the next report names the real path instead of "it does not work".
+> - Docs: `USAGE.md` *Dismiss Death Prompt*.
+> - Checks: `luau-compile` clean on `Features/DeathPrompt.lua`; bundle rebuilt, `tests/run-bundle-check.ps1` reports 0 compile failures. Not clicked against the game — the new console dump is what confirms the notice's real shape if it still misses.

@@ -2,6 +2,12 @@
 -- character dies: PlayerGui.GameGui.Confirm2, with its buttons in the C row
 -- and the one to press named No.
 --
+-- The notice is looked for at that path first and then as any Confirm2 under a
+-- ScreenGui, and the No side is clicked whether it is a GuiButton or the Frame
+-- the label sits in - the game's dialogs are not all built the same way. When
+-- nothing matches, what is on screen is printed once, so a notice in a shape
+-- this does not know can be fixed from the real paths rather than guessed at.
+--
 -- It is armed by a death and looks for the notice only inside that window, so
 -- a confirm the user opens themselves at any other time is never pressed.
 -- The press itself goes through Core/GuiClick, the same clicker Auto Confirm
@@ -27,6 +33,8 @@ return {
         local ROW_NAME = "C"
         local BUTTON_NAME = "No"
 
+        local BUTTON_LOWER = string.lower(BUTTON_NAME)
+
         --// How long after the death the notice may still turn up. The game
         --// builds it a frame or two after the character goes down, and it can
         --// arrive around the respawn rather than at the exact death, so the
@@ -36,6 +44,11 @@ return {
         local VERIFY_SECONDS = 0.7
         --// A notice that survived every method is tried again after this.
         local RETRY_SECONDS = 2
+        --// This long into the window with nothing clicked, what is on screen is
+        --// printed once, so a notice in a shape this does not expect can be
+        --// reported with the real paths instead of "it does not work".
+        local DUMP_AFTER = 4
+        local DUMP_LIMIT = 30
 
         local Feature = {
             Name = "DeathPrompt",
@@ -55,61 +68,161 @@ return {
             --// One warning per run: an executor without any click method would
             --// otherwise warn on every notice.
             Warned = false,
+            --// When the current window was armed, and whether it has already
+            --// printed what it could see.
+            ArmedAt = 0,
+            Dumped = false,
+            --// The death counter the last frame saw, so a respawn arms the
+            --// window as well.
+            Deaths = nil,
+            --// Where the fallback search last found the notice, so the whole
+            --// PlayerGui is not walked on every frame of a window.
+            NoticeAt = 0,
+            NoticeCache = nil,
         }
 
         Feature.S = S
 
-        --// The No button of the death notice, or nil while there is none on
-        --// screen. A reskin can nest the row deeper, so the no-descendant
-        --// case falls back to the first GuiButton named No inside the notice
-        --// itself and never to one elsewhere in the game.
-        local function FindNoticeButton()
+        --// How long the fallback search's answer is reused. Only the fallback
+        --// is cached: the GameGui path is two lookups and stays live.
+        local NOTICE_CACHE_TIME = 0.25
+
+        --// The notice itself, while it is up. GameGui.Confirm2 first, then any
+        --// Confirm2 under a ScreenGui: a reskin that moves it to another screen
+        --// gui used to mean the notice was never seen at all.
+        local function FindNotice()
             local GameGui = PlayerGui:FindFirstChild(GUI_NAME)
             local Notice = GameGui and GameGui:FindFirstChild(NOTICE_NAME)
+
+            if Notice then
+                return Notice
+            end
+
+            local Now = os.clock()
+
+            if Now - S.NoticeAt < NOTICE_CACHE_TIME then
+                return S.NoticeCache
+            end
+
+            S.NoticeAt = Now
+            S.NoticeCache = nil
+
+            for _, Root in ipairs(PlayerGui:GetChildren()) do
+                if Root:IsA("LayerCollector") then
+                    local Found = Root:FindFirstChild(NOTICE_NAME, true)
+
+                    if Found then
+                        S.NoticeCache = Found
+                        return Found
+                    end
+                end
+            end
+
+            return nil
+        end
+
+        --// What to click for the answer. The game's buttons are not always
+        --// GuiButtons: the name often sits on a Frame with the label inside it,
+        --// so the node called No is clicked when nothing better exists. The
+        --// signal methods have nothing to fire on a Frame and step aside, and
+        --// the synthetic-click methods land on any GuiObject.
+        local function GetClickTarget(Node)
+            if not Node then
+                return nil
+            end
+
+            if Node:IsA("GuiButton") and GuiClick.IsOnScreen(Node) then
+                return Node
+            end
+
+            --// A button inside the No frame.
+            for _, Descendant in ipairs(Node:GetDescendants()) do
+                if Descendant:IsA("GuiButton") and GuiClick.IsOnScreen(Descendant) then
+                    return Descendant
+                end
+            end
+
+            --// A Frame named No wrapped in the button that is actually clicked.
+            local Parent = Node.Parent
+
+            while Parent and Parent:IsA("GuiObject") do
+                if Parent:IsA("GuiButton") and GuiClick.IsOnScreen(Parent) then
+                    return Parent
+                end
+
+                Parent = Parent.Parent
+            end
+
+            if Node:IsA("GuiObject") and GuiClick.IsOnScreen(Node) then
+                return Node
+            end
+
+            return nil
+        end
+
+        --// The No answer of the death notice, or nil while there is none on
+        --// screen. Confirm2.C.No first; failing that, the first node called No
+        --// inside this notice, in any case and at any depth - never one from
+        --// elsewhere in the game.
+        local function FindNoticeButton()
+            local Notice = FindNotice()
 
             if not Notice then
                 return nil
             end
 
             local Row = Notice:FindFirstChild(ROW_NAME)
-            local Button = Row and Row:FindFirstChild(BUTTON_NAME)
+            local Node = Row and Row:FindFirstChild(BUTTON_NAME)
 
-            --// A reskin can put the click target inside the No frame.
-            if Button and not Button:IsA("GuiButton") then
-                local Click = nil
-
-                for _, Descendant in ipairs(Button:GetDescendants()) do
-                    if Descendant:IsA("GuiButton") then
-                        Click = Descendant
-                        break
-                    end
-                end
-
-                Button = Click
-            end
-
-            --// Same when the row itself is named differently: the button has to
-            --// be called No and live inside this notice, never elsewhere.
-            if not Button then
+            if not Node then
                 for _, Descendant in ipairs(Notice:GetDescendants()) do
-                    if Descendant:IsA("GuiButton") and Descendant.Name == BUTTON_NAME then
-                        Button = Descendant
+                    if string.lower(Descendant.Name) == BUTTON_LOWER then
+                        Node = Descendant
                         break
                     end
                 end
             end
 
-            if Button and GuiClick.IsOnScreen(Button) then
-                return Button
-            end
-
-            return nil
+            return GetClickTarget(Node)
         end
 
         --// True once the notice is gone, which is the only proof a press
         --// landed: the button has no state to read back.
         local function IsNoticeGone()
             return FindNoticeButton() == nil
+        end
+
+        --// What is on screen when nothing matched. Printed once per death
+        --// window: the paths it names are what the next fix is written from.
+        local function DumpVisible()
+            local Notice = FindNotice()
+            local Root = Notice or PlayerGui:FindFirstChild(GUI_NAME)
+
+            if not Root then
+                print("[DeathPrompt] No Confirm2 and no GameGui in PlayerGui: nothing to click and nothing to list")
+                return
+            end
+
+            print("[DeathPrompt] No No button found under " .. Root:GetFullName() .. ". On screen:")
+
+            local Count = 0
+
+            for _, Descendant in ipairs(Root:GetDescendants()) do
+                if GuiClick.IsOnScreen(Descendant)
+                    and (Descendant:IsA("GuiButton") or string.lower(Descendant.Name) == BUTTON_LOWER)
+                then
+                    Count += 1
+                    print(string.format("  [%s] %s", Descendant.ClassName, Descendant:GetFullName()))
+
+                    if Count >= DUMP_LIMIT then
+                        break
+                    end
+                end
+            end
+
+            if Count == 0 then
+                print("  (nothing named No and no buttons)")
+            end
         end
 
         local function WaitClosed(Seconds)
@@ -179,13 +292,22 @@ return {
             local Dead = Character == nil or Humanoid == nil or Humanoid.Health <= 0
             local Now = os.clock()
 
-            if Dead and not S.Dead then
-                S.Dead = true
+            --// A respawn arms the window too: the game can hand the body back
+            --// before health is ever read as 0, and DEATH_COUNT is what
+            --// Bootstrap bumps on CharacterAdded for the whole script.
+            local Stats = AICFeature and AICFeature.S
+            local Deaths = Stats and tonumber(Stats.DEATH_COUNT) or 0
+            local Respawned = S.Deaths ~= nil and Deaths ~= S.Deaths
+            S.Deaths = Deaths
+
+            if (Dead and not S.Dead) or Respawned then
                 S.ArmedUntil = Now + WATCH_SECONDS
+                S.ArmedAt = Now
+                S.Dumped = false
                 S.NextAttemptAt = 0
-            elseif not Dead and S.Dead then
-                S.Dead = false
             end
+
+            S.Dead = Dead
 
             if S.Clicking or Now >= S.ArmedUntil or Now < S.NextAttemptAt then
                 return
@@ -194,6 +316,11 @@ return {
             local Button = FindNoticeButton()
 
             if not Button then
+                if not S.Dumped and Now - S.ArmedAt >= DUMP_AFTER then
+                    S.Dumped = true
+                    DumpVisible()
+                end
+
                 return
             end
 
