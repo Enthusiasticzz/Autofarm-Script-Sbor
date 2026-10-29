@@ -3869,37 +3869,32 @@ end
 local LevelBars = {}
 local function GetLevelBar(Level)
 if not Level or Level <= 0 then
-return nil, 0, 0
+return nil
 end
 local Cached = LevelBars[Level]
 if Cached then
-return Cached.Reach, Cached.Bar, Cached.Floor
+return Cached
 end
 local Needed = type(AICUI.neededExp) == "function" and AICUI.neededExp
 if not Needed then
-return nil, 0, 0
+return nil
 end
-local Reach = math.max(1, Needed(Level))
-local Floor = Level > 1 and math.max(0, Needed(Level - 1)) or 0
-local Bar = math.max(1, Reach - Floor)
-LevelBars[Level] = { Reach = Reach, Bar = Bar, Floor = Floor }
-return Reach, Bar, Floor
+local Bar = tonumber(Needed(Level))
+if not Bar or Bar <= 0 then
+return nil
+end
+LevelBars[Level] = Bar
+return Bar
 end
 local function GetBarProgress(Exp, Level)
-local Reach, Bar, Floor = GetLevelBar(Level)
-if not Bar or Bar <= 0 then
+local Bar = GetLevelBar(Level)
+if not Bar then
+return nil, 0
+end
+if Exp < 0 then
 return nil, Bar
 end
-if Exp >= 0 and Exp <= Bar then
-return Exp, Bar
-end
-if Exp > Floor and Exp <= Reach then
-return Exp - Floor, Bar
-end
-if Reach and Exp > Reach then
-return Bar, Bar
-end
-return nil, Bar
+return math.min(Exp, Bar), Bar
 end
 local function GetResetCost()
 local Level = GetLevel()
@@ -3908,14 +3903,14 @@ if not Level or not Exp then
 return nil
 end
 if Exp <= 0 then
-return 0, 0, 0, Level
+return -1, 0, -1, Level
 end
 local Progress, Bar = GetBarProgress(Exp, Level)
 if not Progress or not Bar or Bar <= 0 then
 return nil
 end
 local Keep = GetKeepPercent(Level) / 100
-local Loss = math.max(0, Progress - Bar * Keep)
+local Loss = Progress - Bar * Keep
 return Loss, Bar, Loss / Bar, Level
 end
 local function GetResetHold(Stop)
@@ -3930,7 +3925,7 @@ local Loss = GetResetCost()
 if Loss == nil then
 return Wait + RESET_HOLD_EXTRA
 end
-if Loss <= 0 then
+if Loss < 0 then
 return 0
 end
 return Wait + RESET_HOLD_EXTRA

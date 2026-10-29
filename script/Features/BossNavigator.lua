@@ -453,72 +453,58 @@ return {
         end
 
         --// The size of a level's EXP bar is the level's max EXP: the number the
-        --// HUD prints after the slash, AICUI.neededExp(Level), and the EXP
-        --// stat is counted against that same number. The share a reset keeps
-        --// is taken from it directly. It used to be the gap between this level
-        --// and the one before (about 1,300), a much smaller number than the
-        --// real max, which made every EXP value look like it sat above the
-        --// protected part and so every reset look like it would lose EXP.
-        --// Cached per level, since this is read every frame of a hold.
+        --// HUD prints after the slash, AICUI.neededExp(Level). The EXP stat is
+        --// a running total counted against that same number, so the share a
+        --// reset keeps is taken from it directly. Cached per level, since
+        --// this is read every frame of a hold.
         local LevelBars = {}
 
-        --// Reach: the max EXP of this level. Floor: always 0, the stat starts
-        --// each level from nothing. Bar: Reach, what the level itself asks for.
+        --// The bar of a level: its max EXP. nil when it cannot be read.
         local function GetLevelBar(Level)
             if not Level or Level <= 0 then
-                return nil, 0, 0
+                return nil
             end
 
             local Cached = LevelBars[Level]
 
             if Cached then
-                return Cached.Reach, Cached.Bar, Cached.Floor
+                return Cached
             end
 
             local Needed = type(AICUI.neededExp) == "function" and AICUI.neededExp
 
             if not Needed then
-                return nil, 0, 0
+                return nil
             end
 
-            local Reach = tonumber(Needed(Level))
-
-            if not Reach or Reach <= 0 then
-                return nil, 0, 0
-            end
-
-            LevelBars[Level] = { Reach = Reach, Bar = Reach, Floor = 0 }
-
-            return Reach, Reach, 0
-        end
-
-        --// How far into its bar the character's EXP is, 0..bar. A value that
-        --// already fits the level's own bar is that bar's progress (the EXP
-        --// stat restarting each level); a running total sits between this
-        --// level's floor and its reach, and is read from the floor. Past the
-        --// reach means the character has levelled up (the stat has not caught
-        --// up yet), so it is at the end of the old bar. nil when it fits
-        --// neither, and then the caller holds rather than guessing.
-        local function GetBarProgress(Exp, Level)
-            local Reach, Bar, Floor = GetLevelBar(Level)
+            local Bar = tonumber(Needed(Level))
 
             if not Bar or Bar <= 0 then
+                return nil
+            end
+
+            LevelBars[Level] = Bar
+
+            return Bar
+        end
+
+        --// How far into its bar the character's EXP is, 0..bar. Past the bar
+        --// means the character has levelled up (the stat has not caught up
+        --// yet), so it is at the end of the old bar. nil when it is negative
+        --// or the bar is unreadable, and then the caller holds rather than
+        --// guessing.
+        local function GetBarProgress(Exp, Level)
+            local Bar = GetLevelBar(Level)
+
+            if not Bar then
+                return nil, 0
+            end
+
+            if Exp < 0 then
                 return nil, Bar
             end
 
-            if Exp >= 0 and Exp <= Bar then
-                return Exp, Bar
-            end
-
-            if Exp > Floor and Exp <= Reach then
-                return Exp - Floor, Bar
-            end
-
-            if Reach and Exp > Reach then
-                return Bar, Bar
-            end
-
-            return nil, Bar
+            return math.min(Exp, Bar), Bar
         end
 
         --// What a reset would cost where the character is standing. The level
@@ -2488,7 +2474,7 @@ return {
                         --// so say that rather than "LOSE 0 EXP".
                         local Risk = Loss == nil and "COST UNKNOWN"
                             or (Loss > 0 and string.format("LOSE %d EXP", math.floor(Loss + 0.5))
-                                or (Loss == 0 and "AT THE LIMIT" or "NO EXP AT RISK"))
+                                or "NO EXP AT RISK")
 
                         SetStatus(string.format(
                             "STOP %d/%d  CLEARING  %ds  %s%s",
