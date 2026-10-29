@@ -156,6 +156,75 @@ UIRef.ImportDataBox = UIRef.ProfilesSection:AddTextBox{
     end,
 }
 
+--// A save is hundreds of kilobytes of JSON. Left in the TextBox the client
+--// lays all of it out as one line, which is what made importing freeze, so a
+--// long paste is taken off the box the moment it lands and kept here; the box
+--// shows a short note instead.
+local ImportPayload = nil
+local ImportBoxBusy = false
+local IMPORT_BOX_LIMIT = 1200
+local IMPORT_BOX_NOTE = "(save kept outside the box - press Import Save)"
+
+local function WatchImportBox()
+    local Box = UIRef.ImportDataBox and UIRef.ImportDataBox.Box
+
+    if not Box then
+        return
+    end
+
+    Box:GetPropertyChangedSignal("Text"):Connect(function()
+        if ImportBoxBusy then
+            return
+        end
+
+        local Raw = Box.Text
+
+        if #Raw <= IMPORT_BOX_LIMIT then
+            ImportPayload = #Raw > 0 and Raw or nil
+            return
+        end
+
+        ImportPayload = Raw
+        ImportBoxBusy = true
+        Box.Text = IMPORT_BOX_NOTE
+        ImportBoxBusy = false
+    end)
+end
+
+WatchImportBox()
+
+local function ImportText()
+    local FromBox = UIRef.ImportDataBox:Get()
+
+    if FromBox == IMPORT_BOX_NOTE then
+        return ImportPayload or ""
+    end
+
+    --// The box was edited since the paste: what is in it is what to import.
+    return (#FromBox > 0) and FromBox or (ImportPayload or "")
+end
+
+--// The refresh after a load touches every list in the menu at once. Steps run
+--// one per frame, with the failure named, so the client keeps drawing instead
+--// of stalling on a single huge frame.
+local function RunInSteps(Steps, OnDone)
+    task.spawn(function()
+        for _, Step in ipairs(Steps) do
+            local Ok, Err = pcall(Step)
+
+            if not Ok then
+                warn("[AIC] profile refresh step failed:", Err)
+            end
+
+            task.wait()
+        end
+
+        if OnDone then
+            OnDone()
+        end
+    end)
+end
+
 UIRef.ProfilesSection:AddButton{ Name = "Create New Profile", Callback = function()
     local Name = UIRef.ProfileNameBox:Get()
 
@@ -220,35 +289,51 @@ UIRef.ProfilesSection:AddButton{ Name = "Export Save", Callback = function()
 end }
 
 UIRef.ProfilesSection:AddButton{ Name = "Import Save", Callback = function()
-    local Success, Result = AICProfile.ImportProfileFromText(UIRef.ImportDataBox:Get())
+    local Raw = ImportText()
+
+    AICUI.SetProfileStatus("IMPORTING...")
+
+    local Success, Result = AICProfile.ImportProfileFromText(Raw)
 
     if not Success then
+        --// Kept, so a refused paste can be tried again without pasting it
+        --// a second time.
+        ImportPayload = Raw
         AICUI.SetProfileStatus(Result or "IMPORT FAILED")
+        NotifyAction("Import", Result or "IMPORT FAILED")
         return
     end
 
+    ImportPayload = nil
+    UIRef.ImportDataBox:Set("")
+
+    local PlaceConfig = Runtime:GetPlaceConfig()
+
     UIRef.ProfileNameBox:Set(Result)
-    UIRef.ReachDistanceBox:Set(tostring(Runtime:GetPlaceConfig().REACH_DISTANCE or 5))
-    UIRef.FarmRadiusSlider:Set((Runtime:GetPlaceConfig().FARM_ZONES[1] and Runtime:GetPlaceConfig().FARM_ZONES[1].Radius) or 100, false)
-    UIRef.DeadzoneRadiusSlider:Set((Runtime:GetPlaceConfig().DEADZONES[1] and Runtime:GetPlaceConfig().DEADZONES[1].Radius) or 35, false)
+    UIRef.ReachDistanceBox:Set(tostring(PlaceConfig.REACH_DISTANCE or 5))
+    UIRef.FarmRadiusSlider:Set((PlaceConfig.FARM_ZONES[1] and PlaceConfig.FARM_ZONES[1].Radius) or 100, false)
+    UIRef.DeadzoneRadiusSlider:Set((PlaceConfig.DEADZONES[1] and PlaceConfig.DEADZONES[1].Radius) or 35, false)
     UIRef.RetreatHealthSlider:Set(CONFIG.RETREAT_HEALTH_PERCENT, false)
     UIRef.AutoHealHealthSlider:Set(CONFIG.AUTO_HEAL_HEALTH_PERCENT, false)
     UIRef.SafeEnemyRangeSlider:Set(CONFIG.SAFE_ENEMY_RANGE, false)
-    AICUI.RefreshWaypointList()
-    AICUI.RefreshFarmZoneList()
-    AICUI.RefreshDeadzoneList()
-    AICUI.RefreshProfileDropdown()
-    UIRef.ProfileDropdown:Set(Result, false)
-    AICUI.RefreshFarmZonePicker()
-    AICUI.RefreshDeadzonePicker()
-    UIRef.PriorityComponent:SetPriority(table.clone(CONFIG.TARGET_ENTITY_PRIORITY))
-    Feature.AutoBlock.Enabled = AICFeature.S.BlockEnabled
-    AICUI.updateFeatureButtons()
-    AICUI.RefreshTargetDropdown()
-    AICCombat.ResetTargetState()
-    AICDebug.UpdateDebugVisualizer()
-    AICUI.SetProfileStatus("IMPORTED " .. Result)
-    NotifyAction("Import", "Imported " .. tostring(Result))
+
+    RunInSteps({
+        function() AICUI.RefreshProfileDropdown(); UIRef.ProfileDropdown:Set(Result, false) end,
+        function() AICUI.RefreshWaypointList() end,
+        function() AICUI.RefreshFarmZoneList() end,
+        function() AICUI.RefreshDeadzoneList() end,
+        function() AICUI.RefreshFarmZonePicker() end,
+        function() AICUI.RefreshDeadzonePicker() end,
+        function() UIRef.PriorityComponent:SetPriority(table.clone(CONFIG.TARGET_ENTITY_PRIORITY)) end,
+        function() Feature.AutoBlock.Enabled = AICFeature.S.BlockEnabled end,
+        function() AICUI.updateFeatureButtons() end,
+        function() AICUI.RefreshTargetDropdown() end,
+        function() AICCombat.ResetTargetState() end,
+        function() AICDebug.UpdateDebugVisualizer() end,
+    }, function()
+        AICUI.SetProfileStatus("IMPORTED " .. Result)
+        NotifyAction("Import", "Imported " .. tostring(Result))
+    end)
 end }
 
 UIRef.ProfilesSection:AddButton{ Name = "Delete Profile", Callback = function()

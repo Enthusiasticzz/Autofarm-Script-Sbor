@@ -390,15 +390,19 @@ return {
 
             ExpandedData.Name = Name
             ExpandedData.PlaceId = game.PlaceId
+
+            local PreviousLastUsed = AICProfile.S.ProfileStore.LastUsed
+
             AICProfile.S.ProfileStore.Profiles[Name] = ExpandedData
             AICProfile.S.ProfileStore.LastUsed = Name
 
-            if not AICProfile.WriteProfileStore() then
-                AICProfile.S.ProfileStore.Profiles[Name] = nil
-                return false, "IMPORT FAILED: Could not save profile"
-            end
-
+            --// LoadProfile writes the store itself, so the import used to
+            --// encode and write every profile twice - the whole file, twice,
+            --// on the frame the button was pressed. A load that fails leaves
+            --// the file as it was, since nothing was written yet.
             if not AICProfile.LoadProfile(Name) then
+                AICProfile.S.ProfileStore.Profiles[Name] = nil
+                AICProfile.S.ProfileStore.LastUsed = PreviousLastUsed
                 return false, "IMPORT FAILED: Could not load profile"
             end
 

@@ -182,6 +182,56 @@ Check("AddPriority", function()
     Expect(type(priority:GetChecks()) == "table", "GetChecks")
 end)
 
+Check("a priority row can show a name and a second line", function()
+    --// The whitelist shows a username with the id under it. The row used to
+    --// squeeze both onto one line inside the width of one, which cut it off.
+    priority:SetPriority({ "4285700311", "123" }, { 0, 0 }, { false, false })
+    priority.Format = function(value)
+        if value == "4285700311" then return "@Builder", "ID 4285700311" end
+        return "User 123"
+    end
+    priority:Refresh()
+
+    local texts = {}
+
+    for _, child in ipairs(priority.Frame:GetChildren()) do
+        if child:IsA("Frame") then
+            for _, label in ipairs(child:GetChildren()) do
+                if label:IsA("TextLabel") then table.insert(texts, label.Text) end
+            end
+        end
+    end
+
+    local joined = table.concat(texts, "\n")
+
+    Expect(joined:find("@Builder", 1, true) ~= nil, "the name line is missing: " .. joined)
+    Expect(joined:find("ID 4285700311", 1, true) ~= nil, "the id line is missing: " .. joined)
+    Expect(joined:find("User 123", 1, true) ~= nil, "a one line row lost its text: " .. joined)
+
+    --// No separator may be written as two bytes again: that is what showed
+    --// up as a stray second byte in front of the cut.
+    Expect(joined:find(string.char(194), 1, true) == nil, "mojibake in a row: " .. joined)
+end)
+
+Check("setting a toggle to what it already is does nothing", function()
+    --// Auto Block syncs its own toggle from inside that toggle's callback.
+    --// Without this, turning it on called itself until the stack ran out.
+    local calls = 0
+    local t
+
+    t = section:AddToggle{ Name = "Self sync", Default = false, Callback = function()
+        calls += 1
+        t:Set(t:Get(), true)
+    end }
+
+    t:Set(true)
+    Expect(calls == 1, "a toggle reported the same value twice: " .. calls)
+    t:Set(true)
+    Expect(calls == 1, "setting the same value fired the callback: " .. calls)
+    t:Set(false)
+    Expect(calls == 2, "turning it off did not report: " .. calls)
+end)
+
 Check("native color picker + keybind", function()
     local raw = tab:AddSection{ Title = "Extras" }
     local picker = raw:AddColorPicker({ Name = "Test colour", Toggle = true, Default = Color3.fromRGB(10, 20, 30) })
@@ -235,9 +285,9 @@ Check("search", function()
 end)
 
 Check("the menu never takes the camera's mouse away", function()
-    --// A Modal GuiButton grabs every input on the screen, so the right mouse
-    --// drag that turns the camera does nothing anywhere. The window must
-    --// never put one up.
+    --// A Modal GuiButton grabs every input on the screen, and so does any
+    --// button as big as the screen: either one kills the right mouse drag that
+    --// turns the camera. The window must have neither.
     local step
 
     for _, fn in pairs(RunService.Steps or {}) do
@@ -248,19 +298,55 @@ Check("the menu never takes the camera's mouse away", function()
 
     win:Toggle(true)
     step()
-    Expect(win.ModalButton.Modal == false, "a modal button swallowed the screen")
     Expect(UserInputService.MouseBehavior == Enum.MouseBehavior.Default, "the menu did not free the cursor")
 
-    --// Nothing else full-screen may be modal either.
+    local function insideWindow(obj)
+        local p = obj.Parent
+        while p do
+            if p == win.Root then return true end
+            p = p.Parent
+        end
+        return false
+    end
+
+    --// Nothing may be modal, and nothing outside the window (which is only as
+    --// big as the window) may cover the screen with a button.
     for _, obj in ipairs(win.Gui:GetDescendants()) do
-        if obj:IsA("TextButton") and obj.Modal == true then
-            error("modal button in the window: " .. tostring(obj.Name))
+        if obj:IsA("GuiButton") then
+            if obj.Modal == true then
+                error("modal button in the window: " .. tostring(obj.Name))
+            end
+            local size = obj.Size
+            if not insideWindow(obj) and size.X.Scale >= 1 and size.Y.Scale >= 1 then
+                error("a screen sized button covers the game: " .. tostring(obj.Name))
+            end
         end
     end
 
     win:Toggle(false)
     step()
-    Expect(win.ModalButton.Modal == false, "closing left the screen modal")
+end)
+
+Check("widgets do not call back while they are built", function()
+    --// The C stack overflow: a dropdown that rebuilds its own options used to
+    --// be told about its own starting value during construction, and called
+    --// itself until the stack ran out.
+    local calls = 0
+    local rebuilt
+
+    rebuilt = section:AddDropdown{ Name = "Rebuild", Options = { "a", "b" }, Default = "a", Callback = function()
+        calls += 1
+        rebuilt:SetOptions({ "a", "b" })
+    end }
+
+    section:AddToggle{ Name = "Rebuild Toggle", Default = false, Callback = function() calls += 1 end }
+    section:AddSlider{ Name = "Rebuild Slider", Default = 1, Min = 0, Max = 5, Callback = function() calls += 1 end }
+
+    Expect(calls == 0, "a widget ran its callback while being built (" .. calls .. " times)")
+
+    --// And still answers the user.
+    rebuilt:Set("b")
+    Expect(calls == 1, "a dropdown no longer reports a change: " .. calls)
 end)
 
 Check("notifications stay bounded", function()

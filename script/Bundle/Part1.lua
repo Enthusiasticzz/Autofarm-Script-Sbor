@@ -269,10 +269,10 @@ function Library.new(o)
 	self:Themed(self.Curtain, { BackgroundColor3 = "Window" })
 
 	-- Popups that must be able to leave the window (the config list opens BELOW the sidebar) live here,
-	-- outside the clipped window. FloatBlocker closes them when you click anywhere else.
+	-- outside the clipped window. They are closed from the pointer's position (see the InputBegan
+	-- connection below), not by a full screen button: a screen sized GuiButton takes the mouse from
+	-- the game, and with it the right drag that turns the camera.
 	self.FloatLayer = New("Frame", { BackgroundTransparency = 1, Size = UDim2.fromScale(1,1), ZIndex = 50, Parent = self.Gui })
-	self.FloatBlocker = New("TextButton", { BackgroundTransparency = 1, Text = "", Size = UDim2.fromScale(1,1), Visible = false, ZIndex = 1, Parent = self.FloatLayer })
-	self.FloatBlocker.MouseButton1Click:Connect(function() self:ClosePopup() end)
 
 	self:_buildSidebar()
 	self:_buildHeader()
@@ -282,11 +282,10 @@ function Library.new(o)
 	self:_buildCursor()
 	self:Bind(function() self:_paintTabs(true) end)
 
-	--// Kept for the API, but never modal. A Modal GuiButton takes every input
-	--// on the screen, and with it the right mouse drag that turns the camera -
-	--// which is why the camera felt dead the whole time the menu was up. The
-	--// window itself (Root.Active) still takes the clicks that land on it.
-	self.ModalButton = New("TextButton", { BackgroundTransparency = 1, Text = "", Modal = false, Size = UDim2.new(), Parent = self.Gui })
+	--// There is deliberately no modal button and no screen sized button of any
+	--// kind. Either one takes every input on the screen, and with it the right
+	--// mouse drag that turns the camera. The window itself (Root.Active) takes
+	--// only the clicks that land on it.
 
 	-- global input
 	table.insert(self._conns, UIS.InputChanged:Connect(function(i)
@@ -300,6 +299,16 @@ function Library.new(o)
 	table.insert(self._conns, UIS.InputBegan:Connect(function(i)
 		if i.UserInputType == Enum.UserInputType.MouseButton1 and self.Cursor.Effects and self.CursorHolder.Visible then
 			self:_ripple()
+		end
+		--// A float popup can hang outside the window, where nothing covers the
+		--// click, so it is dismissed by measuring the pointer against it.
+		local float = self._popupFloat
+		if float and (i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch) then
+			local pos = UIS:GetMouseLocation()
+			local ap, asz = float.AbsolutePosition, float.AbsoluteSize
+			if pos.X < ap.X or pos.Y < ap.Y or pos.X > ap.X + asz.X or pos.Y > ap.Y + asz.Y then
+				self:ClosePopup()
+			end
 		end
 		if self._listening or UIS:GetFocusedTextBox() then return end
 		if KeyMatches(self.MenuKey, i) then self:Toggle() return end
@@ -329,7 +338,6 @@ function Library.new(o)
 					self._prevMouseBehavior = UIS.MouseBehavior
 				end
 
-				self.ModalButton.Modal = false
 				UIS.MouseBehavior = Enum.MouseBehavior.Default
 			elseif self._mouseUnlocked then
 				self._mouseUnlocked = false
@@ -674,7 +682,7 @@ function Library:ClosePopup(instant)
 		if close then close(p, instant) else p:Destroy() end   -- the config drawer slides shut, everything else just goes
 	end
 	self.Blocker.Visible = false
-	if self.FloatBlocker then self.FloatBlocker.Visible = false end
+	self._popupFloat = nil
 end
 
 -- Popups are children of the window, so everything is measured against the
@@ -701,7 +709,7 @@ function Library:_openPopup(owner, size, anchor, up, bare, float)
 		f = New("Frame", { Size = UDim2.fromOffset(size.X, size.Y), Position = UDim2.fromOffset(x, up and (ap.Y - 4 * rs) or below),
 			AnchorPoint = Vector2.new(0, up and 1 or 0), BorderSizePixel = 0, BackgroundTransparency = bare and 1 or 0, Active = true, ZIndex = 2, Parent = self.FloatLayer })
 		New("UIScale", { Scale = rs, Parent = f })
-		self.FloatBlocker.Visible = true
+		self._popupFloat = f
 	else
 		local rel, asz = self:_relative(anchor)
 		if not up and rel.Y + asz.Y + 4 + size.Y > ROOT_H - 4 then up = true end
@@ -1428,7 +1436,13 @@ function Section:AddToggle(o, ...)
 	end
 	win:Bind(function() paint(false) end)
 	function obj:Set(v, silent)
-		self.Value = v and true or false
+		v = v and true or false
+		--// Setting a toggle to what it already is does nothing. A feature that
+		--// syncs its own toggle from inside that toggle's callback used to
+		--// call itself until the stack ran out, which is what made turning
+		--// Auto Block on and off stutter.
+		if v == self.Value then return end
+		self.Value = v
 		if o.Flag then win:_setFlag(o.Flag, self.Value) end
 		paint(true)
 		if o.Callback and not silent then task.spawn(o.Callback, self.Value) end
@@ -1464,7 +1478,11 @@ function Section:AddToggle(o, ...)
 		setKey(entry.Key)
 	end
 	self:_register(o, obj)
-	if o.Callback and obj.Value then task.spawn(o.Callback, true) end
+	--// The callback is for the user turning it on or off, not for the build.
+	--// Firing it here meant a callback that rebuilds its own widget (the
+	--// whitelist list, a material picker) called itself while this toggle was
+	--// still under construction: C stack overflow. The starting state is
+	--// already on screen from obj:Set above.
 	return obj
 end
 
@@ -1526,7 +1544,8 @@ function Section:AddSlider(o, ...)
 	end
 	obj:Set(obj.Value, true)
 	self:_register(o, obj)
-	if o.Callback then task.spawn(o.Callback, obj.Value) end
+	--// Never at build time: see AddToggle. A slider's callback changes the
+	--// setting it was built from, which can rebuild the row it lives in.
 	return obj
 end
 
@@ -1581,7 +1600,8 @@ function Section:AddDropdown(o, ...)
 	box.MouseButton1Click:Connect(function() if obj.Open then obj:Close() else obj:OpenList() end end)
 	obj:Set(obj.Value, true)
 	self:_register(o, obj)
-	if o.Callback then task.spawn(o.Callback, obj.Value) end
+	--// Never at build time: see AddToggle. Opening a picker rebuilds its own
+	--// option list, so a callback here is the shortest path to a stack overflow.
 	return obj
 end
 
@@ -1770,9 +1790,17 @@ function Section:AddButton(o, ...)
 	end
 	local win, row = self.Win, self:_row(42)
 	local b = New("TextButton", { Position = UDim2.fromOffset(14,8), Size = UDim2.new(1,-28,0,26), Text = "", AutoButtonColor = false, BorderSizePixel = 0, Parent = row })
-	Round(b, 6); win:Themed(b, { BackgroundColor3 = "Element" })
+	Round(b, 6)
+	--// Primary is the one action of a group (Add, Save); everything else stays
+	--// quiet on the panel colour so the eye lands on the one that matters.
+	if o.Primary then
+		win:Bind(function() b.BackgroundColor3 = win.Theme.Accent end, b)
+	else
+		win:Themed(b, { BackgroundColor3 = "Element" })
+	end
 	local st = Stroke(b); win:_hover(b, st)
-	local l = win:Label(b, o.Name, { Bold = true, TextSize = 13 }); l.TextXAlignment = Enum.TextXAlignment.Center
+	if o.Primary then st.Transparency = .7 end
+	local l = win:Label(b, o.Name, { Bold = true, TextSize = 13, Color = o.Primary and "Window" or nil }); l.TextXAlignment = Enum.TextXAlignment.Center
 	b.MouseButton1Click:Connect(function()
 		win:Tween(b, { Size = UDim2.new(1,-32,0,24), Position = UDim2.fromOffset(16,9) }, .06)
 		task.delay(.08 / math.max(win.AnimSpeed, .1), function() win:Tween(b, { Size = UDim2.new(1,-28,0,26), Position = UDim2.fromOffset(14,8) }, .1) end)
@@ -2107,7 +2135,7 @@ function Section:AddPriority(name, values, options)
 	local minValue = tonumber(options.Min) or 0
 	local maxValue = tonumber(options.Max) or math.huge
 
-	local header = self:_row((hasValues or hasChecks) and 46 or 34)
+	local header = self:_row((hasValues or hasChecks) and 46 or 36)
 	lib:Label(header, string.upper(tostring(name or "")), {
 		Bold = true,
 		TextSize = 12,
@@ -2115,23 +2143,43 @@ function Section:AddPriority(name, values, options)
 		SizeUDim = UDim2.new(1, -28, 0, 16),
 	})
 
-	local captions = {}
-	if hasValues then table.insert(captions, string.upper(tostring(options.ValueLabel or "Value"))) end
-	if hasChecks then table.insert(captions, string.upper(tostring(options.CheckLabel or "Check"))) end
-	if #captions > 0 then
-		lib:Label(header, table.concat(captions, "   "), {
+	--// A count sits over its own column instead of a caption floating at the
+	--// left where it described nothing.
+	if hasValues then
+		local cap = lib:Label(header, string.upper(tostring(options.ValueLabel or "Value")), {
 			TextSize = 9,
 			Color = "SubText",
-			Position = UDim2.fromOffset(14, 26),
-			SizeUDim = UDim2.new(1, -28, 0, 14),
+			Position = UDim2.new(1, -108, 0, 24),
+			SizeUDim = UDim2.fromOffset(64, 12),
 		})
+		cap.AnchorPoint = Vector2.new(1, 0)
+		cap.TextXAlignment = Enum.TextXAlignment.Center
+	end
+	if hasChecks then
+		local cap = lib:Label(header, string.upper(tostring(options.CheckLabel or "Check")), {
+			TextSize = 9,
+			Color = "SubText",
+			Position = UDim2.fromOffset(14, 24),
+			SizeUDim = UDim2.fromOffset(20, 12),
+		})
+		cap.TextXAlignment = Enum.TextXAlignment.Center
 	end
 
 	local listRow = self:_row(0)
 	listRow.Size = UDim2.new(1, 0, 0, 0)
 	listRow.AutomaticSize = Enum.AutomaticSize.Y
 	New("UIListLayout", {
+		Padding = UDim.new(0, 5),
 		SortOrder = Enum.SortOrder.LayoutOrder,
+		Parent = listRow,
+	})
+	--// Every entry is its own card, inset from the section edge, so a list
+	--// reads as rows of things rather than one striped block.
+	New("UIPadding", {
+		PaddingLeft = UDim.new(0, 10),
+		PaddingRight = UDim.new(0, 10),
+		PaddingTop = UDim.new(0, 2),
+		PaddingBottom = UDim.new(0, 10),
 		Parent = listRow,
 	})
 
@@ -2167,69 +2215,96 @@ function Section:AddPriority(name, values, options)
 
 	local Refresh
 
-	local function SmallButton(parent, text, x, color)
+	--// A small round-cornered glyph button on the right of a row: invisible
+	--// until the pointer is on it, so a list of entries reads as text and the
+	--// controls only appear where they are actually being used.
+	local function IconButton(parent, glyph, x, danger, textSize)
 		local button = New("TextButton", {
 			AnchorPoint = Vector2.new(1, .5),
 			Position = UDim2.new(1, x, .5, 0),
-			Size = UDim2.fromOffset(16, 18),
+			Size = UDim2.fromOffset(24, 24),
+			BackgroundColor3 = lib.Theme.Element,
 			BackgroundTransparency = 1,
-			Text = text,
+			BorderSizePixel = 0,
+			Text = glyph,
 			Font = Fonts.Bold,
-			TextSize = 12,
-			TextColor3 = color or lib.Theme.SubText,
+			TextSize = textSize or 11,
+			TextColor3 = danger and lib.Theme.Danger or lib.Theme.SubText,
 			AutoButtonColor = false,
 			Parent = parent,
 		})
+		Round(button, 6)
+		local stroke = Stroke(button, lib.Theme.Border, 1)
+		stroke.Transparency = 1
+		button.MouseEnter:Connect(function()
+			lib:Tween(button, { BackgroundTransparency = 0, BackgroundColor3 = (danger and lib.Theme.Danger) or lib.Theme.Element }, .12)
+			lib:Tween(button, { TextColor3 = danger and lib.Theme.Window or lib.Theme.Text }, .12)
+			lib:Tween(stroke, { Transparency = .5 }, .12)
+		end)
+		button.MouseLeave:Connect(function()
+			lib:Tween(button, { BackgroundTransparency = 1 }, .12)
+			lib:Tween(button, { TextColor3 = danger and lib.Theme.Danger or lib.Theme.SubText }, .12)
+			lib:Tween(stroke, { Transparency = 1 }, .12)
+		end)
 		return button
 	end
 
 	Refresh = function()
 		for _, child in ipairs(listRow:GetChildren()) do
-			if not child:IsA("UIListLayout") then
+			if not child:IsA("UIListLayout") and not child:IsA("UIPadding") then
 				child:Destroy()
 			end
 		end
 		Fit()
 
 		if #component.Priority == 0 then
-			local empty = New("TextLabel", {
+			local empty = New("Frame", {
 				LayoutOrder = 1,
-				Size = UDim2.new(1, 0, 0, 26),
-				BackgroundTransparency = 1,
-				Text = "Nothing in this list yet",
-				TextColor3 = lib.Theme.SubText,
-				Font = Fonts.Regular,
-				TextSize = 10,
-				TextXAlignment = Enum.TextXAlignment.Left,
+				Size = UDim2.new(1, 0, 0, 38),
+				BackgroundColor3 = lib.Theme.Element,
+				BackgroundTransparency = .55,
+				BorderSizePixel = 0,
 				Parent = listRow,
 			})
-			New("UIPadding", {
-				PaddingLeft = UDim.new(0, 14),
-				Parent = empty,
-			})
+			Round(empty, 6)
+			Stroke(empty, lib.Theme.Border).Transparency = .5
+			local text = lib:Label(empty, "Nothing in this list yet", { Color = "SubText", TextSize = 11 })
+			text.Size = UDim2.fromScale(1, 1)
+			text.TextXAlignment = Enum.TextXAlignment.Center
 			return
 		end
 
+		--// Where the text has to stop: the count box and the three buttons sit
+		--// at the right, packed from the edge inwards.
+		local rightInset = hasValues and 172 or 100
+
 		for index, value in ipairs(component.Priority) do
+			local shown, sub
+
+			if component.Format then
+				shown, sub = component.Format(value)
+			end
+
+			shown = shown or tostring(value)
+
 			local row = New("Frame", {
 				LayoutOrder = index,
-				Size = UDim2.new(1, 0, 0, 34),
-				BackgroundTransparency = 1,
+				Size = UDim2.new(1, 0, 0, sub and 46 or 38),
+				BackgroundColor3 = lib.Theme.Element,
+				BackgroundTransparency = .45,
+				BorderSizePixel = 0,
 				Parent = listRow,
 			})
-			New("Frame", {
-				Size = UDim2.new(1, 0, 0, 1),
-				BackgroundColor3 = lib.Theme.Border,
-				BorderSizePixel = 0,
-				Parent = row,
-			})
+			Round(row, 6)
+			Stroke(row, lib.Theme.Border).Transparency = .4
 
 			local left = 14
 			if hasChecks then
 				local checked = component.Checks[index] == true
 				local check = New("TextButton", {
-					Size = UDim2.fromOffset(16, 16),
-					Position = UDim2.fromOffset(14, 9),
+					Size = UDim2.fromOffset(18, 18),
+					AnchorPoint = Vector2.new(0, .5),
+					Position = UDim2.new(0, 12, .5, 0),
 					BackgroundColor3 = checked and lib.Theme.Accent or lib.Theme.Element,
 					BorderSizePixel = 0,
 					Text = checked and "✓" or "",
@@ -2239,45 +2314,60 @@ function Section:AddPriority(name, values, options)
 					AutoButtonColor = false,
 					Parent = row,
 				})
-				Round(check, 3)
-				Stroke(check)
+				Round(check, 5)
+				Stroke(check, checked and lib.Theme.Accent or lib.Theme.Border).Transparency = checked and 0 or .2
 				lib:_Connect(check.MouseButton1Click, function()
 					component:SetCheck(index, not component.Checks[index])
 				end)
-				left = 38
+				left = 40
 			end
 
-			local shown = component.Format and component.Format(value) or string.upper(tostring(value))
-			New("TextLabel", {
-				BackgroundTransparency = 1,
-				Text = shown,
-				TextColor3 = lib.Theme.Text,
-				Font = Fonts.Bold,
-				TextSize = 10,
-				TextXAlignment = Enum.TextXAlignment.Left,
-				TextTruncate = Enum.TextTruncate.AtEnd,
-				Position = UDim2.fromOffset(left, 0),
-				Size = UDim2.new(1, -(left + (hasValues and 224 or 150)), 1, 0),
-				Parent = row,
-			})
+			if sub then
+				local title = lib:Label(row, shown, {
+					Color = "Text",
+					TextSize = 12,
+					Position = UDim2.fromOffset(left, 7),
+					SizeUDim = UDim2.new(1, -(left + rightInset), 0, 15),
+				})
+				title.Font = Fonts.Medium
+				title.TextTruncate = Enum.TextTruncate.AtEnd
+				lib:Label(row, sub, {
+					Color = "SubText",
+					TextSize = 10,
+					Position = UDim2.fromOffset(left, 24),
+					SizeUDim = UDim2.new(1, -(left + rightInset), 0, 13),
+				})
+			else
+				local title = lib:Label(row, shown, {
+					Color = "Text",
+					TextSize = 12,
+					Position = UDim2.fromOffset(left, 0),
+					SizeUDim = UDim2.new(1, -(left + rightInset), 1, 0),
+				})
+				title.Font = Fonts.Medium
+				title.TextTruncate = Enum.TextTruncate.AtEnd
+			end
 
 			if hasValues then
 				local box = New("TextBox", {
 					AnchorPoint = Vector2.new(1, .5),
-					Position = UDim2.new(1, -142, .5, 0),
-					Size = UDim2.fromOffset(62, 22),
-					BackgroundColor3 = lib.Theme.Element,
+					Position = UDim2.new(1, -98, .5, 0),
+					Size = UDim2.fromOffset(64, 24),
+					BackgroundColor3 = lib.Theme.Window,
+					BackgroundTransparency = .25,
 					BorderSizePixel = 0,
 					Text = tostring(component.Values[index]),
-					Font = Fonts.Regular,
+					Font = Fonts.Medium,
 					TextSize = 11,
 					TextColor3 = lib.Theme.Text,
 					TextXAlignment = Enum.TextXAlignment.Center,
 					ClearTextOnFocus = false,
 					Parent = row,
 				})
-				Round(box, 4)
-				Stroke(box, lib.Theme.Border)
+				Round(box, 6)
+				local boxStroke = Stroke(box, lib.Theme.Border, 1)
+				boxStroke.Transparency = .2
+				lib:_focusStroke(box, boxStroke)
 				lib:_Connect(box.FocusLost, function()
 					local number = tonumber(box.Text)
 					if not number then
@@ -2292,9 +2382,9 @@ function Section:AddPriority(name, values, options)
 				end)
 			end
 
-			local up = SmallButton(row, "^", -72)
-			local down = SmallButton(row, "v", -52)
-			local remove = SmallButton(row, "x", -30, lib.Theme.Danger)
+			local up = IconButton(row, "▲", -66, false, 8)
+			local down = IconButton(row, "▼", -38, false, 8)
+			local remove = IconButton(row, "✕", -10, true)
 
 			lib:_Connect(up.MouseButton1Click, function()
 				component:MoveUp(value)
@@ -2481,7 +2571,10 @@ function Library:_BuildSettingsTab()
 
 	local fontChoices = self:_GetFontChoices()
 	local defaultFont = self.FontName or fontChoices.Names[1]
-	local defaultTextScale = math.round(((self._DefaultTextScale or 1) * 100))
+	--// The slider starts where the text actually is. It used to be corrected
+	--// by its own build time callback; now that widgets do not call back while
+	--// they are built, it has to read the current scale itself.
+	local defaultTextScale = math.round(((self.TextScale or self._DefaultTextScale or 1) * 100))
 	local defaultWidth = self._DefaultWindowSize and self._DefaultWindowSize.X or ROOT_W
 	local defaultHeight = self._DefaultWindowSize and self._DefaultWindowSize.Y or ROOT_H
 

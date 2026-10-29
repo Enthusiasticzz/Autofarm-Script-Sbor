@@ -70,7 +70,10 @@ return {
                 if IsGlobal then
                     AICProfile.WriteGlobalStore()
                 else
-                    AICProfile.SaveActiveProfile()
+                    --// Queued, not immediate: SaveActiveProfile captures the
+                    --// whole profile and writes the file, and a toggle should
+                    --// not hitch the frame it was clicked on.
+                    AICProfile.QueueProfileSave()
                 end
             end }
 
@@ -82,6 +85,60 @@ return {
         AICUI.S.UserNames = {}
         --// UserId -> callbacks waiting on its lookup.
         AICUI.S.UserNameWaiters = {}
+
+        --// An imported whitelist asks for every name in it at once. Roblox
+        --// rate limits GetNameFromUserIdAsync, and a burst of refusals is what
+        --// buried the executor in errors, so four run at a time and the rest
+        --// wait their turn.
+        AICUI.S.UserNameQueue = {}
+        AICUI.S.UserNameInFlight = 0
+
+        local USER_NAME_LOOKUPS = 4
+        local UserNamePumping = false
+
+        local function LookUpUserName(Id)
+            local Ok, Name = pcall(Players.GetNameFromUserIdAsync, Players, Id)
+            local Callbacks = AICUI.S.UserNameWaiters[Id] or {}
+
+            AICUI.S.UserNameWaiters[Id] = nil
+
+            if Ok and type(Name) == "string" then
+                AICUI.S.UserNames[Id] = Name
+
+                for _, Callback in ipairs(Callbacks) do
+                    Callback(Name)
+                end
+            end
+        end
+
+        local function PumpUserNames()
+            --// Not re-entrant: a lookup that finishes inside the loop below
+            --// must not start a second loop of its own.
+            if UserNamePumping then
+                return
+            end
+
+            UserNamePumping = true
+
+            while AICUI.S.UserNameInFlight < USER_NAME_LOOKUPS do
+                local Id = table.remove(AICUI.S.UserNameQueue, 1)
+
+                if not Id then
+                    break
+                end
+
+                AICUI.S.UserNameInFlight += 1
+
+                task.spawn(function()
+                    LookUpUserName(Id)
+
+                    AICUI.S.UserNameInFlight = math.max(AICUI.S.UserNameInFlight - 1, 0)
+                    PumpUserNames()
+                end)
+            end
+
+            UserNamePumping = false
+        end
 
         --// The username of UserId, or nil when not known yet. Someone in the
         --// server is answered at once; anyone else is looked up in the
@@ -116,39 +173,45 @@ return {
                 AICUI.S.UserNames[Id] = false
                 AICUI.S.UserNameWaiters[Id] = { OnFound }
 
-                task.spawn(function()
-                    local Ok, Name = pcall(Players.GetNameFromUserIdAsync, Players, Id)
-                    local Callbacks = AICUI.S.UserNameWaiters[Id] or {}
-
-                    AICUI.S.UserNameWaiters[Id] = nil
-
-                    if not Ok or type(Name) ~= "string" then
-                        return
-                    end
-
-                    AICUI.S.UserNames[Id] = Name
-
-                    for _, Callback in ipairs(Callbacks) do
-                        Callback(Name)
-                    end
-                end)
+                table.insert(AICUI.S.UserNameQueue, Id)
+                PumpUserNames()
             end
 
             return nil
         end
 
-        --// Makes a priority list of UserIds show "UserId  Â·  @Name", redrawn
-        --// as names arrive.
+        --// Makes a priority list of UserIds show the name on one line and
+        --// the id under it, redrawn as names arrive. The two used to share a
+        --// line joined by a separator written with two bytes, so a row showed
+        --// the id, a stray byte, and then nothing else.
         function AICUI.ShowUserNames(Component)
-            --// One callback per list, so a list waits on each id only once.
+            --// Every name that arrives used to redraw the whole list, so a
+            --// whitelist of 120 people was rebuilt 120 times, each rebuild
+            --// asking for all 120 again: that is what importing one froze.
+            --// The redraws are collapsed into one per frame instead.
+            local RedrawQueued = false
+
             local function Redraw()
-                Component:Refresh()
+                if RedrawQueued then
+                    return
+                end
+
+                RedrawQueued = true
+
+                task.defer(function()
+                    RedrawQueued = false
+                    Component:Refresh()
+                end)
             end
 
             Component.Format = function(Value)
                 local Name = AICUI.GetUserName(Value, Redraw)
 
-                return Name and string.format("%s  Â·  @%s", Value, Name) or Value
+                if Name then
+                    return "@" .. Name, "ID " .. tostring(Value)
+                end
+
+                return "User " .. tostring(Value)
             end
 
             Component:Refresh()

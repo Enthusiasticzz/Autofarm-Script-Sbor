@@ -48,12 +48,15 @@ return {
             AICFeature.S.BlockEnabled = self.Enabled
             Feature.AutoBlock.Enabled = self.Enabled
 
+            --// Silent: this is only putting the button in step with the state
+            --// it just reported, and a callback from inside a callback is how
+            --// the toggle used to stutter.
             if self.Button then
-                self.Button:Set(self.Enabled, false)
+                self.Button:Set(self.Enabled, true)
             end
 
-            if Save ~= false and AICProfile.SaveActiveProfile then
-                AICProfile.SaveActiveProfile()
+            if Save ~= false and AICProfile.QueueProfileSave then
+                AICProfile.QueueProfileSave()
             end
         end
 
@@ -549,13 +552,16 @@ return {
 
             self.WhitelistBox = BlockSection:AddTextBox{
                 Name = "User ID",
+                Placeholder = "Paste a Roblox UserId",
                 Default = "",
                 Callback = function() end,
             }
             UIRef.BlockWhitelistBox = self.WhitelistBox
 
+            --// The one action of the group, so it is the one that is coloured.
             BlockSection:AddButton{
                 Name = "Add User ID",
+                Primary = true,
                 Callback = function()
                     local Id = self:NormalizeUserId(self.WhitelistBox:Get())
 
