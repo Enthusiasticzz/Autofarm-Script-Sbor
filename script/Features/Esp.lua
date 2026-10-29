@@ -1125,15 +1125,15 @@ return {
                     if HealthLines then
                         if X1 then
                             local Fraction = math.clamp(Entry.HealthFrac or 1, 0, 1)
-                            local BarX = X1 - 6
+                            local BarX = X1 - 8
                             local Height = Y2 - Y1
                             local Track, Fill = HealthLines[1], HealthLines[2]
 
                             SetLine(Track, BarX, Y1, BarX, Y2)
                             SetLine(Fill, BarX, Y2, BarX, Y2 - Height * Fraction)
 
-                            Track.Thickness = 3
-                            Fill.Thickness = 2
+                            Track.Thickness = 6
+                            Fill.Thickness = 4
                             Fill.Color = HealthColor(Fraction)
                             Track.Visible = true
                             Fill.Visible = true
@@ -1147,16 +1147,16 @@ return {
                     if HealthFrames then
                         if X1 then
                             local Fraction = math.clamp(Entry.HealthFrac or 1, 0, 1)
-                            local BarX = X1 - 8
+                            local BarX = X1 - 11
                             local Height = Y2 - Y1
                             local Track, Fill = HealthFrames[1], HealthFrames[2]
 
                             Track.Position = UDim2.fromOffset(BarX, Y1)
-                            Track.Size = UDim2.fromOffset(4, Height)
+                            Track.Size = UDim2.fromOffset(7, Height)
                             Track.Visible = true
 
                             Fill.Position = UDim2.fromOffset(BarX, Y2 - Height * Fraction)
-                            Fill.Size = UDim2.fromOffset(4, math.max(1, Height * Fraction))
+                            Fill.Size = UDim2.fromOffset(7, math.max(1, Height * Fraction))
                             Fill.BackgroundColor3 = HealthColor(Fraction)
                             Fill.Visible = true
                         else
