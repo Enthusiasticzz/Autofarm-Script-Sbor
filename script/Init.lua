@@ -6,6 +6,11 @@ local UTILS_PATH = "UI/Utils.lua"
 
 --// A failed download is retried this many times before giving up.
 local FETCH_RETRIES = 2
+--// Files in flight at once, how long one may take, and how long the whole
+--// download phase may take before the missing files are reported by name.
+local FETCH_WORKERS = 6
+local FETCH_TIMEOUT = 8
+local FETCH_DEADLINE = 90
 
 local BRANCH = "main"
 
@@ -370,25 +375,61 @@ local function checkSpec(Spec, Path)
 end
 
 local function fetchOnce(Path)
-    local Ok, Body = pcall(function()
-        return game:HttpGet(BASE .. Path, true)
+    local Body, Done = nil, false
+
+    --// The download runs in its own coroutine so it can be abandoned: some
+    --// executors stop answering a request instead of erroring it, and a
+    --// single one of those used to leave the loader waiting forever.
+    task.spawn(function()
+        local Ok, Result = pcall(function()
+            return game:HttpGet(BASE .. Path, true)
+        end)
+
+        if Ok then
+            Body = Result
+        end
+
+        Done = true
     end)
 
-    if Ok and type(Body) == "string" and Body ~= "" and not string.find(Body, "^404: Not Found") then
+    local Waited = 0
+
+    while not Done and Waited < FETCH_TIMEOUT do
+        task.wait(0.1)
+        Waited += 0.1
+    end
+
+    if not Done then
+        return nil
+    end
+
+    if type(Body) == "string" and Body ~= "" and not string.find(Body, "^404: Not Found") then
         return Body
     end
 
     return nil
 end
 
---// Starts every download at once. HttpGet yields, so fetching in parallel
---// costs about one round trip instead of one per file.
+--// Downloads a few files at a time. Asking an executor for all of them at
+--// once is what left one of them stalled behind the rest; a worker pool keeps
+--// the queue moving, and every file now finishes or times out, so the counter
+--// the loader waits on always reaches zero.
 local function fetchParallel(Paths)
     local Bodies = {}
     local Pending = #Paths
+    local Next = 1
 
-    for _, Path in ipairs(Paths) do
-        task.spawn(function()
+    local function Worker()
+        while true do
+            local Index = Next
+            Next += 1
+
+            local Path = Paths[Index]
+
+            if not Path then
+                return
+            end
+
             for _ = 0, FETCH_RETRIES do
                 Bodies[Path] = fetchOnce(Path)
 
@@ -398,7 +439,11 @@ local function fetchParallel(Paths)
             end
 
             Pending -= 1
-        end)
+        end
+    end
+
+    for _ = 1, math.min(FETCH_WORKERS, #Paths) do
+        task.spawn(Worker)
     end
 
     return Bodies, function()
@@ -465,10 +510,19 @@ local function loadRemote()
 
     createWindow(UtilsChunk())
 
-    while GetPending() > 0 do
+    --// A file that never answers can no longer hold the boot: the workers
+    --// time out, and this gives the whole phase a hard limit as well, after
+    --// which the files still missing are named one by one.
+    local FetchDeadline = os.clock() + FETCH_DEADLINE
+
+    while GetPending() > 0 and os.clock() < FetchDeadline do
         local Done = Total - GetPending()
         report(Done / Total * FETCH_SHARE, string.format("FETCHING MODULES  //  %d / %d", Done, Total))
         task.wait()
+    end
+
+    if GetPending() > 0 then
+        report(FETCH_SHARE, string.format("FETCH TIMED OUT  //  %d / %d", Total - GetPending(), Total))
     end
 
     report(FETCH_SHARE, "COMPILING MODULES")
