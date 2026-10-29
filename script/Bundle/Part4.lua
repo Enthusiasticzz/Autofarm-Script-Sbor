@@ -10,21 +10,20 @@ Dependencies = {
 "Components",
 },
 Start = function(Context)
-local Services = Context.Services
-local Players = Services.Players
 local Player = Context.Player
 local UIRef = Context.UIRef
-local AICUI = Context.AICUI
+local RunService = game:GetService("RunService")
 local SCAN_INTERVAL = 0.5
+local KINDS = { "Player", "Mob", "Weapon" }
+local TITLES = { Player = "Players", Mob = "Mobs", Weapon = "Weapons" }
 local COLORS = {
 Player = Color3.fromRGB(80, 200, 255),
 Mob = Color3.fromRGB(255, 90, 90),
 Weapon = Color3.fromRGB(255, 200, 60),
 }
-local KINDS = { "Player", "Mob", "Weapon" }
 local S = {
 Kinds = {},
-Highlights = {},   -- [Target] = { Kind = ..., Instance = Highlight }
+Entries = {}, -- [Target] = { Kind, Highlight?, Frame?, Stroke? }
 Timer = 0,
 }
 for _, Kind in ipairs(KINDS) do
@@ -33,30 +32,71 @@ Enabled = false,
 Color = COLORS[Kind],
 Outline = true,
 Box = false,
-BoxStyle = "3D",
-Label = false,
 }
 end
-local function Enabled(Kind)
+local function IsEnabled(Kind)
 return S.Kinds[Kind].Enabled
 end
 local function AnyEnabled()
 for _, Kind in ipairs(KINDS) do
-if Enabled(Kind) then return true end
+if IsEnabled(Kind) then return true end
 end
 return false
 end
-local function ClearHighlights(Kind)
-for Target, Entry in pairs(S.Highlights) do
+local function Remove(Target, Entry)
+if Entry.Highlight then pcall(function() Entry.Highlight:Destroy() end) end
+if Entry.Frame then pcall(function() Entry.Frame:Destroy() end) end
+S.Entries[Target] = nil
+end
+local function Clear(Kind)
+for Target, Entry in pairs(S.Entries) do
 if Kind == nil or Entry.Kind == Kind then
-for _, Instance in ipairs(Entry.Instances) do
-Instance:Destroy()
-end
-S.Highlights[Target] = nil
+Remove(Target, Entry)
 end
 end
 end
-local Gui
+local Root, HighlightFolder
+local function TryParent(Gui, Parent)
+if not Parent then return false end
+local Ok = pcall(function() Gui.Parent = Parent end)
+return Ok and Gui.Parent == Parent
+end
+local function GetRoot()
+if Root and Root.Parent and HighlightFolder and HighlightFolder.Parent then
+return Root
+end
+if Root then
+pcall(function() Root:Destroy() end)
+end
+Root, HighlightFolder = nil, nil
+Clear()
+local Gui = Instance.new("ScreenGui")
+Gui.Name = "AICEsp"
+Gui.IgnoreGuiInset = true
+Gui.ResetOnSpawn = false
+Gui.ClipToDeviceSafeArea = false
+Gui.DisplayOrder = 999999
+local Parented = false
+if type(gethui) == "function" then
+local Ok, Hui = pcall(gethui)
+if Ok then Parented = TryParent(Gui, Hui) end
+end
+if not Parented then
+Parented = TryParent(Gui, game:GetService("CoreGui"))
+end
+if not Parented then
+Parented = TryParent(Gui, Player:FindFirstChildOfClass("PlayerGui"))
+end
+if not Parented then
+Gui:Destroy()
+return nil
+end
+local Folder = Instance.new("Folder")
+Folder.Name = "Outlines"
+Folder.Parent = Gui
+Root, HighlightFolder = Gui, Folder
+return Root
+end
 local CORNERS = {}
 for _, X in ipairs({ -0.5, 0.5 }) do
 for _, Y in ipairs({ -0.5, 0.5 }) do
@@ -65,199 +105,94 @@ table.insert(CORNERS, Vector3.new(X, Y, Z))
 end
 end
 end
-local function GetGui()
-if Gui and Gui.Parent then return Gui end
-local PlayerGui = Player:FindFirstChildOfClass("PlayerGui")
-if not PlayerGui then return nil end
-Gui = Instance.new("ScreenGui")
-Gui.Name = "AICEspScreen"
-Gui.IgnoreGuiInset = true
-Gui.ResetOnSpawn = false
-Gui.DisplayOrder = 50
-Gui.Parent = PlayerGui
-return Gui
-end
 local function ProjectBox(Target)
 local Camera = workspace.CurrentCamera
 if not Camera then return nil end
-local CF, Size = Target:GetBoundingBox()
-local MinX, MinY, MaxX, MaxY = math.huge, math.huge, -math.huge, -math.huge
+local Ok, CF, Size = pcall(Target.GetBoundingBox, Target)
+if not Ok then return nil end
+local MinX, MinY = math.huge, math.huge
+local MaxX, MaxY = -math.huge, -math.huge
+local InFront = 0
 for _, Corner in ipairs(CORNERS) do
-local World = CF:PointToWorldSpace(Vector3.new(Corner.X * Size.X, Corner.Y * Size.Y, Corner.Z * Size.Z))
-local Point, _ = Camera:WorldToViewportPoint(World)
-if Point.Z <= 0 then return nil end
+local Point = Camera:WorldToViewportPoint(CF:PointToWorldSpace(Corner * Size))
+if Point.Z > 0 then
+InFront += 1
 MinX = math.min(MinX, Point.X)
 MinY = math.min(MinY, Point.Y)
 MaxX = math.max(MaxX, Point.X)
 MaxY = math.max(MaxY, Point.Y)
 end
+end
+if InFront == 0 then return nil end
 return MinX, MinY, MaxX, MaxY
 end
-local function UpdateScreenBoxes()
-for Target, Entry in pairs(S.Highlights) do
-local Screen = Entry.Screen
-if Screen and Target.Parent then
-local X1, Y1, X2, Y2 = ProjectBox(Target)
-if not X1 then
-for _, F in ipairs(Screen.Frames) do F.Visible = false end
-elseif Screen.Style == "2D" then
-local F = Screen.Frames[1]
-F.Visible = true
-F.Position = UDim2.fromOffset(X1, Y1)
-F.Size = UDim2.fromOffset(X2 - X1, Y2 - Y1)
+local function UpdateBoxes()
+for Target, Entry in pairs(S.Entries) do
+local Frame = Entry.Frame
+if Frame then
+local X1, Y1, X2, Y2
+if Target.Parent then
+X1, Y1, X2, Y2 = ProjectBox(Target)
+end
+if X1 then
+Frame.Position = UDim2.fromOffset(X1, Y1)
+Frame.Size = UDim2.fromOffset(X2 - X1, Y2 - Y1)
+Frame.Visible = true
 else
-local W, H = X2 - X1, Y2 - Y1
-local A = math.max(4, math.min(W, H) * 0.25)
-local T = 2
-local Segs = {
-{ X1, Y1, A, T }, { X1, Y1, T, A },
-{ X2 - A, Y1, A, T }, { X2 - T, Y1, T, A },
-{ X1, Y2 - T, A, T }, { X1, Y2 - A, T, A },
-{ X2 - A, Y2 - T, A, T }, { X2 - T, Y2 - A, T, A },
-}
-for I, F in ipairs(Screen.Frames) do
-local Seg = Segs[I]
-F.Visible = true
-F.Position = UDim2.fromOffset(Seg[1], Seg[2])
-F.Size = UDim2.fromOffset(Seg[3], Seg[4])
+Frame.Visible = false
 end
 end
 end
 end
-end
-local function PartOf(Target)
-return Target:FindFirstChild("Head")
-or Target.PrimaryPart
-or Target:FindFirstChildWhichIsA("BasePart")
-end
-local function LabelText(Target, Kind)
-local Lines = {}
-local Owner = Kind == "Player" and Players:GetPlayerFromCharacter(Target) or nil
-local MobEntity = Kind == "Mob" and Target:FindFirstChild("Config") and Target.Config:FindFirstChild("Entity") or nil
-local Name = Owner and Owner.Name or (MobEntity and MobEntity:IsA("StringValue") and MobEntity.Value ~= "" and MobEntity.Value) or Target.Name
-table.insert(Lines, Name)
-local Level
-if Owner then
-local Stats = Owner:FindFirstChild("PlayerStats")
-local LevelStat = Stats and Stats:FindFirstChild("Level")
-local ExpStat = Stats and Stats:FindFirstChild("EXP")
-Level = LevelStat and tonumber(LevelStat.Value)
-if Level then
-table.insert(Lines, "Lv " .. Level)
-end
-if ExpStat and type(AICUI.neededExp) == "function" and Level then
-local Needed = tonumber(AICUI.neededExp(Level)) or 0
-table.insert(Lines, "EXP " .. math.floor(ExpStat.Value) .. "/" .. math.floor(Needed))
-end
-elseif Kind == "Mob" then
-local Config = Target:FindFirstChild("Config")
-local LvlStat = Config and Config:FindFirstChild("LVL")
-if LvlStat then
-table.insert(Lines, "Lv " .. tostring(LvlStat.Value))
-end
-end
-local Humanoid = Target:FindFirstChildOfClass("Humanoid")
-if Humanoid and Kind ~= "Weapon" then
-table.insert(Lines, "HP " .. math.floor(Humanoid.Health) .. "/" .. math.floor(Humanoid.MaxHealth))
-end
-return table.concat(Lines, "\n")
-end
-local function Mark(Target, Kind)
-if not Target or Target.Parent == nil then return end
-if S.Highlights[Target] then return end
-local C = S.Kinds[Kind]
-local Entry = { Kind = Kind, Instances = {} }
-if C.Outline then
+local function AddOutline(Entry, Target, C, Kind)
 local Highlight = Instance.new("Highlight")
-Highlight.Name = "AICEsp" .. Kind
+Highlight.Name = Kind
 Highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
 Highlight.FillTransparency = 1
 Highlight.OutlineColor = C.Color
 Highlight.OutlineTransparency = 0
 Highlight.Adornee = Target
-Highlight.Parent = Target
-table.insert(Entry.Instances, Highlight)
+Highlight.Parent = HighlightFolder
+Entry.Highlight = Highlight
 end
-if C.Box then
-for _, Part in ipairs(Target:GetDescendants()) do
-if Part:IsA("BasePart") then
-local Box = Instance.new("SelectionBox")
-Box.Name = "AICEspBox" .. Kind
-Box.Adornee = Part
-Box.Color3 = C.Color
-Box.LineThickness = 0.03
-Box.SurfaceTransparency = 1
-Box.SurfaceColor3 = C.Color
-Box.AlwaysOnTop = true
-Box.Parent = Part
-table.insert(Entry.Instances, Box)
-end
-end
-end
-if C.Box and C.BoxStyle ~= "3D" then
-local ScreenGui = GetGui()
-if ScreenGui then
-local Frames = {}
-local Count = C.BoxStyle == "Corner" and 8 or 1
-for _ = 1, Count do
-local F = Instance.new("Frame")
-F.BorderSizePixel = 0
-F.Visible = false
-F.Parent = ScreenGui
-if C.BoxStyle == "2D" then
-F.BackgroundTransparency = 1
+local function AddBox(Entry, C, Kind)
+local Frame = Instance.new("Frame")
+Frame.Name = Kind .. "Box"
+Frame.BackgroundTransparency = 1
+Frame.BorderSizePixel = 0
+Frame.Visible = false
+Frame.ZIndex = 2
 local Stroke = Instance.new("UIStroke")
 Stroke.Color = C.Color
 Stroke.Thickness = 1.5
-Stroke.Parent = F
-else
-F.BackgroundColor3 = C.Color
+Stroke.Parent = Frame
+Frame.Parent = Root
+Entry.Frame = Frame
+Entry.Stroke = Stroke
 end
-table.insert(Frames, F)
-table.insert(Entry.Instances, F)
+local function Mark(Target, Kind)
+if not Target or Target.Parent == nil then return end
+if S.Entries[Target] then return end
+local C = S.Kinds[Kind]
+if not (C.Outline or C.Box) then return end
+local Entry = { Kind = Kind }
+if C.Outline then
+pcall(AddOutline, Entry, Target, C, Kind)
 end
-Entry.Screen = { Style = C.BoxStyle, Frames = Frames }
+if C.Box then
+pcall(AddBox, Entry, C, Kind)
 end
-end
-if C.Label then
-local Part = PartOf(Target)
-if Part then
-local LabelGui = Instance.new("BillboardGui")
-LabelGui.Name = "AICEspLabel" .. Kind
-LabelGui.Adornee = Part
-LabelGui.AlwaysOnTop = true
-LabelGui.Size = UDim2.fromOffset(180, 70)
-LabelGui.StudsOffset = Vector3.new(0, 3, 0)
-LabelGui.Parent = Part
-local Text = Instance.new("TextLabel")
-Text.BackgroundTransparency = 1
-Text.Size = UDim2.fromScale(1, 1)
-Text.TextColor3 = C.Color
-Text.TextStrokeTransparency = 0.4
-Text.Font = Enum.Font.GothamBold
-Text.TextSize = 12
-Text.TextYAlignment = Enum.TextYAlignment.Bottom
-Text.Text = LabelText(Target, Kind)
-Text.Parent = LabelGui
-Entry.Label = Text
-table.insert(Entry.Instances, LabelGui)
-end
-end
-S.Highlights[Target] = Entry
+S.Entries[Target] = Entry
 end
 local function Prune()
-for Target, Entry in pairs(S.Highlights) do
-if Target.Parent == nil or not Enabled(Entry.Kind) then
-for _, Instance in ipairs(Entry.Instances) do
-Instance:Destroy()
-end
-S.Highlights[Target] = nil
+for Target, Entry in pairs(S.Entries) do
+if Target.Parent == nil or not IsEnabled(Entry.Kind) then
+Remove(Target, Entry)
 end
 end
 end
 local function WeaponsOf(Character)
 local Weapons = {}
-if not Character then return Weapons end
 for _, Name in ipairs({ "Sword", "Sword2" }) do
 local Weapon = Character:FindFirstChild(Name)
 if Weapon and Weapon:IsA("Model") then
@@ -267,40 +202,34 @@ end
 return Weapons
 end
 local function Scan()
-local Wanted = {}
-if Enabled("Player") then
+if not GetRoot() then return end
+local WantPlayer = IsEnabled("Player")
+local WantMob = IsEnabled("Mob")
+local WantWeapon = IsEnabled("Weapon")
+if WantPlayer or WantWeapon then
 for _, Child in ipairs(workspace:GetChildren()) do
 if Child:IsA("Model") and Child ~= Player.Character
 and Child:FindFirstChildOfClass("Humanoid") then
-Wanted[Child] = "Player"
+if WantPlayer then
+Mark(Child, "Player")
 end
-end
-end
-if Enabled("Mob") then
-local Mobs = workspace:FindFirstChild("Mobs")
-if Mobs then
-for _, Mob in ipairs(Mobs:GetChildren()) do
-if Mob:IsA("Model") then
-Wanted[Mob] = "Mob"
-end
-end
-end
-end
-for Target, Kind in pairs(Wanted) do
-Mark(Target, Kind)
-end
-if Enabled("Weapon") then
-for _, Child in ipairs(workspace:GetChildren()) do
-if Child:IsA("Model") and Child ~= Player.Character
-and Child:FindFirstChildOfClass("Humanoid") then
+if WantWeapon then
 for _, Weapon in ipairs(WeaponsOf(Child)) do
 Mark(Weapon, "Weapon")
 end
 end
 end
+end
+end
+if WantMob or WantWeapon then
 local Mobs = workspace:FindFirstChild("Mobs")
 if Mobs then
 for _, Mob in ipairs(Mobs:GetChildren()) do
+if Mob:IsA("Model") then
+if WantMob then
+Mark(Mob, "Mob")
+end
+if WantWeapon then
 local Weapon = Mob:FindFirstChild("Weapon")
 if Weapon and Weapon:IsA("Model") then
 Mark(Weapon, "Weapon")
@@ -308,9 +237,6 @@ end
 end
 end
 end
-for Target, Entry in pairs(S.Highlights) do
-if Entry.Label and Target.Parent then
-Entry.Label.Text = LabelText(Target, Entry.Kind)
 end
 end
 Prune()
@@ -322,64 +248,82 @@ S = S,
 }
 function Feature:Update(DeltaTime)
 if not AnyEnabled() then return end
-UpdateScreenBoxes()
 S.Timer += DeltaTime
 if S.Timer < SCAN_INTERVAL then return end
 S.Timer = 0
 Scan()
 end
+local RenderConnection = RunService.RenderStepped:Connect(function()
+if AnyEnabled() then
+UpdateBoxes()
+end
+end)
 local function SetKind(Kind, Value)
 S.Kinds[Kind].Enabled = Value == true
-if not Enabled(Kind) then
-ClearHighlights(Kind)
+if IsEnabled(Kind) then
+S.Timer = SCAN_INTERVAL
+else
+Clear(Kind)
 end
 end
-local SectionTitles = { Player = "Players", Mob = "Mobs", Weapon = "Weapons" }
+local function Rebuild(Kind)
+Clear(Kind)
+S.Timer = SCAN_INTERVAL
+end
+local function Recolor(Kind)
+local Color = S.Kinds[Kind].Color
+for _, Entry in pairs(S.Entries) do
+if Entry.Kind == Kind then
+if Entry.Highlight then Entry.Highlight.OutlineColor = Color end
+if Entry.Stroke then Entry.Stroke.Color = Color end
+end
+end
+end
 if UIRef.EspTab then
 for _, Kind in ipairs(KINDS) do
 local C = S.Kinds[Kind]
-local Name = Kind
-local Sec = UIRef.EspTab:AddSection{ Title = SectionTitles[Kind] }
+local Sec = UIRef.EspTab:AddSection{ Title = TITLES[Kind] }
 Sec:AddToggle{
-Name = Name .. " ESP",
+Name = Kind .. " ESP",
 Bold = true,
 Default = false,
 Callback = function(Value) SetKind(Kind, Value) end,
 }
 Sec:AddToggle{
-Name = Name .. " outline",
+Name = Kind .. " outline",
 Default = C.Outline,
-Callback = function(Value) C.Outline = Value; ClearHighlights(Kind) end,
+Callback = function(Value)
+C.Outline = Value == true
+Rebuild(Kind)
+end,
 }
 Sec:AddToggle{
-Name = Name .. " box",
+Name = Kind .. " 2D box",
 Default = C.Box,
-Callback = function(Value) C.Box = Value; ClearHighlights(Kind) end,
-}
-Sec:AddDropdown{
-Name = Name .. " box style",
-Options = { "2D", "3D", "Corner" },
-Default = C.BoxStyle,
-Callback = function(Value) C.BoxStyle = Value; ClearHighlights(Kind) end,
-}
-Sec:AddToggle{
-Name = Name .. " label (level, EXP, HP)",
-Default = C.Label,
-Callback = function(Value) C.Label = Value; ClearHighlights(Kind) end,
+Callback = function(Value)
+C.Box = Value == true
+Rebuild(Kind)
+end,
 }
 Sec:AddColorPicker{
-Name = Name .. " colour",
+Name = Kind .. " colour",
 Default = C.Color,
 Callback = function(Color)
+if type(Color) == "table" then
+Color = Color.Color or Color.Value or Color[1]
+end
+if typeof(Color) == "Color3" then
 C.Color = Color
-ClearHighlights(Kind)
+Recolor(Kind)
+end
 end,
 }
 end
 end
 Context.Lifetime.OnEnd(function()
-ClearHighlights()
-if Gui then Gui:Destroy() end
+RenderConnection:Disconnect()
+Clear()
+if Root then Root:Destroy() end
 end)
 return Feature
 end,
