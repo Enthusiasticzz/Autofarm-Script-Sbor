@@ -1,7 +1,8 @@
 -- Esp outlines players, mobs and equipped weapons in the world.
 --
 -- Each enabled kind draws either an outline (Highlight) or a 2D box, never
--- both, and can add a text label (name, level, EXP, HP, distance).
+-- both, and can add text around the box: the name above it, the level (and
+-- the EXP a mob gives) down its right side, the distance below it.
 -- Outlines live in a folder inside one ScreenGui. Boxes, health bars and
 -- labels are drawn with the executor's Drawing API when it has one, because a
 -- Drawing object costs no GUI work per frame; otherwise they fall back to
@@ -36,13 +37,11 @@ return {
         local RunService = game:GetService("RunService")
 
         local SCAN_INTERVAL = 0.5
-        --// Box bounds are measured once and reused; the model only has to be
-        --// measured again when it changes size (a respawn, a different rig).
-        --// GetBoundingBox walks every part, so calling it per target per frame
-        --// is what made mob boxes crawl behind their models.
-        local MEASURE_INTERVAL = 2
-        --// Bounds re-measurement is spread over scans: doing every due mob in
-        --// one frame put a visible hitch in the same frame, every interval.
+        --// A target is measured once. Measuring walks every part of the rig,
+        --// and re-measuring a good box is what made it change shape and jump.
+        --// Only a target with no usable measurement is measured again, and
+        --// only a few of those per scan, so a rig that was still spawning
+        --// when it was first seen is picked up without a hitch.
         local MEASURE_PER_SCAN = 12
         --// Label text and health are refreshed this often from the render
         --// loop, so they read live instead of at the scan's rate.
@@ -69,8 +68,8 @@ return {
         local S = {
             Kinds = {},
             --// [Target] = { Kind, BoxStyle, Highlight?, BoxLines?, BoxShadow?,
-            --//              Frame?, Stroke?, HealthLines?, HealthFrames?,
-            --//              DrawText?, Label?, Anchor?, BoxCF?, Size? }
+            --//              Frame?, Stroke?, HealthLines?, HealthFrames?, TextParts?,
+            --//              Anchor?, BoxHeight?/BoxWidth?/BoxOffsetY? }
             Entries = {},
             StyleToggles = {}, -- [Kind] = { Outline = toggle, Box = toggle }
             Settings = {
@@ -183,7 +182,12 @@ return {
             if Entry.Highlight then pcall(function() Entry.Highlight:Destroy() end) end
             if Entry.Frame then pcall(function() Entry.Frame:Destroy() end) end
             if Entry.ShadowFrame then pcall(function() Entry.ShadowFrame:Destroy() end) end
-            if Entry.Label then pcall(function() Entry.Label:Destroy() end) end
+            if Entry.TextParts then
+                for _, Part in ipairs(Entry.TextParts) do
+                    if Part.Draw then pcall(function() Part.Draw:Remove() end) end
+                    if Part.Gui then pcall(function() Part.Gui:Destroy() end) end
+                end
+            end
             for _, Key in ipairs({ "BoxLines", "BoxShadow", "HealthLines" }) do
                 local List = Entry[Key]
                 if List then
@@ -197,7 +201,6 @@ return {
                     pcall(function() Frame:Destroy() end)
                 end
             end
-            if Entry.DrawText then pcall(function() Entry.DrawText:Remove() end) end
             S.Entries[Target] = nil
         end
 
@@ -397,38 +400,43 @@ return {
             end
         end
 
-        --// Screen rectangle around a target. Corners behind the camera are
-        --// skipped (their projection is mirrored); nil when none are in front.
-        local function Project(CF, Size, Camera)
-            local MinX, MinY = math.huge, math.huge
-            local MaxX, MaxY = -math.huge, -math.huge
-            local InFront = 0
+        --// Players and mobs get a box that never changes shape. Its size was
+        --// measured once (see MeasureUpright), so each frame only the centre
+        --// moves: the top and bottom of that fixed height are projected, and
+        --// the width follows the on-screen height. Turning, animating or
+        --// changing camera angle can't stretch it.
+        local function ProjectUpright(Position, Entry, Camera)
+            local Center = Position + Vector3.new(0, Entry.BoxOffsetY, 0)
+            local Half = Vector3.new(0, Entry.BoxHeight * 0.5, 0)
 
-            for _, Corner in ipairs(CORNERS) do
-                local Point = Camera:WorldToViewportPoint(CF:PointToWorldSpace(Corner * Size))
-                if Point.Z > 0 then
-                    InFront += 1
-                    MinX = math.min(MinX, Point.X)
-                    MinY = math.min(MinY, Point.Y)
-                    MaxX = math.max(MaxX, Point.X)
-                    MaxY = math.max(MaxY, Point.Y)
-                end
-            end
+            local Top = Camera:WorldToViewportPoint(Center + Half)
+            local Bottom = Camera:WorldToViewportPoint(Center - Half)
+            if Top.Z <= 0 or Bottom.Z <= 0 then return nil end
 
-            if InFront == 0 then return nil end
-            return MinX, MinY, MaxX, MaxY
+            local MinY, MaxY = math.min(Top.Y, Bottom.Y), math.max(Top.Y, Bottom.Y)
+            local Height = MaxY - MinY
+            if Height < 1 then return nil end
+
+            local HalfWidth = Height * (Entry.BoxWidth / Entry.BoxHeight) * 0.5
+            local CenterX = (Top.X + Bottom.X) * 0.5
+            return CenterX - HalfWidth, MinY, CenterX + HalfWidth, MaxY
         end
 
-        --// A part the box can follow. Reading Model:GetPivot looks cheap but
-        --// is only a single CFrame read when the model has a PrimaryPart: a
-        --// mob rig usually does not, so the engine falls back to the model's
-        --// stored pivot, which does not follow its parts. A cached part has
-        --// the position of what is actually on screen.
+        --// A part the box can follow. Humanoid.RootPart is the engine's own
+        --// answer for a character rig; the name lookup covers rigs that have
+        --// no Humanoid, and the rest is a last resort. The box keeps whatever
+        --// part it gets, so the choice has to be the same every time.
         local function GetAnchor(Target)
-            local RootPart = Target:FindFirstChild("HumanoidRootPart")
-            if RootPart and RootPart:IsA("BasePart") then return RootPart end
+            local Humanoid = Target:FindFirstChildOfClass("Humanoid")
+            local RootPart = Humanoid and Humanoid.RootPart
 
-            if Target.PrimaryPart then return Target.PrimaryPart end
+            if not (RootPart and RootPart.Parent) then
+                RootPart = Target:FindFirstChild("HumanoidRootPart")
+            end
+            if not (RootPart and RootPart.Parent) then
+                RootPart = Target.PrimaryPart
+            end
+            if RootPart and RootPart.Parent and RootPart:IsA("BasePart") then return RootPart end
 
             for _, Name in ipairs({ "Torso", "UpperTorso", "Head" }) do
                 local Candidate = Target:FindFirstChild(Name)
@@ -438,25 +446,80 @@ return {
             return Target:FindFirstChildWhichIsA("BasePart")
         end
 
-        --// The box is measured in world space and follows its anchor by
-        --// translation only. GetBoundingBox is world-aligned, so a cached
-        --// offset rotated with the mob would swing the box around its feet
-        --// every time it turned, then snap back on the next measurement.
-        local function Measure(Target, Entry)
-            Entry.NextMeasure = os.clock() + MEASURE_INTERVAL
+        --// Size of a target, taken once. Every part is measured in a frame
+        --// that only copies the anchor's turn around the vertical axis, so it
+        --// makes no difference which way the model was facing when it was
+        --// measured. Width is the larger of the two horizontal extents, which
+        --// is why turning later can't change it. The vertical offset is how
+        --// far the middle of the model sits above or below the anchor.
+        local function MeasureUpright(Target, Anchor, Entry)
+            local Origin = Anchor.CFrame.Position
+            local Look = Anchor.CFrame.LookVector
+            local Flat = Vector3.new(Look.X, 0, Look.Z)
+            local Frame = Flat.Magnitude > 0.001
+                and CFrame.lookAt(Origin, Origin + Flat)
+                or CFrame.new(Origin)
 
-            local Anchor = GetAnchor(Target)
-            Entry.Anchor = (Anchor and Anchor.Parent) and Anchor or nil
+            local MinX, MinY, MinZ = math.huge, math.huge, math.huge
+            local MaxX, MaxY, MaxZ = -math.huge, -math.huge, -math.huge
+            local Found = false
+            local Parts = 0
 
-            local Ok, CF, Size = pcall(Target.GetBoundingBox, Target)
-            if not Ok or not CF then
-                Entry.BoxCF, Entry.Size, Entry.MeasurePoint = nil, nil, nil
-                return
+            for _, Part in ipairs(Target:GetDescendants()) do
+                if Part:IsA("BasePart") then
+                    Found = true
+                    Parts += 1
+                    for _, Corner in ipairs(CORNERS) do
+                        local Point = Frame:PointToObjectSpace(Part.CFrame:PointToWorldSpace(Corner * Part.Size))
+                        MinX, MaxX = math.min(MinX, Point.X), math.max(MaxX, Point.X)
+                        MinY, MaxY = math.min(MinY, Point.Y), math.max(MaxY, Point.Y)
+                        MinZ, MaxZ = math.min(MinZ, Point.Z), math.max(MaxZ, Point.Z)
+                    end
+                end
             end
 
-            Entry.BoxCF = CF
-            Entry.Size = Size
-            Entry.MeasurePoint = Entry.Anchor and Entry.Anchor.Position or CF.Position
+            if not Found or MaxY - MinY < 0.1 then return false end
+
+            --// A rig that is still spawning measures as a stub: one part, a
+            --// couple of studs tall. Storing that would leave a box far too
+            --// small for the life of the target, so it is refused and tried
+            --// again on a later scan. A genuinely small model is accepted
+            --// after a few tries.
+            if Entry.Kind ~= "Weapon" and (Parts < 2 or MaxY - MinY < 2)
+                and (Entry.MeasureTries or 0) < 4 then
+                return false
+            end
+
+            Entry.BoxHeight = MaxY - MinY
+            Entry.BoxWidth = math.max(MaxX - MinX, MaxZ - MinZ, 0.5)
+            Entry.BoxOffsetY = (MinY + MaxY) * 0.5
+            return true
+        end
+
+        --// Measures a target once. The anchor is resolved here and then kept:
+        --// the offsets belong to that part, and swapping the anchor for a
+        --// different one (a limb, the head) would leave the box riding at the
+        --// new part's offset, which reads as the box sitting beside the model.
+        local function Measure(Target, Entry)
+            local Anchor = Entry.Anchor
+            if not (Anchor and Anchor.Parent) then
+                Anchor = GetAnchor(Target)
+                if not (Anchor and Anchor.Parent) then
+                    Entry.Anchor = nil
+                    return
+                end
+
+                --// A new part means the old offsets no longer apply.
+                if Entry.Anchor ~= Anchor then
+                    Entry.BoxHeight, Entry.BoxWidth, Entry.BoxOffsetY = nil, nil, nil
+                end
+                Entry.Anchor = Anchor
+            end
+
+            if Entry.BoxHeight then return end
+
+            Entry.MeasureTries = (Entry.MeasureTries or 0) + 1
+            MeasureUpright(Target, Anchor, Entry)
         end
 
         ----------------------------------------------------------------------
@@ -522,10 +585,30 @@ return {
         -- Labels
         ----------------------------------------------------------------------
 
-        --// Name, then level, EXP and HP where the game exposes them, and the
-        --// distance. Missing pieces are simply left out.
-        local function LabelText(Target, Kind, Entry)
-            local Lines = {}
+        --// The EXP a mob gives is Config.EXP, which every mob in the game's
+        --// dump carries. The rest are fallbacks for a place that names it
+        --// differently; add one here if a mob's EXP never shows.
+        local MOB_EXP_NAMES = { "EXP", "Exp", "XP", "ExpGive", "EXPGive", "ExpReward", "EXPReward", "Experience" }
+
+        local function FindMobExp(Target, Config)
+            for _, Name in ipairs(MOB_EXP_NAMES) do
+                local Child = Config and Config:FindFirstChild(Name)
+                if Child and Child:IsA("ValueBase") and tonumber(Child.Value) then
+                    return function() return tonumber(Child.Value) end
+                end
+                for _, Holder in ipairs({ Config, Target }) do
+                    if Holder and tonumber(Holder:GetAttribute(Name)) then
+                        return function() return tonumber(Holder:GetAttribute(Name)) end
+                    end
+                end
+            end
+            return nil
+        end
+
+        --// The label is split into three pieces that sit around the box:
+        --// Top is the name, Right is the level (and, for a mob, the EXP it
+        --// gives), Bottom is the distance. Missing pieces are left out.
+        local function LabelParts(Target, Kind, Entry)
             local Owner = Kind == "Player" and Players:GetPlayerFromCharacter(Target) or nil
             local Config = Kind == "Mob" and Target:FindFirstChild("Config") or nil
             local MobEntity = Config and Config:FindFirstChild("Entity")
@@ -533,56 +616,61 @@ return {
             local Name = Owner and Owner.Name
                 or (MobEntity and MobEntity:IsA("StringValue") and MobEntity.Value ~= "" and MobEntity.Value)
                 or Target.Name
-            table.insert(Lines, Name)
+
+            local Right = {}
 
             if Owner then
                 local Stats = Owner:FindFirstChild("PlayerStats")
                 local LevelStat = Stats and Stats:FindFirstChild("Level")
-                local ExpStat = Stats and Stats:FindFirstChild("EXP")
                 local Level = LevelStat and tonumber(LevelStat.Value)
                 if Level then
-                    table.insert(Lines, "Lv " .. math.floor(Level))
-                    if ExpStat and type(AICUI.neededExp) == "function" then
-                        local Needed = tonumber(AICUI.neededExp(Level)) or 0
-                        table.insert(Lines, "EXP " .. math.floor(ExpStat.Value) .. "/" .. math.floor(Needed))
-                    end
+                    table.insert(Right, "Lv " .. math.floor(Level))
                 end
             elseif Config then
                 local LvlStat = Config:FindFirstChild("LVL")
                 local Level = LvlStat and tonumber(LvlStat.Value)
                 if Level then
-                    table.insert(Lines, "Lv " .. math.floor(Level))
+                    table.insert(Right, "Lv " .. math.floor(Level))
+                end
+
+                --// Found once and remembered, so it is not searched for on
+                --// every refresh.
+                if not Entry.ExpRead and os.clock() >= (Entry.ExpRetry or 0) then
+                    Entry.ExpRead = FindMobExp(Target, Config)
+                    Entry.ExpRetry = os.clock() + 2
+                end
+                local Exp = Entry.ExpRead and Entry.ExpRead()
+                if Exp then
+                    table.insert(Right, "EXP " .. math.floor(Exp))
                 end
             end
 
-            local Humanoid = Target:FindFirstChildOfClass("Humanoid")
-            if Humanoid and Kind ~= "Weapon" then
-                table.insert(Lines, "HP " .. math.floor(Humanoid.Health) .. "/" .. math.floor(Humanoid.MaxHealth))
-            end
-
+            local Bottom = ""
             local Anchor = Entry and Entry.Anchor
             local Camera = workspace.CurrentCamera
             if Camera and Anchor and Anchor.Parent then
                 local Distance = (Anchor.Position - Camera.CFrame.Position).Magnitude
-                table.insert(Lines, math.floor(Distance + 0.5) .. "m")
+                Bottom = math.floor(Distance + 0.5) .. "m"
             end
 
-            return table.concat(Lines, "\n")
+            return { Top = Name, Right = table.concat(Right, "\n"), Bottom = Bottom }
         end
 
         local function SetLabelText(Target, Kind, Entry)
-            local Text = LabelText(Target, Kind, Entry)
-            Entry.LabelLines = 1
+            if not Entry.TextParts then return end
+            local Texts = LabelParts(Target, Kind, Entry)
 
-            for _ in string.gmatch(Text, "\n") do
-                Entry.LabelLines += 1
-            end
+            for _, Part in ipairs(Entry.TextParts) do
+                local Text = Texts[Part.Key] or ""
+                Part.Empty = Text == ""
 
-            if Entry.DrawText then
-                Entry.DrawText.Text = Text
-            end
-            if Entry.Label then
-                Entry.Label.Text = Text
+                Part.Lines = 1
+                for _ in string.gmatch(Text, "\n") do
+                    Part.Lines += 1
+                end
+
+                if Part.Draw then Part.Draw.Text = Text end
+                if Part.Gui then Part.Gui.Text = Text end
             end
         end
 
@@ -597,7 +685,7 @@ return {
                         Entry.HealthFrac = Max > 0 and math.clamp(Humanoid.Health / Max, 0, 1) or 1
                     end
 
-                    if Entry.DrawText or Entry.Label then
+                    if Entry.TextParts then
                         SetLabelText(Target, Entry.Kind, Entry)
                     end
                 end
@@ -735,41 +823,64 @@ return {
             end
         end
 
+        --// One text object per side of the box. Weapons only have a name and
+        --// a distance, so they get no right-hand piece.
         local function AddLabel(Entry, Target, C, Kind)
-            local DrawText = NewText()
-            if DrawText then
-                SetProps(DrawText, {
-                    Color = C.Color,
-                    Size = 13,
-                    Center = true,
-                    Transparency = 1,
-                    Visible = false,
-                })
-                --// Outline is not on every executor's Text object.
-                pcall(function() DrawText.Outline = true end)
-                pcall(function() DrawText.OutlineColor = BLACK end)
+            local Keys = Kind == "Weapon" and { "Top", "Bottom" } or { "Top", "Right", "Bottom" }
+            Entry.TextParts = {}
 
-                Entry.DrawText = DrawText
-                SetLabelText(Target, Kind, Entry)
-                return
+            for _, Key in ipairs(Keys) do
+                local Part = { Key = Key, Lines = 1, Empty = true }
+
+                local DrawText = NewText()
+                if DrawText then
+                    SetProps(DrawText, {
+                        Color = C.Color,
+                        Size = 13,
+                        Center = Key ~= "Right",
+                        Transparency = 1,
+                        Visible = false,
+                    })
+                    --// Outline is not on every executor's Text object.
+                    pcall(function() DrawText.Outline = true end)
+                    pcall(function() DrawText.OutlineColor = BLACK end)
+                    Part.Draw = DrawText
+                else
+                    local Text = Instance.new("TextLabel")
+                    Text.Name = Kind .. Key .. "Label"
+                    Text.BackgroundTransparency = 1
+                    Text.TextColor3 = C.Color
+                    Text.TextStrokeColor3 = BLACK
+                    Text.TextStrokeTransparency = 0
+                    Text.Font = Enum.Font.GothamBold
+                    Text.TextSize = 12
+                    Text.Visible = false
+                    Text.ZIndex = 3
+
+                    if Key == "Top" then
+                        Text.AnchorPoint = Vector2.new(0.5, 1)
+                        Text.Size = UDim2.fromOffset(340, 40)
+                        Text.TextXAlignment = Enum.TextXAlignment.Center
+                        Text.TextYAlignment = Enum.TextYAlignment.Bottom
+                    elseif Key == "Bottom" then
+                        Text.AnchorPoint = Vector2.new(0.5, 0)
+                        Text.Size = UDim2.fromOffset(340, 40)
+                        Text.TextXAlignment = Enum.TextXAlignment.Center
+                        Text.TextYAlignment = Enum.TextYAlignment.Top
+                    else
+                        Text.AnchorPoint = Vector2.new(0, 0.5)
+                        Text.Size = UDim2.fromOffset(200, 100)
+                        Text.TextXAlignment = Enum.TextXAlignment.Left
+                        Text.TextYAlignment = Enum.TextYAlignment.Center
+                    end
+
+                    Text.Parent = Root
+                    Part.Gui = Text
+                end
+
+                table.insert(Entry.TextParts, Part)
             end
 
-            local Text = Instance.new("TextLabel")
-            Text.Name = Kind .. "Label"
-            Text.BackgroundTransparency = 1
-            Text.AnchorPoint = Vector2.new(0.5, 1)
-            Text.Size = UDim2.fromOffset(340, 240)
-            Text.TextColor3 = C.Color
-            Text.TextStrokeColor3 = BLACK
-            Text.TextStrokeTransparency = 0
-            Text.Font = Enum.Font.GothamBold
-            Text.TextSize = 12
-            Text.TextYAlignment = Enum.TextYAlignment.Bottom
-            Text.TextXAlignment = Enum.TextXAlignment.Center
-            Text.Visible = false
-            Text.ZIndex = 3
-            Text.Parent = Root
-            Entry.Label = Text
             SetLabelText(Target, Kind, Entry)
         end
 
@@ -867,13 +978,13 @@ return {
                 end
             end
 
-            --// Bounds are re-measured here, a few at a time, so a rig change
-            --// is picked up without one frame paying for every mob.
-            local Now = os.clock()
+            --// Only targets without a usable measurement are measured here,
+            --// a few per scan, so a rig that was still spawning when it was
+            --// first seen is picked up without one frame paying for every mob.
             local Measured = 0
             for Target, Entry in pairs(S.Entries) do
-                if Target.Parent and (Entry.Frame or Entry.BoxLines or Entry.Label or Entry.DrawText)
-                    and (not Entry.NextMeasure or Now >= Entry.NextMeasure) then
+                if Target.Parent and Entry.BoxHeight == nil
+                    and (Entry.Frame or Entry.BoxLines or Entry.TextParts) then
                     if Measured >= MEASURE_PER_SCAN then break end
                     Measure(Target, Entry)
                     Measured += 1
@@ -921,23 +1032,23 @@ return {
             local Range = S.Settings.Range
 
             for _, Entry in pairs(S.Entries) do
-                local Frame, ShadowFrame, Label = Entry.Frame, Entry.ShadowFrame, Entry.Label
-                local DrawText = Entry.DrawText
+                local Frame, ShadowFrame = Entry.Frame, Entry.ShadowFrame
+                local TextParts = Entry.TextParts
                 local Lines, Shadow = Entry.BoxLines, Entry.BoxShadow
                 local HealthLines, HealthFrames = Entry.HealthLines, Entry.HealthFrames
 
-                if Frame or Label or Lines or DrawText or HealthLines or HealthFrames then
+                if Frame or TextParts or Lines or HealthLines or HealthFrames then
                     local X1, Y1, X2, Y2
                     local Anchor = Entry.Anchor
                     local Distance = math.huge
 
-                    --// One live part is read per frame; the rest of the box is
-                    --// the measurement cached on the scan.
+                    --// One live part is read per frame; the box around it was
+                    --// measured once, so turning, animating or walking can
+                    --// move it but never resize or skew it.
                     if Anchor and Anchor.Parent then
                         Distance = (Anchor.Position - CameraPosition).Magnitude
-                        if Entry.BoxCF and Entry.Size and Distance <= Range then
-                            local BoxCF = Entry.BoxCF + (Anchor.Position - Entry.MeasurePoint)
-                            X1, Y1, X2, Y2 = Project(BoxCF, Entry.Size, Camera)
+                        if Entry.BoxHeight and Distance <= Range then
+                            X1, Y1, X2, Y2 = ProjectUpright(Anchor.Position, Entry, Camera)
                         end
                     end
 
@@ -1054,25 +1165,50 @@ return {
                         end
                     end
 
-                    if DrawText then
-                        if X1 then
-                            local LineCount = Entry.LabelLines or 1
-                            DrawText.Size = TextSize
-                            DrawText.Position = Vector2.new(
-                                (X1 + X2) / 2,
-                                Y1 - 4 - LineCount * TextSize * 0.55
-                            )
-                            DrawText.Visible = true
-                        else
-                            DrawText.Visible = false
-                        end
-                    elseif Label then
-                        if X1 and Label.Parent then
-                            Label.TextSize = TextSize
-                            Label.Position = UDim2.fromOffset((X1 + X2) / 2, Y1 - 3)
-                            Label.Visible = true
-                        else
-                            Label.Visible = false
+                    --// Text is spaced around the box rather than stacked on
+                    --// top of it: the name above the top edge, the level (and
+                    --// a mob's EXP) down the right edge, the distance below
+                    --// the bottom edge. Each piece is centred on the edge it
+                    --// belongs to, and a multi-line piece is offset by half
+                    --// its own height so it never creeps back onto the box.
+                    if TextParts then
+                        local Pad = 6 + Thickness
+                        local CenterX = X1 and (X1 + X2) * 0.5
+                        local MiddleY = X1 and (Y1 + Y2) * 0.5
+
+                        for _, Part in ipairs(TextParts) do
+                            local Show = X1 ~= nil and not Part.Empty
+                            local Key = Part.Key
+                            local Size = Key == "Top" and TextSize or math.max(6, TextSize * 0.85)
+                            local Block = Part.Lines * (Size + 2) * 0.5
+
+                            if Part.Draw then
+                                if Show then
+                                    Part.Draw.Size = Size
+                                    if Key == "Top" then
+                                        Part.Draw.Position = Vector2.new(CenterX, Y1 - Pad - Block)
+                                    elseif Key == "Bottom" then
+                                        Part.Draw.Position = Vector2.new(CenterX, Y2 + Pad + Block)
+                                    else
+                                        Part.Draw.Position = Vector2.new(X2 + Pad, MiddleY - Block)
+                                    end
+                                end
+                                Part.Draw.Visible = Show
+                            elseif Part.Gui then
+                                if Show and Part.Gui.Parent then
+                                    Part.Gui.TextSize = Size
+                                    if Key == "Top" then
+                                        Part.Gui.Position = UDim2.fromOffset(CenterX, Y1 - Pad)
+                                    elseif Key == "Bottom" then
+                                        Part.Gui.Position = UDim2.fromOffset(CenterX, Y2 + Pad)
+                                    else
+                                        Part.Gui.Position = UDim2.fromOffset(X2 + Pad, MiddleY)
+                                    end
+                                    Part.Gui.Visible = true
+                                else
+                                    Part.Gui.Visible = false
+                                end
+                            end
                         end
                     end
                 end
@@ -1133,8 +1269,12 @@ return {
                 if Entry.Kind == Kind then
                     if Entry.Highlight then Entry.Highlight.OutlineColor = Color end
                     if Entry.Stroke then Entry.Stroke.Color = Color end
-                    if Entry.Label then Entry.Label.TextColor3 = Color end
-                    if Entry.DrawText then Entry.DrawText.Color = Color end
+                    if Entry.TextParts then
+                        for _, Part in ipairs(Entry.TextParts) do
+                            if Part.Gui then Part.Gui.TextColor3 = Color end
+                            if Part.Draw then Part.Draw.Color = Color end
+                        end
+                    end
                     if Entry.BoxLines then
                         for _, Line in ipairs(Entry.BoxLines) do
                             Line.Color = Color
