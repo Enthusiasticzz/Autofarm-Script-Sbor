@@ -153,14 +153,14 @@ return {
             return table.find(AICUI.BuildZoneLabels(GetDeadzones(), "Deadzone"), Label)
         end
 
-        UIRef.DeadzoneSection = UIRef.ProfileTab:AddSection("Deadzone")
+        UIRef.DeadzoneSection = UIRef.ProfileTab:AddSection{ Title = "Deadzone" }
 
-        UIRef.DeadzoneRadiusSlider = UIRef.DeadzoneSection:AddSlider(
-            "Deadzone Radius",
-            35,
-            1,
-            250,
-            function(Value)
+        UIRef.DeadzoneRadiusSlider = UIRef.DeadzoneSection:AddSlider{
+            Name = "Deadzone Radius",
+            Default = 35,
+            Min = 1,
+            Max = 250,
+            Callback = function(Value)
                 local Zone = GetDeadzones()[AICProfile.S.SelectedDeadzoneIndex]
 
                 if not Zone or not AICProfile.S.ActiveProfileName then
@@ -171,10 +171,12 @@ return {
                 AICUI.RefreshDeadzoneList()
                 AICDebug.UpdateDebugVisualizer()
                 AICProfile.QueueProfileSave()
-            end
-        )
+            end,
+        }
 
-        UIRef.DeadzoneSection:AddButton("Add Deadzone Here", function()
+        UIRef.DeadzoneSection:AddButton{
+            Name = "Add Deadzone Here",
+            Callback = function()
             local RootPart = GetRootPart()
 
             if not RootPart then
@@ -199,9 +201,12 @@ return {
             AICProfile.SaveActiveProfile()
             AICDebug.UpdateDebugVisualizer()
             AICUI.SetProfileStatus("DEADZONE ADDED #" .. tostring(#GetDeadzones()))
-        end)
+            end,
+        }
 
-        UIRef.DeadzoneSection:AddButton("Clear Deadzones", function()
+        UIRef.DeadzoneSection:AddButton{
+            Name = "Clear Deadzones",
+            Callback = function()
             if not AICProfile.S.ActiveProfileName then
                 AICUI.SetProfileStatus("CREATE / LOAD PROFILE FIRST")
                 return
@@ -216,7 +221,8 @@ return {
             AICDebug.UpdateDebugVisualizer()
             AICUI.SetProfileStatus("DEADZONES CLEARED")
             NotifyAction("Deadzone", "Cleared all deadzones")
-        end)
+            end,
+        }
 
         UIRef.DeadzoneListComponent = UIRef.DeadzoneSection:AddPriority(
             "All Deadzones",

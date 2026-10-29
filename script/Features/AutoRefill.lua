@@ -117,16 +117,20 @@ return {
                 table.insert(Parts, Name .. (IsSelected(Name) and " ON" or " off"))
             end
 
-            Label.Text = #Parts > 0
+            Label:Set(#Parts > 0
                 and ("BOOSTERS  " .. table.concat(Parts, "   ·   "))
-                or "BOOSTERS  none found yet"
+                or "BOOSTERS  none found yet")
         end
 
         local function BuildToggle(BoostName)
-            local Toggle = Section:AddToggle(BoostName, IsSelected(BoostName), function(Value)
-                SetSelected(BoostName, Value)
-                SetStatus()
-            end)
+            local Toggle = Section:AddToggle{
+                Name = BoostName,
+                Default = IsSelected(BoostName),
+                Callback = function(Value)
+                    SetSelected(BoostName, Value)
+                    SetStatus()
+                end,
+            }
 
             Toggles[BoostName] = Toggle
         end
@@ -229,9 +233,12 @@ return {
 
         if Section then
             UIRef.BoosterStatusLabel = Section:AddLabel("BOOSTERS  none found yet")
-            UIRef.BoosterRefreshButton = Section:AddButton("Refresh Boosters", function()
-                Feature.ScanBoosters(true)
-            end)
+            UIRef.BoosterRefreshButton = Section:AddButton{
+                Name = "Refresh Boosters",
+                Callback = function()
+                    Feature.ScanBoosters(true)
+                end,
+            }
             Section:AddLabel("ON = that booster running out resets the character")
         end
 

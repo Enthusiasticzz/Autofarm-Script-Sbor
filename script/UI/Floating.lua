@@ -187,8 +187,8 @@ return {
 
         --// A stand-in for a main window section, so the UI/Utils widgets
         --// (AddSlider, AddPriority...) can be used inside a floating window:
-        --// they only need Holder, Components and Library. The holder grows
-        --// with its content; Properties are applied to it.
+        --// they need the window, the frame they build into and a row counter.
+        --// The holder grows with its content; Properties are applied to it.
         function Floating.Section(Parent, Properties)
             local Holder = New("Frame", {
                 Parent = Parent,
@@ -201,10 +201,13 @@ return {
             Apply(Holder, Properties)
 
             return setmetatable({
+                Win = UI,
                 Library = UI,
+                Frame = Holder,
                 Holder = Holder,
+                _n = 0,
                 Components = {},
-            }, { __index = UI.SectionMethods })
+            }, { __index = UI.Section })
         end
 
         function Floating.ClearChildren(Parent)

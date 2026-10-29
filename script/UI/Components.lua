@@ -142,7 +142,7 @@ return {
         function AICUI.ShowUserNames(Component)
             --// One callback per list, so a list waits on each id only once.
             local function Redraw()
-                Component:_Refresh()
+                Component:Refresh()
             end
 
             Component.Format = function(Value)
@@ -151,7 +151,7 @@ return {
                 return Name and string.format("%s  Â·  @%s", Value, Name) or Value
             end
 
-            Component:_Refresh()
+            Component:Refresh()
         end
 
         --// A slider bound to a numeric SaveConfig.Settings entry, using its
@@ -163,12 +163,12 @@ return {
             local Entry = Context.SaveConfig.GetSetting(Key)
             assert(Entry, "Setting not declared in SaveConfig.Settings: " .. tostring(Key))
 
-            local Slider = Section:AddSlider(
-                Label,
-                Context.SaveConfig.NormalizeSetting(Entry, CONFIG[Key]),
-                Entry.Min,
-                Entry.Max,
-                function(Value)
+            local Slider = Section:AddSlider{
+                Name = Label,
+                Default = Context.SaveConfig.NormalizeSetting(Entry, CONFIG[Key]),
+                Min = Entry.Min,
+                Max = Entry.Max,
+                Callback = function(Value)
                     local Number = tonumber(Value) or Entry.Default
 
                     if Whole then
@@ -177,8 +177,8 @@ return {
 
                     CONFIG[Key] = Context.SaveConfig.NormalizeSetting(Entry, Number)
                     AICProfile.QueueProfileSave()
-                end
-            )
+                end,
+            }
 
             AICUI.S.SettingSliders[Key] = Slider
             return Slider
@@ -215,13 +215,11 @@ return {
         AICUI.S.TargetPickerSignature = {}
         AICUI.S.TargetPickerQueued = {}
 
+        --// A dropdown owns the row it was built in, so removing it is one
+        --// call and cannot leave a stray popup behind.
         local function DestroyDropdown(Dropdown)
-            if Dropdown and Dropdown.Popup then
-                Dropdown.Popup:Destroy()
-            end
-
-            if Dropdown and Dropdown.Frame then
-                Dropdown.Frame:Destroy()
+            if Dropdown and Dropdown.Remove then
+                Dropdown:Remove()
             end
         end
 
@@ -298,13 +296,13 @@ return {
         --// without this a rebuilt dropdown dropped below every control
         --// after it.
         function AICUI.ReplaceDropdown(Old, Section, Label, Options, Callback)
-            local Order = Old and Old.Frame and Old.Frame.LayoutOrder
+            local Order = Old and Old.Row and Old.Row.LayoutOrder
             DestroyDropdown(Old)
 
-            local Dropdown = Section:AddDropdown(Label, Options, Callback)
+            local Dropdown = Section:AddDropdown{ Name = Label, Options = Options, Callback = Callback }
 
-            if Order and Dropdown.Frame then
-                Dropdown.Frame.LayoutOrder = Order
+            if Order and Dropdown.Row then
+                Dropdown.Row.LayoutOrder = Order
             end
 
             return Dropdown
@@ -317,7 +315,7 @@ return {
             local Old = Picker.Dropdown
             local Signature = table.concat(Options, "\n")
 
-            if Old and (Picker.Signature == Signature or (Old.IsOpen and not Force)) then
+            if Old and (Picker.Signature == Signature or (Old.Open and not Force)) then
                 return
             end
 
@@ -354,22 +352,26 @@ return {
             --// Never rebuild under the cursor for a background change; try
             --// again once it closes. A forced refresh comes from the user (a
             --// pick fires before the dropdown closes), so it goes ahead.
-            if Old and Old.IsOpen and not Force then
+            if Old and Old.Open and not Force then
                 AICUI.QueueTargetPickerRefresh(Kind)
                 return
             end
 
             --// A new dropdown is appended to the section, so it takes the
             --// old one's slot to keep its place in the list.
-            local Order = Old and Old.Frame and Old.Frame.LayoutOrder
+            local Order = Old and Old.Row and Old.Row.LayoutOrder
             DestroyDropdown(Old)
 
-            local Dropdown = UIRef.TargetSection:AddDropdown(Picker.Label, Options, function(Value)
-                AICUI.S.AddPriorityTarget(Value)
-            end)
+            local Dropdown = UIRef.TargetSection:AddDropdown{
+                Name = Picker.Label,
+                Options = Options,
+                Callback = function(Value)
+                    AICUI.S.AddPriorityTarget(Value)
+                end,
+            }
 
-            if Order and Dropdown.Frame then
-                Dropdown.Frame.LayoutOrder = Order
+            if Order and Dropdown.Row then
+                Dropdown.Row.LayoutOrder = Order
             end
 
             UIRef[Picker.Ref] = Dropdown
@@ -668,7 +670,7 @@ return {
         end
         function AICUI.SetEventCurrencyLabel(Amount)
             if UIRef.EventCurrencyLabel then
-                UIRef.EventCurrencyLabel.Text = AICUI.FormatEventCurrency(Amount)
+                UIRef.EventCurrencyLabel:Set(AICUI.FormatEventCurrency(Amount))
             end
         end
         function AICUI.updateEventCurrency()
@@ -677,7 +679,7 @@ return {
             if not PlayerStats then
                 AICUI.S.EventCurrency = 0
                 AICUI.SetEventCurrencyLabel(0)
-                UIRef.ExpLabel.Text = "EXP            0/0"
+                UIRef.ExpLabel:Set("EXP            0/0")
                 AICUI.S.LastInventory = nil
                 return
             end
@@ -686,9 +688,9 @@ return {
             local PlayerExp = PlayerStats:FindFirstChild("EXP")
         
             if PlayerLvl and PlayerExp then
-                UIRef.ExpLabel.Text = "EXP            " .. PlayerExp.Value .. "/" .. AICUI.neededExp(PlayerLvl.Value)
+                UIRef.ExpLabel:Set("EXP            " .. PlayerExp.Value .. "/" .. AICUI.neededExp(PlayerLvl.Value))
             else
-                UIRef.ExpLabel.Text = "EXP            0/0"
+                UIRef.ExpLabel:Set("EXP            0/0")
             end
         
             local Inventory = PlayerStats:FindFirstChild("Inventory")
@@ -720,7 +722,7 @@ return {
             local Seconds = ServerAge % 60
         
             if UIRef.ServerAgeLabel then
-                UIRef.ServerAgeLabel.Text = "PLAY TIME      " .. string.format("%02d:%02d:%02d", Hours, Minutes, Seconds)
+                UIRef.ServerAgeLabel:Set("PLAY TIME      " .. string.format("%02d:%02d:%02d", Hours, Minutes, Seconds))
             end
         end
         function AICUI.updatePosition()
@@ -730,14 +732,14 @@ return {
             end
             if RootPart then
                 local Position = RootPart.Position
-                UIRef.PositionLabel.Text = string.format(
+                UIRef.PositionLabel:Set(string.format(
                     "POSITION       %.2f, %.2f, %.2f",
                     Position.X,
                     Position.Y,
                     Position.Z
-                )
+                ))
             else
-                UIRef.PositionLabel.Text = "POSITION       --"
+                UIRef.PositionLabel:Set("POSITION       --")
             end
         end
         

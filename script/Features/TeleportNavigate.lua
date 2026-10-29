@@ -92,23 +92,17 @@ return {
                 return Old
             end
 
-            local LayoutOrder = Old and Old.Frame and Old.Frame.LayoutOrder
+            local LayoutOrder = Old and Old.Row and Old.Row.LayoutOrder
             local Previous = Old and Old:Get()
 
             if Old then
-                if Old.Popup then
-                    Old.Popup:Destroy()
-                end
-
-                if Old.Frame then
-                    Old.Frame:Destroy()
-                end
+                Old:Remove()
             end
 
-            local Dropdown = Section:AddDropdown(Name, Options, function() end)
+            local Dropdown = Section:AddDropdown{ Name = Name, Options = Options, Callback = function() end }
 
             if LayoutOrder then
-                Dropdown.Frame.LayoutOrder = LayoutOrder
+                Dropdown.Row.LayoutOrder = LayoutOrder
             end
 
             if Previous and table.find(Options, Previous) then
@@ -256,8 +250,8 @@ return {
                 end
 
                 --// Never rebuild a list the user has open; try again later.
-                if (S.DoorDropdown and S.DoorDropdown.IsOpen)
-                    or (S.WaypointDropdown and S.WaypointDropdown.IsOpen)
+                if (S.DoorDropdown and S.DoorDropdown.Open)
+                    or (S.WaypointDropdown and S.WaypointDropdown.Open)
                 then
                     ScheduleRefresh()
                     return
@@ -300,39 +294,45 @@ return {
         local DoorSection = UIRef.DoorTeleportSection
         local WaypointSection = UIRef.WaypointTeleportSection
 
-        S.DoorDropdown = DoorSection:AddDropdown("Door", ReadDoorOptions(), function() end)
+        S.DoorDropdown = DoorSection:AddDropdown{ Name = "Door", Options = ReadDoorOptions(), Callback = function() end }
 
-        DoorSection:AddButton("Teleport To Door", TeleportToDoor)
-        DoorSection:AddButton("Refresh Doors", RefreshDoors)
+        DoorSection:AddButton{ Name = "Teleport To Door", Callback = TeleportToDoor }
+        DoorSection:AddButton{ Name = "Refresh Doors", Callback = RefreshDoors }
 
-        S.WaypointDropdown = WaypointSection:AddDropdown("Waypoint", ReadWaypointOptions(), function() end)
+        S.WaypointDropdown = WaypointSection:AddDropdown{ Name = "Waypoint", Options = ReadWaypointOptions(), Callback = function() end }
 
-        WaypointSection:AddButton("Teleport To Waypoint", function()
-            local Label = S.WaypointDropdown and S.WaypointDropdown:Get()
-            local Number = Label and S.WaypointNumbers[Label]
+        WaypointSection:AddButton{
+            Name = "Teleport To Waypoint",
+            Callback = function()
+                local Label = S.WaypointDropdown and S.WaypointDropdown:Get()
+                local Number = Label and S.WaypointNumbers[Label]
 
-            if Number == nil then
-                NotifyAction("TELEPORT", "Pick a waypoint first", 4)
-                return
-            end
+                if Number == nil then
+                    NotifyAction("TELEPORT", "Pick a waypoint first", 4)
+                    return
+                end
 
-            TeleportToWaypoint(Number)
-        end)
+                TeleportToWaypoint(Number)
+            end,
+        }
 
-        WaypointSection:AddButton("Refresh Waypoints", RefreshWaypoints)
+        WaypointSection:AddButton{ Name = "Refresh Waypoints", Callback = RefreshWaypoints }
 
-        UIRef.WaypointNumberBox = WaypointSection:AddTextbox("Waypoint Number", "", function() end)
+        UIRef.WaypointNumberBox = WaypointSection:AddTextBox{ Name = "Waypoint Number", Default = "", Callback = function() end }
 
-        WaypointSection:AddButton("Teleport To Number", function()
-            local Number = ParseWaypointNumber(UIRef.WaypointNumberBox:Get())
+        WaypointSection:AddButton{
+            Name = "Teleport To Number",
+            Callback = function()
+                local Number = ParseWaypointNumber(UIRef.WaypointNumberBox:Get())
 
-            if not Number then
-                NotifyAction("TELEPORT", "Enter a waypoint number (0 or more)", 4)
-                return
-            end
+                if not Number then
+                    NotifyAction("TELEPORT", "Enter a waypoint number (0 or more)", 4)
+                    return
+                end
 
-            TeleportToWaypoint(Number)
-        end)
+                TeleportToWaypoint(Number)
+            end,
+        }
 
         Context.Connect(workspace.ChildAdded, OnWorkspaceChild)
         Context.Connect(workspace.ChildRemoved, OnWorkspaceChild)

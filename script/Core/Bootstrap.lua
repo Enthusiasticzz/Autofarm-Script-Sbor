@@ -245,12 +245,12 @@ return {
             UIRef.PriorityComponent:Add(EntityName)
         end
         
-        UIRef.TargetRefreshButton = UIRef.TargetSection:AddButton(
-            "Refresh Detected Targets",
-            function()
+        UIRef.TargetRefreshButton = UIRef.TargetSection:AddButton{
+            Name = "Refresh Detected Targets",
+            Callback = function()
                 AICUI.RefreshTargetDropdown()
-            end
-        )
+            end,
+        }
 
         --// UI font, picked in Configuration and kept in the global file.
         if UI.SetFont then
@@ -327,14 +327,18 @@ return {
             UIRef.PinPanel:SetState(StoredPinned)
         end
 
-        UIRef.PinnedSection = UIRef.StatusTab:AddSection("Pinned Items")
+        UIRef.PinnedSection = UIRef.StatusTab:AddSection{ Title = "Pinned Items" }
 
         --// The only way to show the panel again once its × closed it.
-        UIRef.PinnedVisibleToggle = UIRef.PinnedSection:AddToggle("Show Pinned Items", UIRef.PinPanel.Visible, function(Value)
-            UIRef.PinPanel:SetVisible(Value)
-            CONFIG.PINNED_STATE = UIRef.PinPanel:GetState()
-            AICProfile.QueuePinnedSave()
-        end)
+        UIRef.PinnedVisibleToggle = UIRef.PinnedSection:AddToggle{
+            Name = "Show Pinned Items",
+            Default = UIRef.PinPanel.Visible,
+            Callback = function(Value)
+                UIRef.PinPanel:SetVisible(Value)
+                CONFIG.PINNED_STATE = UIRef.PinPanel:GetState()
+                AICProfile.QueuePinnedSave()
+            end,
+        }
 
         UIRef.PinPanel.OnChanged = function()
             CONFIG.PINNED_STATE = UIRef.PinPanel:GetState()
@@ -343,10 +347,13 @@ return {
             AICProfile.QueueProfileSave()
         end
 
-        UIRef.PinnedSection:AddButton("Reset Pinned Items Position", function()
-            UIRef.PinPanel:ResetPosition()
-            NotifyAction("Pinned Items", "Position reset")
-        end)
+        UIRef.PinnedSection:AddButton{
+            Name = "Reset Pinned Items Position",
+            Callback = function()
+                UIRef.PinPanel:ResetPosition()
+                NotifyAction("Pinned Items", "Position reset")
+            end,
+        }
 
         task.spawn(function()
             local PlayerStats = Player:WaitForChild("PlayerStats", 30)
@@ -358,15 +365,15 @@ return {
         end)
 
         --// Breaks ties between mobs of equal priority. Disabled keeps nearest first.
-        UIRef.TargetTypeDropdown = UIRef.TargetSection:AddDropdown(
-            "Target Type",
-            { "Disabled", "Highest HP", "Lowest HP" },
-            function(Value)
+        UIRef.TargetTypeDropdown = UIRef.TargetSection:AddDropdown{
+            Name = "Target Type",
+            Options = { "Disabled", "Highest HP", "Lowest HP" },
+            Callback = function(Value)
                 CONFIG.TARGET_HP_MODE = tostring(Value or "Disabled")
                 AICCombat.ResetTargetState()
                 AICProfile.SaveActiveProfile()
-            end
-        )
+            end,
+        }
         
         UIRef.TargetTypeDropdown:Set(tostring(CONFIG.TARGET_HP_MODE or "Disabled"), false)
         

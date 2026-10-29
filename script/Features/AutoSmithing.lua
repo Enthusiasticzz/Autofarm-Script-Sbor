@@ -680,7 +680,7 @@ return {
                 S.LastStatus = now
 
                 if UIRef.SmithStatusLabel then
-                    UIRef.SmithStatusLabel.Text = "STATUS  " .. GetStatusText()
+                    UIRef.SmithStatusLabel:Set("STATUS  " .. GetStatusText())
                 end
             end
 
@@ -795,20 +795,26 @@ return {
                 NotifyAction("AUTO SMITHING", Status)
             end
 
-            Section:AddButton("Set Smithing Table", function()
-                local Table, Distance = Feature:GetNearestTable()
+            Section:AddButton{
+                Name = "Set Smithing Table",
+                Callback = function()
+                    local Table, Distance = Feature:GetNearestTable()
 
-                if not Table or Distance > SET_TABLE_MAX_DISTANCE then
-                    NotifyAction("AUTO SMITHING", string.format("Stand within %d studs of a smithing table", SET_TABLE_MAX_DISTANCE))
-                    return
-                end
+                    if not Table or Distance > SET_TABLE_MAX_DISTANCE then
+                        NotifyAction("AUTO SMITHING", string.format("Stand within %d studs of a smithing table", SET_TABLE_MAX_DISTANCE))
+                        return
+                    end
 
-                SetTable(Feature:GetTablePosition(Table), "Smithing table set")
-            end)
+                    SetTable(Feature:GetTablePosition(Table), "Smithing table set")
+                end,
+            }
 
-            Section:AddButton("Use Nearest Table", function()
-                SetTable(nil, "Using the nearest smithing table")
-            end)
+            Section:AddButton{
+                Name = "Use Nearest Table",
+                Callback = function()
+                    SetTable(nil, "Using the nearest smithing table")
+                end,
+            }
 
             UIRef.RecipePriorityComponent = Section:AddPriority("Recipe Priority", {}, {
                 Values = true,
@@ -834,14 +840,20 @@ return {
             end
 
             --// Recipes are found, added and crafted now in the Recipe Browser.
-            Section:AddButton("Open Recipe Browser", function()
-                Browser:Toggle()
-            end)
+            Section:AddButton{
+                Name = "Open Recipe Browser",
+                Callback = function()
+                    Browser:Toggle()
+                end,
+            }
 
-            Section:AddButton("Refresh Recipes", function()
-                Browser:Refresh()
-                AICUI.RefreshMaterialPicker(true)
-            end)
+            Section:AddButton{
+                Name = "Refresh Recipes",
+                Callback = function()
+                    Browser:Refresh()
+                    AICUI.RefreshMaterialPicker(true)
+                end,
+            }
 
             return LoadRecipeList
         end
@@ -885,15 +897,12 @@ return {
                     CraftUI.RecipeLabels[Index] = Label
                 end
 
-                if Label.Text ~= Text then
-                    Label.Text = Text
-                end
-
-                Label.Visible = true
+                Label:Set(Text)
+                Label.Row.Visible = true
             end
 
             for Index = #Lines + 1, #CraftUI.RecipeLabels do
-                CraftUI.RecipeLabels[Index].Visible = false
+                CraftUI.RecipeLabels[Index].Row.Visible = false
             end
         end
 
@@ -956,16 +965,16 @@ return {
             end
 
             local LoadRecipeList = BuildCraftSection(Section, Browser)
-            local StatusSection = UIRef.CraftTab:AddSection("Recipe Status")
-            local LoadReserveList = BuildReserveSection(UIRef.CraftTab:AddSection("Material Reserve"))
+            local StatusSection = UIRef.CraftTab:AddSection{ Title = "Recipe Status" }
+            local LoadReserveList = BuildReserveSection(UIRef.CraftTab:AddSection{ Title = "Material Reserve" })
 
             function CraftUI.RefreshInfo()
-                UIRef.SmithSkillLabel.Text = "SMITHING SKILL  " .. tostring(Recipes:GetSkill())
+                UIRef.SmithSkillLabel:Set("SMITHING SKILL  " .. tostring(Recipes:GetSkill()))
 
                 local Saved = Runtime:GetPlaceConfig().SMITH_TABLE
-                UIRef.SmithTableLabel.Text = Saved
+                UIRef.SmithTableLabel:Set(Saved
                     and string.format("TABLE  SET  (%.0f, %.0f, %.0f)", Saved.X, Saved.Y, Saved.Z)
-                    or "TABLE  NEAREST"
+                    or "TABLE  NEAREST")
 
                 RefreshRecipeStatus(StatusSection)
             end

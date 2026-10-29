@@ -409,9 +409,15 @@ return {
 
             local SliderSection = Floating.Section(Panel, { LayoutOrder = 2 })
 
-            Craft.Slider = SliderSection:AddSlider("Amount", 0, 0, math.max(1, S.CraftMax), function(Value)
-                SetCraftAmount(Value)
-            end)
+            Craft.Slider = SliderSection:AddSlider{
+                Name = "Amount",
+                Default = 0,
+                Min = 0,
+                Max = math.max(1, S.CraftMax),
+                Callback = function(Value)
+                    SetCraftAmount(Value)
+                end,
+            }
 
             local Controls = New("Frame", { Parent = Panel, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 26), LayoutOrder = 3 })
 

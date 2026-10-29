@@ -23,7 +23,7 @@ return {
         local Module = {Name = "ProfileSettings"}
     function AICUI.SetProfileStatus(Text)
         if UIRef.ProfileStatusLabel then
-            UIRef.ProfileStatusLabel.Text = "STATUS:  " .. tostring(Text)
+            UIRef.ProfileStatusLabel:Set("STATUS:  " .. tostring(Text))
         end
     end
 
@@ -135,28 +135,28 @@ return {
             UIRef.ProfileDropdown:Set("Default Config", false)
         end
     end
-        UIRef.ProfileTab = UI:AddTab("Profile Settings")
-        UIRef.ProfilesSection = UIRef.ProfileTab:AddSection("Profiles")
+        UIRef.ProfileTab = UI:AddTab{ Name = "Profile Settings" }
+        UIRef.ProfilesSection = UIRef.ProfileTab:AddSection{ Title = "Profiles" }
 
 UIRef.ProfileStatusLabel = UIRef.ProfilesSection:AddLabel("STATUS:  DEFAULT PLACE_CONFIG (READ-ONLY)")
 
-UIRef.ProfileNameBox = UIRef.ProfilesSection:AddTextbox(
-    "Profile Name",
-    "",
-    function(Value)
+UIRef.ProfileNameBox = UIRef.ProfilesSection:AddTextBox{
+    Name = "Profile Name",
+    Default = "",
+    Callback = function(Value)
         --// The textbox is used as the source for Create Profile.
-    end
-)
+    end,
+}
 
-UIRef.ImportDataBox = UIRef.ProfilesSection:AddTextbox(
-    "Import Data",
-    "",
-    function(Value)
+UIRef.ImportDataBox = UIRef.ProfilesSection:AddTextBox{
+    Name = "Import Data",
+    Default = "",
+    Callback = function(Value)
         --// Paste JSON here, then press Import Save.
-    end
-)
+    end,
+}
 
-UIRef.ProfilesSection:AddButton("Create New Profile", function()
+UIRef.ProfilesSection:AddButton{ Name = "Create New Profile", Callback = function()
     local Name = UIRef.ProfileNameBox:Get()
 
     if Name == "" then
@@ -192,9 +192,9 @@ UIRef.ProfilesSection:AddButton("Create New Profile", function()
     AICDebug.UpdateDebugVisualizer()
     AICUI.SetProfileStatus("CREATED " .. Name)
     NotifyAction("Profile", "Created " .. Name)
-end)
+end }
 
-UIRef.ProfilesSection:AddButton("Save Profile", function()
+UIRef.ProfilesSection:AddButton{ Name = "Save Profile", Callback = function()
     if not AICProfile.S.ActiveProfileName then
         AICUI.SetProfileStatus("NO ACTIVE PROFILE")
         return
@@ -206,9 +206,9 @@ UIRef.ProfilesSection:AddButton("Save Profile", function()
     else
         AICUI.SetProfileStatus("SAVE FAILED")
     end
-end)
+end }
 
-UIRef.ProfilesSection:AddButton("Export Save", function()
+UIRef.ProfilesSection:AddButton{ Name = "Export Save", Callback = function()
     local Success, Result = AICProfile.ExportActiveProfile()
 
     if Success then
@@ -217,9 +217,9 @@ UIRef.ProfilesSection:AddButton("Export Save", function()
     else
         AICUI.SetProfileStatus(Result or "EXPORT FAILED")
     end
-end)
+end }
 
-UIRef.ProfilesSection:AddButton("Import Save", function()
+UIRef.ProfilesSection:AddButton{ Name = "Import Save", Callback = function()
     local Success, Result = AICProfile.ImportProfileFromText(UIRef.ImportDataBox:Get())
 
     if not Success then
@@ -249,9 +249,9 @@ UIRef.ProfilesSection:AddButton("Import Save", function()
     AICDebug.UpdateDebugVisualizer()
     AICUI.SetProfileStatus("IMPORTED " .. Result)
     NotifyAction("Import", "Imported " .. tostring(Result))
-end)
+end }
 
-UIRef.ProfilesSection:AddButton("Delete Profile", function()
+UIRef.ProfilesSection:AddButton{ Name = "Delete Profile", Callback = function()
     if not AICProfile.S.ActiveProfileName then
         AICUI.SetProfileStatus("NO ACTIVE PROFILE")
         return
@@ -282,7 +282,7 @@ UIRef.ProfilesSection:AddButton("Delete Profile", function()
     else
         AICUI.SetProfileStatus("DELETE FAILED")
     end
-end)
+end }
 
 
         function Module:Finalize()

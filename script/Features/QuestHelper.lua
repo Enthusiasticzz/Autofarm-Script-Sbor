@@ -296,7 +296,7 @@ return {
 
         local function SetStatus(Text)
             if S.StatusLabel then
-                S.StatusLabel.Text = Text
+                S.StatusLabel:Set(Text)
             end
         end
 
@@ -447,37 +447,55 @@ return {
 
         S.StatusLabel = Section:AddLabel("QUEST ESP OFF")
 
-        Section:AddToggle("Quest ESP", false, function(Value)
-            S.Enabled = Value
+        Section:AddToggle{
+            Name = "Quest ESP",
+            Default = false,
+            Callback = function(Value)
+                S.Enabled = Value
 
-            if Value then
+                if Value then
+                    FullScan()
+                    UpdateTags()
+                else
+                    ClearTags()
+                    SetStatus("QUEST ESP OFF")
+                end
+            end,
+        }
+
+        Section:AddToggle{
+            Name = "Show All Quest Items",
+            Default = false,
+            Callback = function(Value)
+                S.ShowAll = Value
                 FullScan()
                 UpdateTags()
-            else
-                ClearTags()
-                SetStatus("QUEST ESP OFF")
-            end
-        end)
+            end,
+        }
 
-        Section:AddToggle("Show All Quest Items", false, function(Value)
-            S.ShowAll = Value
-            FullScan()
-            UpdateTags()
-        end)
+        UIRef.QuestTargetsBox = Section:AddTextBox{
+            Name = "Quest Targets",
+            Default = "",
+            Callback = function(Value)
+                S.Targets = ParseTargets(Value)
+                FullScan()
+                UpdateTags()
+            end,
+        }
 
-        UIRef.QuestTargetsBox = Section:AddTextbox("Quest Targets", "", function(Value)
-            S.Targets = ParseTargets(Value)
-            FullScan()
-            UpdateTags()
-        end)
+        Section:AddButton{
+            Name = "Rescan Quest Targets",
+            Callback = function()
+                FullScan()
+                UpdateTags()
+                NotifyAction("QUEST", S.TagCount .. " target(s) tagged")
+            end,
+        }
 
-        Section:AddButton("Rescan Quest Targets", function()
-            FullScan()
-            UpdateTags()
-            NotifyAction("QUEST", S.TagCount .. " target(s) tagged")
-        end)
-
-        Section:AddButton("Copy Quest Info", CopyQuestInfo)
+        Section:AddButton{
+            Name = "Copy Quest Info",
+            Callback = CopyQuestInfo,
+        }
 
         Context.Connect(workspace.DescendantAdded, function(Descendant)
             if not S.Enabled or not HasTargets() then

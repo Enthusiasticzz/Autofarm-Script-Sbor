@@ -587,11 +587,11 @@ return {
                 return
             end
 
-            SessionLabel.Text = string.format(
+            SessionLabel:Set(string.format(
                 "SESSION STARTED  %s   ·   %s",
                 tostring(S.StartedClock or "--"),
                 FormatDuration(Feature:GetElapsed())
-            )
+            ))
         end
 
         function Feature:CreateUI()
@@ -603,31 +603,55 @@ return {
 
             --// The master switch, first in the section: off means no report
             --// goes out at all - not on a start, an end or the button.
-            Section:AddToggle("Discord Logging", CONFIG.DISCORD_ENABLED ~= false, function(Value)
-                Save("DISCORD_ENABLED", Value == true)
-            end)
+            Section:AddToggle{
+                Name = "Discord Logging",
+                Default = CONFIG.DISCORD_ENABLED ~= false,
+                Callback = function(Value)
+                    Save("DISCORD_ENABLED", Value == true)
+                end,
+            }
 
-            Section:AddTextbox("Webhook URL", Trim(CONFIG.DISCORD_WEBHOOK), function(Value)
-                Save("DISCORD_WEBHOOK", Trim(Value))
-            end)
+            Section:AddTextBox{
+                Name = "Webhook URL",
+                Default = Trim(CONFIG.DISCORD_WEBHOOK),
+                Callback = function(Value)
+                    Save("DISCORD_WEBHOOK", Trim(Value))
+                end,
+            }
 
-            Section:AddTextbox("Ping User ID", Trim(CONFIG.DISCORD_PING), function(Value)
-                Save("DISCORD_PING", Trim(Value))
-            end)
+            Section:AddTextBox{
+                Name = "Ping User ID",
+                Default = Trim(CONFIG.DISCORD_PING),
+                Callback = function(Value)
+                    Save("DISCORD_PING", Trim(Value))
+                end,
+            }
 
-            Section:AddTextbox("Ping Duo User ID", Trim(CONFIG.DISCORD_DUO_PING), function(Value)
-                Save("DISCORD_DUO_PING", Trim(Value))
-            end)
+            Section:AddTextBox{
+                Name = "Ping Duo User ID",
+                Default = Trim(CONFIG.DISCORD_DUO_PING),
+                Callback = function(Value)
+                    Save("DISCORD_DUO_PING", Trim(Value))
+                end,
+            }
             Section:AddLabel("UserId to ping, everyone, or blank for no ping")
             
-            Section:AddTextbox("Duo Username", Trim(CONFIG.DISCORD_DUO), function(Value)
-                Save("DISCORD_DUO", Trim(Value))
-            end)
+            Section:AddTextBox{
+                Name = "Duo Username",
+                Default = Trim(CONFIG.DISCORD_DUO),
+                Callback = function(Value)
+                    Save("DISCORD_DUO", Trim(Value))
+                end,
+            }
             Section:AddLabel("Blank when not duoing")
 
-            local FormatPicker = Section:AddDropdown("Report Format", FORMATS, function(Value)
-                Save("DISCORD_FORMAT", Value)
-            end)
+            local FormatPicker = Section:AddDropdown{
+                Name = "Report Format",
+                Options = FORMATS,
+                Callback = function(Value)
+                    Save("DISCORD_FORMAT", Value)
+                end,
+            }
 
             if CONFIG.DISCORD_FORMAT ~= FORMAT_CURRENCY and CONFIG.DISCORD_FORMAT ~= FORMAT_EXP then
                 CONFIG.DISCORD_FORMAT = FORMAT_CURRENCY
@@ -635,21 +659,31 @@ return {
 
             FormatPicker:Set(CONFIG.DISCORD_FORMAT, false)
 
-            Section:AddTextbox("EC Item Name", Trim(CONFIG.DISCORD_EC_ITEM), function(Value)
-                Save("DISCORD_EC_ITEM", Trim(Value))
-            end)
+            Section:AddTextBox{
+                Name = "EC Item Name",
+                Default = Trim(CONFIG.DISCORD_EC_ITEM),
+                Callback = function(Value)
+                    Save("DISCORD_EC_ITEM", Trim(Value))
+                end,
+            }
             Section:AddLabel("Only used by Event Currency; blank uses the event currency the script tracks")
 
-            Section:AddButton("Send Report", function()
-                Feature:CaptureStart()
-                Feature:Send()
-            end)
+            Section:AddButton{
+                Name = "Send Report",
+                Callback = function()
+                    Feature:CaptureStart()
+                    Feature:Send()
+                end,
+            }
 
-            Section:AddButton("Reset Session", function()
-                Feature:ResetSession()
-                RefreshLabel()
-                NotifyAction("Webhook", "Session restarted", 3)
-            end)
+            Section:AddButton{
+                Name = "Reset Session",
+                Callback = function()
+                    Feature:ResetSession()
+                    RefreshLabel()
+                    NotifyAction("Webhook", "Session restarted", 3)
+                end,
+            }
 
             SessionLabel = Section:AddLabel("")
             RefreshLabel()

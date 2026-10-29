@@ -698,10 +698,10 @@ return {
         --// Called by Init after AutoFarming's sliders, matching AFV2's order.
         function Module:BuildLateUI()
             if UIRef.DebugSection then
-                FeatureState.DebugVisualizer.Button = UIRef.DebugSection:AddToggle(
-                    "Debug Visualizer",
-                    FeatureState.DebugVisualizer.Enabled,
-                    function(Value)
+                FeatureState.DebugVisualizer.Button = UIRef.DebugSection:AddToggle{
+                    Name = "Debug Visualizer",
+                    Default = FeatureState.DebugVisualizer.Enabled,
+                    Callback = function(Value)
                         FeatureState.DebugVisualizer.Enabled = Value
                         task.defer(function()
                             if Value then
@@ -711,84 +711,84 @@ return {
                             end
                         end)
                         AICProfile.SaveActiveProfile()
-                    end
-                )
+                    end,
+                }
             end
         end
 
         function Module:CreateUI()
             if UIRef.DebugSection then
-                FeatureState.DebugWaypoints.Button = UIRef.DebugSection:AddToggle(
-                    "Debug Waypoints",
-                    FeatureState.DebugWaypoints.Enabled,
-                    function(Value)
+                FeatureState.DebugWaypoints.Button = UIRef.DebugSection:AddToggle{
+                    Name = "Debug Waypoints",
+                    Default = FeatureState.DebugWaypoints.Enabled,
+                    Callback = function(Value)
                         FeatureState.DebugWaypoints.Enabled = Value
                         AICDebug.UpdateDebugVisualizer()
                         AICProfile.SaveActiveProfile()
-                    end
-                )
+                    end,
+                }
 
-                FeatureState.DebugFarmZones.Button = UIRef.DebugSection:AddToggle(
-                    "Debug Farm Zones",
-                    FeatureState.DebugFarmZones.Enabled,
-                    function(Value)
+                FeatureState.DebugFarmZones.Button = UIRef.DebugSection:AddToggle{
+                    Name = "Debug Farm Zones",
+                    Default = FeatureState.DebugFarmZones.Enabled,
+                    Callback = function(Value)
                         FeatureState.DebugFarmZones.Enabled = Value
                         AICDebug.UpdateDebugVisualizer()
                         AICProfile.SaveActiveProfile()
-                    end
-                )
+                    end,
+                }
 
-                FeatureState.DebugDeadzones.Button = UIRef.DebugSection:AddToggle(
-                    "Debug Deadzones",
-                    FeatureState.DebugDeadzones.Enabled,
-                    function(Value)
+                FeatureState.DebugDeadzones.Button = UIRef.DebugSection:AddToggle{
+                    Name = "Debug Deadzones",
+                    Default = FeatureState.DebugDeadzones.Enabled,
+                    Callback = function(Value)
                         FeatureState.DebugDeadzones.Enabled = Value
                         AICDebug.UpdateDebugVisualizer()
                         AICProfile.SaveActiveProfile()
-                    end
-                )
+                    end,
+                }
 
-                FeatureState.DebugMineZones.Button = UIRef.DebugSection:AddToggle(
-                    "Debug Mine Zones",
-                    FeatureState.DebugMineZones.Enabled,
-                    function(Value)
+                FeatureState.DebugMineZones.Button = UIRef.DebugSection:AddToggle{
+                    Name = "Debug Mine Zones",
+                    Default = FeatureState.DebugMineZones.Enabled,
+                    Callback = function(Value)
                         FeatureState.DebugMineZones.Enabled = Value
                         AICDebug.UpdateDebugVisualizer()
                         AICProfile.SaveActiveProfile()
-                    end
-                )
+                    end,
+                }
 
                 --// Auto Mining feeds the billboards; turning this off drops
                 --// them on its next update.
-                FeatureState.DebugOres.Button = UIRef.DebugSection:AddToggle(
-                    "Debug Ore Status",
-                    FeatureState.DebugOres.Enabled,
-                    function(Value)
+                FeatureState.DebugOres.Button = UIRef.DebugSection:AddToggle{
+                    Name = "Debug Ore Status",
+                    Default = FeatureState.DebugOres.Enabled,
+                    Callback = function(Value)
                         FeatureState.DebugOres.Enabled = Value
                         AICProfile.SaveActiveProfile()
-                    end
-                )
+                    end,
+                }
 
                 --// Auto Smithing's billboards over smithing tables, same
                 --// arrangement as the ores.
-                FeatureState.DebugSmithing.Button = UIRef.DebugSection:AddToggle(
-                    "Debug Smithing Tables",
-                    FeatureState.DebugSmithing.Enabled,
-                    function(Value)
+                FeatureState.DebugSmithing.Button = UIRef.DebugSection:AddToggle{
+                    Name = "Debug Smithing Tables",
+                    Default = FeatureState.DebugSmithing.Enabled,
+                    Callback = function(Value)
                         FeatureState.DebugSmithing.Enabled = Value
                         AICProfile.SaveActiveProfile()
-                    end
-                )
+                    end,
+                }
 
-                FeatureState.DebugRadiusLabels.Button = UIRef.DebugSection:AddToggle(
-                    "Radius Billboard Labels",
-                    FeatureState.DebugRadiusLabels.Enabled,
-                    function(Value)
+                FeatureState.DebugRadiusLabels.Button = UIRef.DebugSection:AddToggle{
+                    Name = "Radius Billboard Labels",
+                    Default = FeatureState.DebugRadiusLabels.Enabled,
+                    Callback = function(Value)
                         FeatureState.DebugRadiusLabels.Enabled = Value
                         AICDebug.UpdateDebugVisualizer()
                         AICProfile.SaveActiveProfile()
-                    end
-                )
+                    end,
+                }
             end
         end
 

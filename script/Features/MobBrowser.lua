@@ -216,9 +216,12 @@ return {
         --// Below Enemy Priority and the target pickers, which Bootstrap adds.
         function Browser:BuildLateUI()
             if UIRef.TargetSection then
-                UIRef.TargetSection:AddButton("Open Mob Dictionary", function()
-                    Browser:Toggle()
-                end)
+                UIRef.TargetSection:AddButton{
+                    Name = "Open Mob Dictionary",
+                    Callback = function()
+                        Browser:Toggle()
+                    end,
+                }
             end
         end
 

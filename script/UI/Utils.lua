@@ -90,7 +90,7 @@ Library.DefaultText = {
 	UserFallback         = "User",
 	KeybindListTitle     = "Keybinds",
 	KeyNone              = "None",
-	Close                = "Ã—",
+	Close                = "×",
 }
 
 ------------------------------------------------------------------ helpers
@@ -199,6 +199,10 @@ function Library.new(o)
 	self.Theme = { Accent = o.Accent or rgb(79,124,245), Hover = rgb(72,76,92), Danger = rgb(255,92,92), Warning = rgb(255,190,92) }
 	for k, v in pairs(Library.Palettes.Default) do self.Theme[k] = v end
 	self.Palette = "Default"
+	--// Only the colours that differ from these are saved as a custom theme.
+	self._DefaultTheme = table.clone(self.Theme)
+	self._DefaultTextScale = 1
+	self._DefaultWindowSize = Vector2.new(ROOT_W, ROOT_H)
 	self._binds, self.Flags, self._setters, self._flagListeners = {}, {}, {}, {}
 	self.Tabs, self.Keybinds, self.Configs, self.StatusIcons, self.ConfigSelectors = {}, {}, {}, {}, {}
 	self.AnimSpeed = 1
@@ -325,6 +329,10 @@ function Library.new(o)
 		end)
 	end)
 
+	if o.ManualLoading then
+		self:_buildLoader()
+	end
+
 	self:Refresh()
 	return self
 end
@@ -365,12 +373,20 @@ function Library:Tween(obj, props, t, style)
 end
 function Library:Label(parent, text, p)
 	p = p or {}
-	local l = New("TextLabel", { BackgroundTransparency = 1, Text = text, TextSize = p.TextSize or p.Size or 14,
+	local baseSize = p.TextSize or p.Size or 14
+	local l = New("TextLabel", { BackgroundTransparency = 1, Text = text, TextSize = math.round(baseSize * (self.TextScale or 1)),
 		TextXAlignment = p.AlignRight and Enum.TextXAlignment.Right or Enum.TextXAlignment.Left,
 		Font = p.Bold and Fonts.Bold or Fonts.Medium, Position = p.Position or UDim2.new(),
 		Size = p.SizeUDim or UDim2.fromScale(1,1), TextTruncate = Enum.TextTruncate.AtEnd, Parent = parent })
 	local ref = { k = p.Color or "Text" }
 	self:Bind(function() l.TextColor3 = self.Theme[ref.k] end, l)
+	--// Font and text scale are global, so a label made before either changes
+	--// follows it.
+	local weight = p.Bold and "Bold" or "Medium"
+	self:Bind(function()
+		l.Font = Fonts[weight]
+		l.TextSize = math.round(baseSize * (self.TextScale or 1))
+	end, l)
 	return l, ref
 end
 function Library:_hover(btn, stroke)
@@ -734,7 +750,7 @@ function Library:_scrollbar(sc, parent)
 		self:Themed(b, { TextColor3 = "SubText" })
 		return b
 	end
-	local up, dn = arrow("â–²", UDim2.new()), arrow("â–¼", UDim2.new(0,0,1,-10))
+	local up, dn = arrow("▲", UDim2.new()), arrow("▼", UDim2.new(0,0,1,-10))
 	local rail = New("Frame", { BackgroundTransparency = 1, Position = UDim2.fromOffset(0,12), Size = UDim2.new(1,0,1,-24), ZIndex = 3, Parent = track })
 	local thumb = New("Frame", { Size = UDim2.new(0,4,0,10), Position = UDim2.fromOffset(3,0), BorderSizePixel = 0, ZIndex = 4, Parent = rail })
 	Round(thumb, 2)
@@ -1149,6 +1165,8 @@ end
 
 -- o = { Name, Icon = "rbxassetid://..." | Glyph = "X" | (neither: placeholder), Description }
 function Library:AddTab(o)
+	if type(o) == "string" then o = { Name = o } end
+
 	local tab = { Name = o.Name or "Tab", Win = self, Sections = {}, Description = o.Description, _order = 0 }
 	local idx = #self.Tabs + 1
 	local b = New("TextButton", { Size = UDim2.new(1,0,0,TAB_H), Position = UDim2.fromOffset(0, (idx - 1) * TAB_PITCH), Text = "", AutoButtonColor = false, BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 3, Parent = self.TabHolder })
@@ -1211,7 +1229,7 @@ function Library:AddTab(o)
 			self._split.Count[side] += 1
 			parentFrame, order = self._split[side], self._split.Count[side]
 		end
-		local sec = setmetatable({ Win = win, Tab = self, _n = 0 }, { __index = Library.Section })
+		local sec = setmetatable({ Win = win, Tab = self, _n = 0, Components = {} }, { __index = Library.Section })
 		sec.Frame = New("Frame", { Size = UDim2.new(1,0,0,0), AutomaticSize = Enum.AutomaticSize.Y, BorderSizePixel = 0, Active = true, LayoutOrder = order, Parent = parentFrame })
 		Round(sec.Frame, 8)
 		Blocks(sec.Frame)
@@ -1300,6 +1318,7 @@ function Section:_row(h)
 		local l = New("Frame", { Size = UDim2.new(1,0,0,1), BorderSizePixel = 0, Parent = r })
 		self.Win:Themed(l, { BackgroundColor3 = "Border" })
 	end
+	self._lastRow = r
 	return r
 end
 
@@ -1308,6 +1327,8 @@ function Section:_register(o, obj)
 		self.Win:_setFlag(o.Flag, obj:Get())
 		if not o.NoSave then self.Win._setters[o.Flag] = function(v) obj:Set(v) end else self.Win._setters[o.Flag] = nil end
 	end
+
+	return self:_decorate(self._lastRow, o, obj)
 end
 
 function Section:AddToggle(o, ...)
@@ -1423,7 +1444,7 @@ function Section:AddSlider(o, ...)
 	end)
 	hit.MouseEnter:Connect(function() win:Tween(knob, { Size = UDim2.fromOffset(14,14) }, .1) end)
 	hit.MouseLeave:Connect(function() win:Tween(knob, { Size = UDim2.fromOffset(12,12) }, .1) end)
-	for i, sym in ipairs({ "â€¹", "â€º" }) do
+	for i, sym in ipairs({ "‹", "›" }) do
 		local a = New("TextButton", { BackgroundTransparency = 1, Text = sym, Font = Fonts.Medium, TextSize = 18, Size = UDim2.fromOffset(16,18),
 			Position = i == 1 and UDim2.fromOffset(10,35) or UDim2.new(1,-26,0,35), Parent = row })
 		win:Bind(function() a.TextColor3 = win.Theme.SubText end)
@@ -1685,7 +1706,7 @@ function Section:AddButton(o, ...)
 		task.delay(.08 / math.max(win.AnimSpeed, .1), function() win:Tween(b, { Size = UDim2.new(1,-28,0,26), Position = UDim2.fromOffset(14,8) }, .1) end)
 		if o.Callback then task.spawn(o.Callback) end
 	end)
-	return { SetText = function(_, t) l.Text = t end }
+	return self:_decorate(row, o, { SetText = function(_, t) l.Text = t end })
 end
 
 function Section:AddDivider()
@@ -1699,7 +1720,15 @@ end
 function Section:AddLabel(text)
 	local row = self:_row(32)
 	local l = self.Win:Label(row, text, { Color = "SubText", Position = UDim2.fromOffset(14,0), SizeUDim = UDim2.new(1,-28,1,0) })
-	return { Set = function(_, t) l.Text = t end }
+	local obj = { Instance = l }
+
+	function obj:Set(t) l.Text = t end
+	--// A status line that colours itself (green / amber / red) and a log row
+	--// that hides when the list shrinks both need the label itself.
+	function obj:SetColor(c) l.TextColor3 = c end
+	function obj:SetVisible(v) l.Visible = v and true or false end
+
+	return self:_decorate(row, { Name = text }, obj)
 end
 
 ------------------------------------------------------------------ notifications / watermark / keybind list
@@ -2086,7 +2115,7 @@ function Section:AddPriority(name, values, options)
 					Position = UDim2.fromOffset(14, 9),
 					BackgroundColor3 = checked and lib.Theme.Accent or lib.Theme.Element,
 					BorderSizePixel = 0,
-					Text = checked and "âœ“" or "",
+					Text = checked and "✓" or "",
 					Font = Fonts.Bold,
 					TextSize = 11,
 					TextColor3 = lib.Theme.Window,
@@ -2266,6 +2295,11 @@ function Section:AddPriority(name, values, options)
 	end
 
 	self.Components[#self.Components + 1] = component
+	--// Redraws the rows after a change the component cannot see itself, such
+	--// as a name arriving for a row.
+	component.Refresh = function()
+		Refresh()
+	end
 	component:SetPriority(values or {})
 	return component
 end
@@ -2277,13 +2311,16 @@ function Library:SetTheme(themeMap)
 	for k, v in pairs(themeMap) do
 		if typeof(v) == "Color3" then self.Theme[k] = v end
 	end
+	if self.OnThemeChanged then task.spawn(self.OnThemeChanged, self.Theme) end
 	self:QueueRefresh()
 end
 function Library:SetTextScale(scale)
 	if not scale then return end
 	scale = math.clamp(tonumber(scale) or 1, 0.5, 2.5)
 	self.TextScale = scale
+	if self.OnTextScaleChanged then task.spawn(self.OnTextScaleChanged, scale) end
 	self:QueueRefresh()
+	return scale
 end
 function Library:SetWindowSize(w, h)
 	if not w then return end
@@ -2314,6 +2351,7 @@ function Library:SetFont(name)
 	Library.Fonts.Medium = f
 	Library.Fonts.Bold = f
 	Fonts.Regular, Fonts.Medium, Fonts.Bold = f, f, f
+	if self.OnFontChanged then task.spawn(self.OnFontChanged, name) end
 	self:QueueRefresh()
 	return true
 end
@@ -2537,10 +2575,1064 @@ function Library:_BuildSettingsTab()
 end
 
 function Library:FinishLoading()
+	local boot = self.Loader
+
+	--// Runs the bar to the end, fades the sheet out and reveals the menu.
+	if boot and not boot.Finishing then
+		boot.Finishing = true
+
+		task.spawn(function()
+			self:Tween(boot.Fill, { Size = UDim2.fromScale(1, 1) }, .3, Enum.EasingStyle.Quart)
+			task.wait(.34 / math.max(self.AnimSpeed, .1))
+
+			if self.Destroyed then
+				return
+			end
+
+			self:Tween(boot.Sheet, { BackgroundTransparency = 1 }, .2)
+			self:Tween(boot.Status, { TextTransparency = 1 }, .2)
+			task.wait(.22)
+
+			if boot.Sheet then
+				boot.Sheet:Destroy()
+			end
+
+			self.Loader = nil
+		end)
+	end
+
 	if not self._settingsBuilt then
 		self._settingsBuilt = true
 		pcall(function() self:_BuildSettingsTab() end)
 	end
 end
+
+--------------------------------------------------------------------------------
+-- Project surface
+--
+-- script/ builds its menu out of feature modules rather than from this file
+-- alone, so the pieces those modules reach for live here: tooltips looked up
+-- by control name, the boot loader, connection bookkeeping, the drag and
+-- clamp helpers the detail panels use, and the pinned items panel.
+--------------------------------------------------------------------------------
+
+--// Connections made through this are dropped together with the window.
+function Library:_Connect(signal, callback)
+	local connection = signal:Connect(callback)
+	table.insert(self._conns, connection)
+	return connection
+end
+
+--// Name -> description for the hover tips, upper case keyed so the label's
+--// own casing does not matter. A description passed to a widget wins over
+--// the map.
+function Library:SetDescriptions(map)
+	self.Descriptions = {}
+
+	for name, text in pairs(type(map) == "table" and map or {}) do
+		self.Descriptions[string.upper(tostring(name))] = text
+	end
+end
+
+function Library:_GetDescription(name, description)
+	if type(description) == "string" and description ~= "" then
+		return description
+	end
+
+	return self.Descriptions and self.Descriptions[string.upper(tostring(name))] or nil
+end
+
+--// Called for every control a section builds, so a row whose name is in the
+--// description map answers a hover with its tip.
+function Library:_attachTip(row, name, description)
+	local text = self:_GetDescription(name, description)
+
+	if not text or not row then
+		return
+	end
+
+	row.MouseEnter:Connect(function()
+		if row.Parent then
+			self:_showTip(row, text)
+		end
+	end)
+	row.MouseLeave:Connect(function()
+		self:_hideTip()
+	end)
+end
+
+function Section:_decorate(row, o, obj)
+	if not row then
+		return obj
+	end
+
+	if o and o.Name then
+		row.Name = tostring(o.Name)
+	end
+
+	if type(obj) == "table" then
+		obj.Row = row
+
+		if not obj.Remove then
+			obj.Remove = function(self)
+				if row then
+					row:Destroy()
+				end
+			end
+		end
+	end
+
+	self.Win:_attachTip(row, o and o.Name, o and o.Description)
+
+	return obj
+end
+
+--------------------------------------------------------------------------------
+-- Boot loader: the window can be shown while modules still load, and
+-- SetLoadingProgress reports how far along that is. Without ManualLoading the
+-- loader never appears and FinishLoading just builds the Settings tab.
+--------------------------------------------------------------------------------
+
+function Library:_buildLoader()
+	if self.Loader then
+		return self.Loader
+	end
+
+	local sheet = New("Frame", { Name = "Loader", Size = UDim2.fromScale(1, 1), BorderSizePixel = 0, ZIndex = 200, Parent = self.Root })
+	Round(sheet, 10)
+	self:Themed(sheet, { BackgroundColor3 = "Window" })
+
+	local brand = self:Label(sheet, string.upper(self.Title), {
+		Bold = true, TextSize = 22,
+		Position = UDim2.fromOffset(40, ROOT_H / 2 - 66),
+		SizeUDim = UDim2.new(1, -80, 0, 30),
+	})
+	brand.TextXAlignment = Enum.TextXAlignment.Left
+
+	local status = self:Label(sheet, "STARTING", {
+		Color = "SubText", TextSize = 11,
+		Position = UDim2.fromOffset(42, ROOT_H / 2 - 34),
+		SizeUDim = UDim2.new(1, -84, 0, 16),
+	})
+	status.TextXAlignment = Enum.TextXAlignment.Left
+
+	local track = New("Frame", { Position = UDim2.fromOffset(42, ROOT_H / 2 - 8), Size = UDim2.new(1, -84, 0, 4), BorderSizePixel = 0, Parent = sheet })
+	Round(track, 2)
+	self:Themed(track, { BackgroundColor3 = "Border" })
+
+	local fill = New("Frame", { Size = UDim2.fromScale(0, 1), BorderSizePixel = 0, Parent = track })
+	Round(fill, 2)
+	self:Bind(function() fill.BackgroundColor3 = self.Theme.Accent end, fill)
+
+	self.Loader = { Sheet = sheet, Status = status, Fill = fill, Finishing = false }
+
+	return self.Loader
+end
+
+function Library:SetLoadingProgress(fraction, text, isError)
+	local boot = self.Loader
+
+	if self.Destroyed or not boot or boot.Finishing then
+		return
+	end
+
+	if text then
+		boot.Status.Text = string.upper(tostring(text))
+	end
+
+	boot.Status.TextColor3 = isError and self.Theme.Danger or self.Theme.SubText
+
+	if fraction then
+		self:Tween(boot.Fill, { Size = UDim2.fromScale(math.clamp(fraction, 0, 1), 1) }, .2)
+	end
+end
+
+--------------------------------------------------------------------------------
+-- Small helpers the detail / floating panels were written against.
+--------------------------------------------------------------------------------
+
+function Library:_AddAngularCorners(parent, color)
+	Round(parent, 8)
+	return self:Themed(Stroke(parent), { Color = "Border" })
+end
+
+function Library:_AddHoverHighlight(target, stroke)
+	return self:_hover(target, stroke)
+end
+
+--// Keeps a popup inside its parent when it is dragged or placed near an edge.
+local function ClampToParent(target)
+	local parent = target and target.Parent
+
+	if not parent or not parent:IsA("GuiBase2d") then
+		return
+	end
+
+	local bounds, size = parent.AbsoluteSize, target.AbsoluteSize
+
+	if bounds.X <= 0 or bounds.Y <= 0 then
+		return
+	end
+
+	local position, anchor = target.Position, target.AnchorPoint
+	local left = bounds.X * position.X.Scale + position.X.Offset - anchor.X * size.X
+	local top = bounds.Y * position.Y.Scale + position.Y.Offset - anchor.Y * size.Y
+	local clampedLeft = math.clamp(left, 0, math.max(0, bounds.X - size.X))
+	local clampedTop = math.clamp(top, 0, math.max(0, bounds.Y - size.Y))
+
+	if clampedLeft ~= left or clampedTop ~= top then
+		target.Position = UDim2.new(
+			position.X.Scale, position.X.Offset + (clampedLeft - left),
+			position.Y.Scale, position.Y.Offset + (clampedTop - top)
+		)
+	end
+end
+
+function Library:_ClampToParent(target)
+	return ClampToParent(target)
+end
+
+function Library:_MakeDraggable(handle, target, keepOnScreen)
+	local dragging, dragStart, startPosition = false
+
+	self:_Connect(handle.InputBegan, function(input)
+		if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then
+			return
+		end
+
+		dragging = true
+		dragStart = input.Position
+		startPosition = target.Position
+
+		local changedConnection
+
+		changedConnection = input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				dragging = false
+
+				if changedConnection then
+					changedConnection:Disconnect()
+				end
+			end
+		end)
+	end)
+
+	self:_Connect(UIS.InputChanged, function(input)
+		if not dragging then
+			return
+		end
+
+		if input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch then
+			return
+		end
+
+		local delta = input.Position - dragStart
+
+		target.Position = UDim2.new(
+			startPosition.X.Scale, startPosition.X.Offset + delta.X,
+			startPosition.Y.Scale, startPosition.Y.Offset + delta.Y
+		)
+
+		if keepOnScreen then
+			self:_ClampToParent(target)
+		end
+	end)
+end
+
+--------------------------------------------------------------------------------
+-- Pinned items
+--
+-- A compact list of named items with a count each, in its own frame beside the
+-- window rather than inside a tab. It knows nothing about where the counts come
+-- from: the caller pushes them in with UpdateCounts and supplies the
+-- searchable names with SetSearchSource, which keeps this library free of any
+-- single inventory format.
+--
+-- Attached it sits at the right edge; popped out it is dragged anywhere and
+-- keeps its own position. GetState and SetState hand that arrangement to the
+-- caller to persist, since the library does no file access of its own.
+--------------------------------------------------------------------------------
+
+--// The pin panel was written against these helpers, which the rest of the
+--// library only has in its newer form.
+local PinTextColor = Library.Palettes.Default.Text
+local function PinCorner(parent, radius)
+	return Round(parent, radius or 3)
+end
+local function PinStroke(parent, color, transparency, thickness)
+	local stroke = Stroke(parent, color, thickness or 1)
+	stroke.Transparency = transparency or 0
+	return stroke
+end
+local function PinPadding(parent, left, right, top, bottom)
+	return New("UIPadding", {
+		PaddingLeft = UDim.new(0, left or 0), PaddingRight = UDim.new(0, right or 0),
+		PaddingTop = UDim.new(0, top or 0), PaddingBottom = UDim.new(0, bottom or 0),
+		Parent = parent,
+	})
+end
+local function PinTextLabel(parent, text, size, position, dimensions)
+	return New("TextLabel", {
+		Parent = parent, BackgroundTransparency = 1, Text = text, TextSize = math.round(size or 12),
+		Position = position, Size = dimensions, TextColor3 = PinTextColor, Font = Fonts.Regular,
+		TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Center,
+		ClipsDescendants = true,
+	})
+end
+local function ParseDelimitedInventory(text: string?)
+    local counts = {}
+    local names = {}
+
+    if type(text) ~= "string" then
+        return counts, names
+    end
+
+    for entry in string.gmatch(text, "([^,]+)") do
+        local itemName, amount = string.match(entry, "([^|]+)|(.+)")
+
+        if itemName and counts[itemName] == nil then
+            counts[itemName] = tonumber(amount) or 0
+            table.insert(names, itemName)
+        end
+    end
+
+    table.sort(names, function(a, b)
+        return string.lower(a) < string.lower(b)
+    end)
+
+    return counts, names
+end
+
+--// Wires a pin panel to a StringValue holding an inventory. One call replaces
+--// the search source, the count source and the change watcher, so a caller
+--// never has to reimplement the same three hookups.
+function Library:BindPinToValue(pin, valueObject: Instance?, parser)
+    if not pin or not valueObject then
+        return false
+    end
+
+    parser = parser or ParseDelimitedInventory
+
+    local function Read()
+        local ok, counts, names = pcall(parser, valueObject.Value)
+
+        if not ok or type(counts) ~= "table" then
+            return {}, {}
+        end
+
+        return counts, type(names) == "table" and names or {}
+    end
+
+    pin:SetSearchSource(function()
+        local _, names = Read()
+        return names
+    end)
+
+    pin:SetCountSource(function()
+        local counts = Read()
+        return counts
+    end)
+
+    local function Refresh()
+        local counts = Read()
+        pin:UpdateCounts(counts)
+    end
+
+    --// Event driven: the value only changes when the server says so, and one
+    --// parse refreshes every pinned count.
+    self:_Connect(valueObject:GetPropertyChangedSignal("Value"), Refresh)
+    Refresh()
+
+    return true
+end
+
+--//==============================================================
+--// Pin Panel
+--//
+--// A compact list of named items with a count each, in its own frame beside
+--// the window rather than inside a tab. It knows nothing about where the
+--// counts come from: the caller pushes them in with UpdateCounts and supplies
+--// the searchable names with SetSearchSource, which keeps this library free
+--// of any single inventory format.
+--//
+--// Attached it sits at the right edge; popped out it is dragged anywhere and
+--// keeps its own position. GetState and SetState hand that arrangement to the
+--// caller to persist, since the library does no file access of its own.
+--//==============================================================
+function Library:AddPin(name: string?)
+    local component = {}
+    component.Library = self
+    component.Items = {}
+    component.Floating = false
+    component.SearchSource = nil
+    component.CountSource = nil
+    component.MaxResults = 12
+    component.Minimized = false
+    component.Visible = true
+
+    local panel = New("TextButton", {
+        --// A button, so a click on it stops here instead of reaching the UI
+        --// underneath; it draws like a frame.
+        Text = "",
+        AutoButtonColor = false,
+        Name = "PinPanel",
+        Parent = self.ScreenGui,
+        AnchorPoint = Vector2.new(1, 0),
+        Position = UDim2.new(1, -16, 0, 130),
+        Size = UDim2.new(0, 194, 0, 0),
+        ClipsDescendants = false,
+        AutomaticSize = Enum.AutomaticSize.Y,
+        BackgroundColor3 = self.Theme.Panel,
+        BackgroundTransparency = 0.06,
+        BorderSizePixel = 0,
+        ZIndex = 40,
+    })
+
+    PinCorner(panel, 6)
+    PinStroke(panel, self.Theme.BorderDim)
+    PinPadding(panel, 8, 8, 8, 8)
+
+    New("UIListLayout", {
+        Parent = panel,
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Padding = UDim.new(0, 5),
+    })
+
+    component.Panel = panel
+
+    local header = New("Frame", {
+        Parent = panel,
+        BackgroundTransparency = 1,
+        Size = UDim2.new(1, 0, 0, 24),
+        LayoutOrder = 1,
+        ZIndex = 41,
+    })
+
+    local title = PinTextLabel(header, name or "Pinned Items", 13, UDim2.new(0, 0, 0, 0), UDim2.new(1, -82, 1, 0))
+    title.TextColor3 = self.Theme.Cyan
+    title.ZIndex = 42
+
+    local function HeaderButton(text, xOffset, color)
+        local button = New("TextButton", {
+            Parent = header,
+            AnchorPoint = Vector2.new(1, 0.5),
+            Position = UDim2.new(1, xOffset, 0.5, 0),
+            Size = UDim2.new(0, 20, 0, 18),
+            BackgroundColor3 = self.Theme.Element,
+            BackgroundTransparency = 0.15,
+            BorderSizePixel = 0,
+            Text = text,
+            TextColor3 = color or self.Theme.TextMuted,
+            TextSize = 11,
+            Font = Fonts.Bold,
+            AutoButtonColor = false,
+            ZIndex = 42,
+        })
+        PinCorner(button, 3)
+        PinStroke(button, self.Theme.BorderDim, 0.35, 1)
+        return button
+    end
+
+    local closeButton = HeaderButton("×", -2, self.Theme.Danger)
+    local minimizeButton = HeaderButton("—", -24, self.Theme.TextMuted)
+    local popButton = HeaderButton("<>", -46, self.Theme.TextMuted)
+
+    component.CloseButton = closeButton
+    component.MinimizeButton = minimizeButton
+
+    --// A dropdown is unusable here: an inventory can hold hundreds of entries,
+    --// so this filters by substring and shows only the first few matches.
+    local searchBox = New("TextBox", {
+        Parent = panel,
+        Size = UDim2.new(1, 0, 0, 22),
+        LayoutOrder = 2,
+        BackgroundColor3 = self.Theme.Element,
+        BackgroundTransparency = 0.15,
+        BorderSizePixel = 0,
+        Text = "",
+        PlaceholderText = "search item...",
+        PlaceholderColor3 = self.Theme.TextMuted,
+        TextColor3 = self.Theme.Text,
+        TextSize = 12,
+        Font = Fonts.Regular,
+        ClearTextOnFocus = false,
+        ZIndex = 41,
+    })
+
+    PinCorner(searchBox, 4)
+    PinPadding(searchBox, 6, 6, 0, 0)
+
+    local resultHolder = New("Frame", {
+        Parent = panel,
+        BackgroundTransparency = 1,
+        Size = UDim2.new(1, 0, 0, 0),
+        AutomaticSize = Enum.AutomaticSize.Y,
+        LayoutOrder = 3,
+        Visible = false,
+        ZIndex = 41,
+    })
+
+    New("UIListLayout", {
+        Parent = resultHolder,
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Padding = UDim.new(0, 2),
+    })
+
+    local itemHolder = New("Frame", {
+        Parent = panel,
+        BackgroundTransparency = 1,
+        Size = UDim2.new(1, 0, 0, 0),
+        AutomaticSize = Enum.AutomaticSize.Y,
+        LayoutOrder = 4,
+        ZIndex = 41,
+    })
+
+    New("UIListLayout", {
+        Parent = itemHolder,
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Padding = UDim.new(0, 3),
+    })
+
+    local emptyLabel = PinTextLabel(panel, "no pinned items", 11, UDim2.new(0, 0, 0, 0), UDim2.new(1, 0, 0, 16))
+    emptyLabel.TextColor3 = self.Theme.TextMuted
+    emptyLabel.LayoutOrder = 5
+    emptyLabel.ZIndex = 41
+
+    --// Closed, the panel leaves nothing on screen; the caller offers a way
+    --// to show it again (SetVisible), and hears of a close via OnChanged.
+    local resizeHandle = New("TextButton", {
+        Name = "PinResizeHandle",
+        Parent = self.ScreenGui,
+        AnchorPoint = Vector2.new(1, 1),
+        Position = UDim2.fromOffset(0, 0),
+        Size = UDim2.fromOffset(18, 18),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        Text = "↘",
+        TextColor3 = self.Theme.TextMuted,
+        TextSize = 13,
+        Font = Fonts.Bold,
+        AutoButtonColor = false,
+        Visible = true,
+        ZIndex = 81,
+    })
+    component.ResizeHandle = resizeHandle
+
+    --// Counts pushed in with UpdateCounts only arrive when the caller notices
+    --// a change. An item pinned just now, or restored from a saved list, has
+    --// to be able to ask for its number straight away or it reads 0 until the
+    --// next change happens to come along.
+    local function ResolveCounts()
+        if not component.CountSource then
+            return nil
+        end
+
+        local ok, counts = pcall(component.CountSource)
+
+        if not ok or type(counts) ~= "table" then
+            return nil
+        end
+
+        return counts
+    end
+
+    local function IndexOf(itemName)
+        for index, entry in ipairs(component.Items) do
+            if entry.Name == itemName then
+                return index
+            end
+        end
+
+        return nil
+    end
+
+    local RefreshResults
+
+    local function RefreshItems()
+        for _, child in ipairs(itemHolder:GetChildren()) do
+            if not child:IsA("UIListLayout") then
+                child:Destroy()
+            end
+        end
+
+        emptyLabel.Visible = #component.Items == 0
+
+        for index, entry in ipairs(component.Items) do
+            local row = New("Frame", {
+                Parent = itemHolder,
+                Size = UDim2.new(1, 0, 0, 20),
+                BackgroundColor3 = self.Theme.PanelLight,
+                BackgroundTransparency = 0.25,
+                BorderSizePixel = 0,
+                LayoutOrder = index,
+                ZIndex = 42,
+            })
+
+            PinCorner(row, 4)
+
+            local rowName = PinTextLabel(row, entry.Name, 11, UDim2.new(0, 6, 0, 0), UDim2.new(1, -96, 1, 0))
+            rowName.TextColor3 = self.Theme.Text
+            rowName.ZIndex = 43
+
+            local count = PinTextLabel(row, tostring(entry.Count or 0), 11, UDim2.new(1, -92, 0, 0), UDim2.new(0, 34, 1, 0))
+            count.TextColor3 = (entry.Count or 0) > 0 and self.Theme.Cyan or self.Theme.TextMuted
+            count.TextXAlignment = Enum.TextXAlignment.Right
+            count.ZIndex = 43
+
+            local function SmallButton(text, offset, colour)
+                return New("TextButton", {
+                    Parent = row,
+                    AnchorPoint = Vector2.new(1, 0.5),
+                    Position = UDim2.new(1, offset, 0.5, 0),
+                    Size = UDim2.new(0, 16, 0, 16),
+                    BackgroundTransparency = 1,
+                    Text = text,
+                    TextColor3 = colour,
+                    TextSize = 11,
+                    Font = Fonts.Regular,
+                    AutoButtonColor = false,
+                    ZIndex = 43,
+                })
+            end
+
+            local up = SmallButton("^", -38, self.Theme.TextMuted)
+            local down = SmallButton("v", -21, self.Theme.TextMuted)
+            local remove = SmallButton("x", -4, self.Theme.Danger)
+
+            self:_Connect(up.MouseButton1Click, function()
+                component:MoveUp(entry.Name)
+            end)
+
+            self:_Connect(down.MouseButton1Click, function()
+                component:MoveDown(entry.Name)
+            end)
+
+            self:_Connect(remove.MouseButton1Click, function()
+                component:Remove(entry.Name)
+            end)
+        end
+
+        if component.OnChanged then
+            task.spawn(component.OnChanged, component)
+        end
+    end
+
+    RefreshResults = function()
+        for _, child in ipairs(resultHolder:GetChildren()) do
+            if not child:IsA("UIListLayout") then
+                child:Destroy()
+            end
+        end
+
+        local query = string.lower(searchBox.Text or "")
+
+        if query == "" or not component.SearchSource then
+            resultHolder.Visible = false
+            return
+        end
+
+        local ok, names = pcall(component.SearchSource)
+
+        if not ok or type(names) ~= "table" then
+            resultHolder.Visible = false
+            return
+        end
+
+        local shown = 0
+
+        for _, itemName in ipairs(names) do
+            if shown >= component.MaxResults then
+                break
+            end
+
+            if type(itemName) == "string"
+                and string.find(string.lower(itemName), query, 1, true)
+                and not IndexOf(itemName)
+            then
+                shown += 1
+
+                local result = New("TextButton", {
+                    Parent = resultHolder,
+                    Size = UDim2.new(1, 0, 0, 18),
+                    BackgroundColor3 = self.Theme.Element,
+                    BackgroundTransparency = 0.25,
+                    BorderSizePixel = 0,
+                    Text = "",
+                    AutoButtonColor = false,
+                    LayoutOrder = shown,
+                    ZIndex = 42,
+                })
+
+                PinCorner(result, 4)
+
+                local resultName = PinTextLabel(result, itemName, 11, UDim2.new(0, 6, 0, 0), UDim2.new(1, -12, 1, 0))
+                resultName.TextColor3 = self.Theme.TextSecondary
+                resultName.ZIndex = 43
+
+                self:_Connect(result.MouseButton1Click, function()
+                    component:AddList(itemName)
+                    searchBox.Text = ""
+                    RefreshResults()
+                end)
+            end
+        end
+
+        resultHolder.Visible = shown > 0
+    end
+
+    self:_Connect(searchBox:GetPropertyChangedSignal("Text"), RefreshResults)
+
+    function component:AddList(itemName: string, count: number?)
+        if type(itemName) ~= "string" or itemName == "" then
+            return false
+        end
+
+        local existing = IndexOf(itemName)
+
+        if existing then
+            --// Already pinned. Re-adding with a number means the caller is
+            --// giving a fresh count, so take it rather than doing nothing.
+            self.Items[existing].Count = tonumber(count) or self.Items[existing].Count or 0
+            RefreshItems()
+            return false
+        end
+
+        local resolved = tonumber(count)
+
+        if not resolved then
+            local counts = ResolveCounts()
+            resolved = counts and tonumber(counts[itemName]) or 0
+        end
+
+        table.insert(self.Items, {
+            Name = itemName,
+            Count = resolved,
+        })
+
+        RefreshItems()
+        RefreshResults()
+        return true
+    end
+
+    function component:Remove(itemName: string)
+        local index = IndexOf(itemName)
+
+        if not index then
+            return false
+        end
+
+        table.remove(self.Items, index)
+        RefreshItems()
+        RefreshResults()
+        return true
+    end
+
+    function component:MoveUp(itemName: string)
+        local index = IndexOf(itemName)
+
+        if not index or index <= 1 then
+            return false
+        end
+
+        self.Items[index], self.Items[index - 1] = self.Items[index - 1], self.Items[index]
+        RefreshItems()
+        return true
+    end
+
+    function component:MoveDown(itemName: string)
+        local index = IndexOf(itemName)
+
+        if not index or index >= #self.Items then
+            return false
+        end
+
+        self.Items[index], self.Items[index + 1] = self.Items[index + 1], self.Items[index]
+        RefreshItems()
+        return true
+    end
+
+    function component:GetItems()
+        local names = {}
+
+        for _, entry in ipairs(self.Items) do
+            table.insert(names, entry.Name)
+        end
+
+        return names
+    end
+
+    function component:SetItems(names)
+        table.clear(self.Items)
+
+        --// Resolved once for the whole list rather than per item, so a long
+        --// restored list costs one lookup.
+        local counts = ResolveCounts()
+
+        for _, itemName in ipairs(names or {}) do
+            if type(itemName) == "string" and itemName ~= "" and not IndexOf(itemName) then
+                table.insert(self.Items, {
+                    Name = itemName,
+                    Count = counts and tonumber(counts[itemName]) or 0,
+                })
+            end
+        end
+
+        RefreshItems()
+        RefreshResults()
+    end
+
+    --// Counts arrive from outside. Anything not mentioned reads as zero, so a
+    --// pinned item that has left the inventory shows 0 rather than a stale
+    --// number from the last update.
+    function component:UpdateCounts(counts)
+        counts = counts or {}
+
+        for _, entry in ipairs(self.Items) do
+            entry.Count = tonumber(counts[entry.Name]) or 0
+        end
+
+        RefreshItems()
+    end
+
+    function component:SetSearchSource(source)
+        self.SearchSource = source
+        RefreshResults()
+    end
+
+    --// Returns the same name to number map UpdateCounts takes. Called only
+    --// when an item is added or a list is restored, never from RefreshItems,
+    --// which would recurse through OnChanged.
+    function component:SetCountSource(source)
+        self.CountSource = source
+
+        if #self.Items > 0 then
+            self:UpdateCounts(ResolveCounts())
+        end
+    end
+
+    function component:SetFloating(value: boolean)
+        self.Floating = value and true or false
+
+        popButton.Text = self.Floating and ">|" or "<>"
+        popButton.TextColor3 = self.Floating and self.Library.Theme.Cyan or self.Library.Theme.TextMuted
+
+        if not self.Floating then
+            panel.AnchorPoint = Vector2.new(1, 0)
+            panel.Position = UDim2.new(1, -16, 0, 130)
+        end
+    end
+
+    function component:SetPosition(x: number?, y: number?)
+        if not tonumber(x) or not tonumber(y) then
+            return
+        end
+
+        panel.AnchorPoint = Vector2.new(0, 0)
+        panel.Position = UDim2.fromOffset(tonumber(x), tonumber(y))
+
+        --// A saved position can come from a larger screen or another device.
+        ClampToParent(panel)
+    end
+
+    --// Docks the panel back to its default spot at the right edge.
+    function component:ResetPosition()
+        self:SetFloating(false)
+
+        if self.OnChanged then
+            task.spawn(self.OnChanged, self)
+        end
+    end
+
+    function component:GetState()
+        return {
+            Items = self:GetItems(),
+            Floating = self.Floating,
+            Visible = self.Visible,
+            X = math.round(panel.AbsolutePosition.X),
+            Y = math.round(panel.AbsolutePosition.Y),
+        }
+    end
+
+    function component:SetState(state)
+        if type(state) ~= "table" then
+            return
+        end
+
+        self:SetItems(state.Items)
+        self:SetFloating(state.Floating == true)
+        self:SetVisible(state.Visible ~= false)
+
+        if state.Floating then
+            self:SetPosition(state.X, state.Y)
+        end
+    end
+
+    local function UpdatePinControls()
+        if not panel.Parent then
+            return
+        end
+
+        local pos = panel.AbsolutePosition
+        local size = panel.AbsoluteSize
+        resizeHandle.Position = UDim2.fromOffset(pos.X + size.X, pos.Y + size.Y)
+        resizeHandle.Visible = component.Visible and not component.Minimized
+    end
+
+    function component:SetMinimized(value: boolean)
+        value = value and true or false
+        if self.Minimized == value then
+            return
+        end
+
+        self.Minimized = value
+        searchBox.Visible = not value
+        resultHolder.Visible = not value and resultHolder.Visible
+        itemHolder.Visible = not value
+        emptyLabel.Visible = not value and #self.Items == 0
+        resizeHandle.Visible = self.Visible and not value
+
+        if value then
+            minimizeButton.Text = "□"
+        else
+            minimizeButton.Text = "—"
+        end
+
+        UpdatePinControls()
+    end
+
+    function component:ToggleMinimize()
+        self:SetMinimized(not self.Minimized)
+    end
+
+    function component:SetVisible(value: boolean)
+        self.Visible = value and true or false
+        panel.Visible = self.Visible
+        resizeHandle.Visible = self.Visible and not self.Minimized
+        UpdatePinControls()
+    end
+
+    function component:Destroy()
+        panel:Destroy()
+        resizeHandle:Destroy()
+    end
+
+    self:_Connect(minimizeButton.MouseButton1Click, function()
+        component:ToggleMinimize()
+    end)
+
+    self:_Connect(closeButton.MouseButton1Click, function()
+        component:SetVisible(false)
+
+        if component.OnChanged then
+            task.spawn(component.OnChanged, component)
+        end
+    end)
+
+    self:_Connect(popButton.MouseButton1Click, function()
+        component:SetFloating(not component.Floating)
+
+        if component.OnChanged then
+            task.spawn(component.OnChanged, component)
+        end
+    end)
+
+    local resizing = false
+    local resizeStart: Vector2
+    local startWidth: number
+
+    self:_Connect(resizeHandle.InputBegan, function(input)
+        if input.UserInputType ~= Enum.UserInputType.MouseButton1
+            and input.UserInputType ~= Enum.UserInputType.Touch then
+            return
+        end
+
+        resizing = true
+        resizeStart = input.Position
+        startWidth = panel.AbsoluteSize.X
+    end)
+
+    self:_Connect(UserInputService.InputChanged, function(input)
+        if not resizing then
+            return
+        end
+
+        if input.UserInputType ~= Enum.UserInputType.MouseMovement
+            and input.UserInputType ~= Enum.UserInputType.Touch then
+            return
+        end
+
+        local delta = input.Position.X - resizeStart.X
+        local width = math.clamp(startWidth + delta, 170, 360)
+        panel.Size = UDim2.new(0, width, 0, 0)
+        UpdatePinControls()
+    end)
+
+    self:_Connect(UserInputService.InputEnded, function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+            resizing = false
+        end
+    end)
+
+    self:_Connect(panel:GetPropertyChangedSignal("AbsolutePosition"), UpdatePinControls)
+    self:_Connect(panel:GetPropertyChangedSignal("AbsoluteSize"), UpdatePinControls)
+
+    --// Dragging works in both modes, and dragging while attached pops it out,
+    --// which is the gesture someone will reach for first. It is kept on
+    --// screen so it cannot be dragged somewhere it can no longer be grabbed.
+    self:_MakeDraggable(header, panel, true)
+
+    --// Rotating a device or resizing the window can leave a floating panel
+    --// off screen, so it is pulled back whenever the bounds change.
+    self:_Connect(self.ScreenGui:GetPropertyChangedSignal("AbsoluteSize"), function()
+        if component.Floating then
+            ClampToParent(panel)
+        end
+    end)
+
+    --// The panel grows as items are pinned, which can push its bottom edge
+    --// past the screen.
+    self:_Connect(panel:GetPropertyChangedSignal("AbsoluteSize"), function()
+        if component.Floating then
+            ClampToParent(panel)
+        end
+    end)
+
+    self:_Connect(header.InputBegan, function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch
+        then
+            if not component.Floating then
+                component:SetFloating(true)
+            end
+
+            --// Report the drag once it ends, so the new spot is saved.
+            local endConnection
+
+            endConnection = input.Changed:Connect(function()
+                if input.UserInputState ~= Enum.UserInputState.End then
+                    return
+                end
+
+                endConnection:Disconnect()
+                ClampToParent(panel)
+
+                if component.OnChanged then
+                    task.spawn(component.OnChanged, component)
+                end
+            end)
+        end
+    end)
+
+    component:SetFloating(false)
+    RefreshItems()
+    UpdatePinControls()
+
+    self.Pins = self.Pins or {}
+    table.insert(self.Pins, component)
+
+    return component
+end
+
 
 return Library

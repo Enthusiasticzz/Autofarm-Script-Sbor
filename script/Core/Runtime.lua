@@ -134,7 +134,7 @@ return {
         
         local function NotifyAction(Action, Message, Duration)
             if UI and type(UI.Notify) == "function" then
-                UI:Notify(Action, Message, Duration or 2.5)
+                UI:Notify{ Title = Action, Text = Message, Duration = Duration or 2.5 }
             end
         end
         

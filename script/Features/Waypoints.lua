@@ -21,9 +21,11 @@ return {
         end
 
         local Module = {Name = "Waypoints", IsFeature = true}
-        UIRef.WaypointSection = UIRef.ProfileTab:AddSection("Waypoints")
+        UIRef.WaypointSection = UIRef.ProfileTab:AddSection{ Title = "Waypoints" }
 
-UIRef.WaypointSection:AddButton("Add Waypoint Here", function()
+UIRef.WaypointSection:AddButton{
+    Name = "Add Waypoint Here",
+    Callback = function()
     if not GetRootPart() then
         AICUI.SetProfileStatus("CHARACTER NOT READY")
         return
@@ -47,9 +49,12 @@ UIRef.WaypointSection:AddButton("Add Waypoint Here", function()
     AICProfile.SaveActiveProfile()
     AICUI.SetProfileStatus("WAYPOINT ADDED #" .. tostring(#Runtime:GetPlaceConfig().WAYPOINTS))
     NotifyAction("Waypoint", "Added waypoint #" .. tostring(#Runtime:GetPlaceConfig().WAYPOINTS))
-end)
+    end,
+}
 
-UIRef.WaypointSection:AddButton("Clear Waypoints", function()
+UIRef.WaypointSection:AddButton{
+    Name = "Clear Waypoints",
+    Callback = function()
     if not AICProfile.S.ActiveProfileName then
         AICUI.SetProfileStatus("CREATE / LOAD PROFILE FIRST")
         return
@@ -64,7 +69,8 @@ UIRef.WaypointSection:AddButton("Clear Waypoints", function()
     AICProfile.SaveActiveProfile()
     AICUI.SetProfileStatus("WAYPOINTS CLEARED")
     NotifyAction("Waypoint", "Cleared all waypoints")
-end)
+    end,
+}
 
 UIRef.WaypointListComponent = UIRef.WaypointSection:AddPriority("All Waypoints", AICUI.BuildWaypointLabels(), {
     --// Seconds to stand at each waypoint before heading to the next.
@@ -212,10 +218,10 @@ function UIRef.WaypointListComponent:Remove(Label)
 end
 
 
-UIRef.ReachDistanceBox = UIRef.WaypointSection:AddTextbox(
-    "Waypoint Reach Distance",
-    tostring(Runtime:GetPlaceConfig().REACH_DISTANCE or 5),
-    function(Value)
+UIRef.ReachDistanceBox = UIRef.WaypointSection:AddTextBox{
+    Name = "Waypoint Reach Distance",
+    Default = tostring(Runtime:GetPlaceConfig().REACH_DISTANCE or 5),
+    Callback = function(Value)
         if not AICProfile.S.ActiveProfileName then
             return
         end
@@ -227,8 +233,8 @@ UIRef.ReachDistanceBox = UIRef.WaypointSection:AddTextbox(
             AICProfile.SaveActiveProfile()
             AICUI.SetProfileStatus("REACH DISTANCE SAVED")
         end
-    end
-)
+    end,
+}
 
 --// Route hole jump: jumping gaps on the waypoint route (CombatUtils
 --// IsRouteHoleAhead reads these).

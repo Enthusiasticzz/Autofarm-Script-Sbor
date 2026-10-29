@@ -50,14 +50,14 @@ return {
             AICUI.SetProfileStatus(Status)
         end
 
-        UIRef.MineZoneSection = UIRef.MineTab:AddSection("Mine Zone")
+        UIRef.MineZoneSection = UIRef.MineTab:AddSection{ Title = "Mine Zone" }
 
-        UIRef.MineRadiusSlider = UIRef.MineZoneSection:AddSlider(
-            "Mine Zone Radius",
-            DEFAULT_RADIUS,
-            MIN_RADIUS,
-            MAX_RADIUS,
-            function(Value)
+        UIRef.MineRadiusSlider = UIRef.MineZoneSection:AddSlider{
+            Name = "Mine Zone Radius",
+            Default = DEFAULT_RADIUS,
+            Min = MIN_RADIUS,
+            Max = MAX_RADIUS,
+            Callback = function(Value)
                 local Zone = GetMineZones()[AICProfile.S.SelectedMineZoneIndex]
 
                 if not Zone or not AICProfile.S.ActiveProfileName then
@@ -68,40 +68,46 @@ return {
                 AICUI.RefreshMineZoneList()
                 AICDebug.UpdateDebugVisualizer()
                 AICProfile.QueueProfileSave()
-            end
-        )
+            end,
+        }
 
-        UIRef.MineZoneSection:AddButton("Add Mine Zone Here", function()
-            local _, _, RootPart = Runtime:GetCharacter()
+        UIRef.MineZoneSection:AddButton{
+            Name = "Add Mine Zone Here",
+            Callback = function()
+                local _, _, RootPart = Runtime:GetCharacter()
 
-            if not RootPart then
-                AICUI.SetProfileStatus("CHARACTER NOT READY")
-                return
-            end
+                if not RootPart then
+                    AICUI.SetProfileStatus("CHARACTER NOT READY")
+                    return
+                end
 
-            if not CanEdit() then
-                return
-            end
+                if not CanEdit() then
+                    return
+                end
 
-            table.insert(GetMineZones(), {
-                Center = AICConfig.RoundVector3(RootPart.Position),
-                Radius = UIRef.MineRadiusSlider:Get(),
-            })
+                table.insert(GetMineZones(), {
+                    Center = AICConfig.RoundVector3(RootPart.Position),
+                    Radius = UIRef.MineRadiusSlider:Get(),
+                })
 
-            AICProfile.S.SelectedMineZoneIndex = #GetMineZones()
-            Commit("MINE ZONE ADDED #" .. tostring(#GetMineZones()))
-        end)
+                AICProfile.S.SelectedMineZoneIndex = #GetMineZones()
+                Commit("MINE ZONE ADDED #" .. tostring(#GetMineZones()))
+            end,
+        }
 
-        UIRef.MineZoneSection:AddButton("Clear Mine Zones", function()
-            if not CanEdit() then
-                return
-            end
+        UIRef.MineZoneSection:AddButton{
+            Name = "Clear Mine Zones",
+            Callback = function()
+                if not CanEdit() then
+                    return
+                end
 
-            table.clear(GetMineZones())
-            AICProfile.S.SelectedMineZoneIndex = 1
-            Commit("MINE ZONES CLEARED")
-            NotifyAction("Mine Zone", "Cleared all mine zones")
-        end)
+                table.clear(GetMineZones())
+                AICProfile.S.SelectedMineZoneIndex = 1
+                Commit("MINE ZONES CLEARED")
+                NotifyAction("Mine Zone", "Cleared all mine zones")
+            end,
+        }
 
         UIRef.MineZoneListComponent = UIRef.MineZoneSection:AddPriority("All Mine Zones", GetLabels())
 
@@ -166,29 +172,32 @@ return {
             local Old = UIRef.MineZonePicker
             --// A new dropdown is appended to the section; it takes the old
             --// one's slot instead.
-            local Order = Old and Old.Frame and Old.Frame.LayoutOrder
+            local Order = Old and Old.Row and Old.Row.LayoutOrder
 
             if Old then
-                if Old.Popup then Old.Popup:Destroy() end
-                if Old.Frame then Old.Frame:Destroy() end
+                Old:Remove()
             end
 
             AICProfile.S.SelectedMineZoneIndex = math.clamp(AICProfile.S.SelectedMineZoneIndex, 1, math.max(1, #Zones))
 
-            UIRef.MineZonePicker = UIRef.MineZoneSection:AddDropdown("Edit Mine Zone", Options, function(Value)
-                local Index = table.find(Options, Value)
-                local Zone = Index and GetMineZones()[Index]
+            UIRef.MineZonePicker = UIRef.MineZoneSection:AddDropdown{
+                Name = "Edit Mine Zone",
+                Options = Options,
+                Callback = function(Value)
+                    local Index = table.find(Options, Value)
+                    local Zone = Index and GetMineZones()[Index]
 
-                if not Zone then
-                    return
-                end
+                    if not Zone then
+                        return
+                    end
 
-                AICProfile.S.SelectedMineZoneIndex = Index
-                UIRef.MineRadiusSlider:Set(tonumber(Zone.Radius) or DEFAULT_RADIUS, false)
-            end)
+                    AICProfile.S.SelectedMineZoneIndex = Index
+                    UIRef.MineRadiusSlider:Set(tonumber(Zone.Radius) or DEFAULT_RADIUS, false)
+                end,
+            }
 
-            if Order and UIRef.MineZonePicker.Frame then
-                UIRef.MineZonePicker.Frame.LayoutOrder = Order
+            if Order and UIRef.MineZonePicker.Row then
+                UIRef.MineZonePicker.Row.LayoutOrder = Order
             end
 
             local Selected = Options[AICProfile.S.SelectedMineZoneIndex] or Options[1]

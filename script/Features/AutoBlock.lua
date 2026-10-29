@@ -500,13 +500,13 @@ return {
 
             BlockSection:AddDivider()
 
-            self.Button = BlockSection:AddToggle(
-                "Auto Block",
-                self.Enabled,
-                function(Value)
+            self.Button = BlockSection:AddToggle{
+                Name = "Auto Block",
+                Default = self.Enabled,
+                Callback = function(Value)
                     self:SetEnabled(Value)
-                end
-            )
+                end,
+            }
 
             Feature.AutoBlock.Button = self.Button
 
@@ -547,57 +547,73 @@ return {
             AICUI.ShowUserNames(self.WhitelistComponent)
             CONFIG.BLOCK_WHITELIST = self.WhitelistComponent.Priority
 
-            self.WhitelistBox = BlockSection:AddTextbox("User ID", "", function() end)
+            self.WhitelistBox = BlockSection:AddTextBox{
+                Name = "User ID",
+                Default = "",
+                Callback = function() end,
+            }
             UIRef.BlockWhitelistBox = self.WhitelistBox
 
-            BlockSection:AddButton("Add User ID", function()
-                local Id = self:NormalizeUserId(self.WhitelistBox:Get())
+            BlockSection:AddButton{
+                Name = "Add User ID",
+                Callback = function()
+                    local Id = self:NormalizeUserId(self.WhitelistBox:Get())
 
-                if not Id then
-                    NotifyAction("Whitelist", "Enter a numeric UserId")
-                    return
-                end
-
-                if self:IsWhitelisted(Id) then
-                    NotifyAction("Whitelist", Id .. " is already on the list")
-                    return
-                end
-
-                self.WhitelistComponent:Add(Id)
-                CONFIG.BLOCK_WHITELIST = self.WhitelistComponent.Priority
-                self.WhitelistBox:Set("")
-                AICProfile.WriteGlobalStore()
-                NotifyAction("Whitelist", "Added " .. Id)
-                self:RefreshWhitelistPlayerDropdown()
-            end)
-
-            BlockSection:AddButton("Refresh Player List", function()
-                self:RefreshWhitelistPlayerDropdown()
-            end)
-
-            BlockSection:AddButton("Add Everyone Here", function()
-                local Added = 0
-
-                for _, OtherPlayer in ipairs(Players:GetPlayers()) do
-                    if OtherPlayer ~= Player and not self:IsWhitelisted(OtherPlayer.UserId) then
-                        self.WhitelistComponent:Add(tostring(OtherPlayer.UserId))
-                        Added += 1
+                    if not Id then
+                        NotifyAction("Whitelist", "Enter a numeric UserId")
+                        return
                     end
-                end
 
-                CONFIG.BLOCK_WHITELIST = self.WhitelistComponent.Priority
-                AICProfile.WriteGlobalStore()
-                NotifyAction("Whitelist", "Added " .. tostring(Added) .. " player(s)")
-                self:RefreshWhitelistPlayerDropdown()
-            end)
+                    if self:IsWhitelisted(Id) then
+                        NotifyAction("Whitelist", Id .. " is already on the list")
+                        return
+                    end
 
-            BlockSection:AddButton("Clear Whitelist", function()
-                self.WhitelistComponent:SetPriority({})
-                CONFIG.BLOCK_WHITELIST = self.WhitelistComponent.Priority
-                AICProfile.WriteGlobalStore()
-                NotifyAction("Whitelist", "Cleared")
-                self:RefreshWhitelistPlayerDropdown()
-            end)
+                    self.WhitelistComponent:Add(Id)
+                    CONFIG.BLOCK_WHITELIST = self.WhitelistComponent.Priority
+                    self.WhitelistBox:Set("")
+                    AICProfile.WriteGlobalStore()
+                    NotifyAction("Whitelist", "Added " .. Id)
+                    self:RefreshWhitelistPlayerDropdown()
+                end,
+            }
+
+            BlockSection:AddButton{
+                Name = "Refresh Player List",
+                Callback = function()
+                    self:RefreshWhitelistPlayerDropdown()
+                end,
+            }
+
+            BlockSection:AddButton{
+                Name = "Add Everyone Here",
+                Callback = function()
+                    local Added = 0
+
+                    for _, OtherPlayer in ipairs(Players:GetPlayers()) do
+                        if OtherPlayer ~= Player and not self:IsWhitelisted(OtherPlayer.UserId) then
+                            self.WhitelistComponent:Add(tostring(OtherPlayer.UserId))
+                            Added += 1
+                        end
+                    end
+
+                    CONFIG.BLOCK_WHITELIST = self.WhitelistComponent.Priority
+                    AICProfile.WriteGlobalStore()
+                    NotifyAction("Whitelist", "Added " .. tostring(Added) .. " player(s)")
+                    self:RefreshWhitelistPlayerDropdown()
+                end,
+            }
+
+            BlockSection:AddButton{
+                Name = "Clear Whitelist",
+                Callback = function()
+                    self.WhitelistComponent:SetPriority({})
+                    CONFIG.BLOCK_WHITELIST = self.WhitelistComponent.Priority
+                    AICProfile.WriteGlobalStore()
+                    NotifyAction("Whitelist", "Cleared")
+                    self:RefreshWhitelistPlayerDropdown()
+                end,
+            }
 
             local OriginalRemove = self.WhitelistComponent.Remove
             local OriginalMoveUp = self.WhitelistComponent.MoveUp

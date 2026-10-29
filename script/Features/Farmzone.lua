@@ -21,15 +21,15 @@ return {
         end
 
         local Module = {Name = "Farmzone", IsFeature = true}
-        UIRef.FarmzoneSection = UIRef.ProfileTab:AddSection("Farmzone")
+        UIRef.FarmzoneSection = UIRef.ProfileTab:AddSection{ Title = "Farmzone" }
         UIRef.FarmzoneSection = UIRef.FarmzoneSection
 
-UIRef.FarmRadiusSlider = UIRef.FarmzoneSection:AddSlider(
-    "Farm Radius",
-    100,
-    1,
-    500,
-    function(Value)
+UIRef.FarmRadiusSlider = UIRef.FarmzoneSection:AddSlider{
+    Name = "Farm Radius",
+    Default = 100,
+    Min = 1,
+    Max = 500,
+    Callback = function(Value)
         local Zone = Runtime:GetPlaceConfig() and Runtime:GetPlaceConfig().FARM_ZONES
             and Runtime:GetPlaceConfig().FARM_ZONES[AICProfile.S.SelectedFarmZoneIndex]
 
@@ -39,12 +39,14 @@ UIRef.FarmRadiusSlider = UIRef.FarmzoneSection:AddSlider(
         AICUI.RefreshFarmZoneList()
         AICDebug.UpdateDebugVisualizer()
         AICProfile.QueueProfileSave()
-    end
-)
+    end,
+}
 
 
 
-UIRef.FarmzoneSection:AddButton("Add Farm Zone Here", function()
+UIRef.FarmzoneSection:AddButton{
+    Name = "Add Farm Zone Here",
+    Callback = function()
     if not GetRootPart() then
         AICUI.SetProfileStatus("CHARACTER NOT READY")
         return
@@ -69,10 +71,13 @@ UIRef.FarmzoneSection:AddButton("Add Farm Zone Here", function()
     AICProfile.SaveActiveProfile()
     AICDebug.UpdateDebugVisualizer()
     AICUI.SetProfileStatus("FARM ZONE ADDED #" .. tostring(#Runtime:GetPlaceConfig().FARM_ZONES))
-end)
+    end,
+}
 
 
-UIRef.FarmzoneSection:AddButton("Clear Farm Zones", function()
+UIRef.FarmzoneSection:AddButton{
+    Name = "Clear Farm Zones",
+    Callback = function()
     if not AICProfile.S.ActiveProfileName then
         AICUI.SetProfileStatus("CREATE / LOAD PROFILE FIRST")
         return
@@ -87,7 +92,8 @@ UIRef.FarmzoneSection:AddButton("Clear Farm Zones", function()
     AICDebug.UpdateDebugVisualizer()
     AICUI.SetProfileStatus("FARM ZONES CLEARED")
     NotifyAction("Farm Zone", "Cleared all farm zones")
-end)
+    end,
+}
 
 UIRef.FarmZoneListComponent = UIRef.FarmzoneSection:AddPriority(
     "All Farm Zones",

@@ -85,7 +85,7 @@ return {
             State.Status = Text
 
             if UIRef.PartyStatusLabel then
-                UIRef.PartyStatusLabel.Text = "STATUS:  " .. tostring(Text)
+                UIRef.PartyStatusLabel:Set("STATUS:  " .. tostring(Text))
             end
         end
 
@@ -261,7 +261,7 @@ return {
             local Leader = GetLeader()
 
             if UIRef.PartyLeaderLabel then
-                UIRef.PartyLeaderLabel.Text = "LEADER:  " .. (Leader and Leader.Name or "NONE")
+                UIRef.PartyLeaderLabel:Set("LEADER:  " .. (Leader and Leader.Name or "NONE"))
             end
         end
 
@@ -316,26 +316,32 @@ return {
         end
 
         if Section then
-            FeatureState.PartySystem.Button = Section:AddToggle(
-                "Party System",
-                FeatureState.PartySystem.Enabled,
-                function(Value)
+            FeatureState.PartySystem.Button = Section:AddToggle{
+                Name = "Party System",
+                Default = FeatureState.PartySystem.Enabled,
+                Callback = function(Value)
                     FeatureState.PartySystem.Enabled = Value
                     State.CooldownUntil = 0
                     AICProfile.SaveActiveProfile()
-                end
-            )
+                end,
+            }
 
             UIRef.PartyLeaderLabel = Section:AddLabel("LEADER:  NONE")
             UIRef.PartyStatusLabel = Section:AddLabel("STATUS:  IDLE")
 
-            Section:AddButton("Clear Leader", function()
-                SetLeader(nil)
-            end)
+            Section:AddButton{
+                Name = "Clear Leader",
+                Callback = function()
+                    SetLeader(nil)
+                end,
+            }
 
-            Section:AddButton("Refresh Player List", function()
-                AICUI.RefreshPartyLeaderDropdown()
-            end)
+            Section:AddButton{
+                Name = "Refresh Player List",
+                Callback = function()
+                    AICUI.RefreshPartyLeaderDropdown()
+                end,
+            }
 
             AICUI.RefreshPartyLeaderDropdown()
             RefreshLeaderLabel()

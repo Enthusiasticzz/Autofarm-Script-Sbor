@@ -390,7 +390,7 @@ local function fetchParallel(Paths)
 end
 
 local function createWindow(Utils)
-    UI = Utils.new(TITLE, { ManualLoading = true })
+    UI = Utils.new{ Title = TITLE, ManualLoading = true }
     Context.UI = UI
 
     local Window = UI

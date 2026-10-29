@@ -225,9 +225,12 @@ return {
         --// builds late too (it starts first, so its controls come first).
         function Browser:BuildLateUI()
             if UIRef.CraftSection then
-                UIRef.CraftSection:AddButton("Open Asset Explorer", function()
-                    Browser:Toggle()
-                end)
+                UIRef.CraftSection:AddButton{
+                    Name = "Open Asset Explorer",
+                    Callback = function()
+                        Browser:Toggle()
+                    end,
+                }
             end
         end
 

@@ -22,7 +22,7 @@ end
 
 local win
 Check("Library.new", function()
-    win = Library.new("AIC TEST", { ManualLoading = true })
+    win = Library.new{ Title = "AIC TEST", ManualLoading = true }
     Expect(win and win.Root, "no window")
 end)
 if not win then
@@ -108,7 +108,7 @@ Check("AddPriority", function()
 end)
 
 Check("native color picker + keybind", function()
-    local raw = tab:RawAddSection("Extras")
+    local raw = tab:AddSection{ Title = "Extras" }
     local picker = raw:AddColorPicker({ Name = "Test colour", Toggle = true, Default = Color3.fromRGB(10, 20, 30) })
     picker:Set(Color3.fromRGB(1, 2, 3), true)
     picker:SetEnabled(true, true)
@@ -116,6 +116,36 @@ Check("native color picker + keybind", function()
     local key = raw:AddKeybind({ Name = "Test key", Default = Enum.KeyCode.Insert, Hidden = true })
     key:Set(Enum.KeyCode.K)
     Expect(key:Get() == Enum.KeyCode.K, "keybind value")
+end)
+
+Check("project patterns", function()
+    -- a picker rebuilt in place: remove the row, keep its slot, address the new one
+    local extra = tab:AddSection{ Title = "Patterns" }
+    local first = extra:AddDropdown{ Name = "Picker", Options = { "A" }, Callback = function() end }
+    local order = first.Row.LayoutOrder
+    local holder = first.Row.Parent
+    first:Remove()
+    local stillThere = false
+    for _, child in ipairs(holder:GetChildren()) do
+        if child == first.Row then stillThere = true end
+    end
+    Expect(not stillThere, "dropdown row survived Remove")
+    local second = extra:AddDropdown{ Name = "Picker", Options = { "A", "B" }, Callback = function() end }
+    second.Row.LayoutOrder = order
+    Expect(second.Row ~= nil, "rebuilt dropdown has no row")
+
+    -- status line that colours itself and a log row that hides
+    local status = extra:AddLabel("STATUS")
+    status:Set("STATUS  RUNNING")
+    status:SetColor(Color3.fromRGB(10, 200, 10))
+    Expect(status.Instance.Text == "STATUS  RUNNING", "label Set")
+    Expect(status.Instance.TextColor3 == Color3.fromRGB(10, 200, 10), "label SetColor")
+    status:SetVisible(false)
+    Expect(status.Instance.Visible == false, "label SetVisible")
+
+    -- the old spelling still builds a text box
+    local legacy = extra:AddTextbox("Legacy", "seed", function() end)
+    Expect(legacy:Get() == "seed", "AddTextbox default")
 end)
 
 Check("tab switching", function()
@@ -131,7 +161,6 @@ end)
 
 Check("notifications", function()
     win:Notify({ Title = "Test", Text = "Hello", Duration = 2 })
-    win:Notify("Short", "form")
 end)
 
 Check("appearance setters", function()
@@ -142,14 +171,16 @@ Check("appearance setters", function()
     win:SetPalette("Default")
     win:SetTextScale(1.25)
     Expect(math.abs(win.TextScale - 1.25) < .001, "text scale")
-    win:SetFont("SourceSans")
-    Expect(win.FontName == "SourceSans", "font " .. tostring(win.FontName))
+    local fontNames = win:_GetFontChoices().Names
+    Expect(#fontNames > 0, "no fonts offered")
+    win:SetFont(fontNames[1])
+    Expect(win.FontName == fontNames[1], "font " .. tostring(win.FontName))
     win:SetFont("Gotham")
     win:SetWindowSize(1000, 600)
     Expect(win.Root.Size.X.Offset == 1000 and win.Root.Size.Y.Offset == 600, "window size")
     win:SetScale(1.2)
     win.AnimSpeed = 1.5
-    Expect(type(win:GetFontNames()) == "table", "font names")
+    Expect(type(win:_GetFontChoices().Names) == "table", "font names")
 end)
 
 Check("pinned panel", function()
@@ -237,13 +268,14 @@ Check("settings: palette dropdown", function()
 end)
 
 Check("settings: font dropdown", function()
-    PickOption("Font", "SourceSans")
-    Expect(win.FontName == "SourceSans", "font " .. tostring(win.FontName))
+    local pick = win:_GetFontChoices().Names[2]
+    PickOption("Font", pick)
+    Expect(win.FontName == pick, "font " .. tostring(win.FontName))
 end)
 
 Check("font follows new text", function()
     local label = win:Label(win.Root, "late label", { Bold = true })
-    Expect(label.FontFace.Family == "SourceSans", "late label font " .. tostring(label.FontFace.Family))
+    Expect(label.Font == Enum.Font[win.FontName], "late label font " .. tostring(win.FontName))
 end)
 
 Check("settings: text scale slider", function()
@@ -259,6 +291,12 @@ Check("settings: text scale slider", function()
     end
     Expect(moved, "right arrow missing")
     Expect(win.TextScale > before, "text scale did not move")
+
+    -- the slider has to reach the text, not just the number
+    local sample = win:Label(win.Root, "scale sample", { TextSize = 14 })
+    win:SetTextScale(1.5)
+    Expect(sample.TextSize == 21, "label did not follow text scale: " .. tostring(sample.TextSize))
+    win:SetTextScale(before)
 end)
 
 Check("settings: cursor style dropdown", function()
@@ -266,25 +304,22 @@ Check("settings: cursor style dropdown", function()
     Expect(win.Cursor.Style == "Cross", "cursor style " .. tostring(win.Cursor.Style))
 end)
 
-Check("settings: reset defaults", function()
-    win:SetFont("SourceSans")
+Check("settings: restore defaults", function()
     win:SetTextScale(1.4)
-    win:SetScale(1.3)
     win.AnimSpeed = 2
+    win:SetPalette("Rose")
 
     local resetButton
     for _, object in ipairs(win.SettingsTab.Page:GetDescendants()) do
-        if object.ClassName == "TextLabel" and object.Text == "Reset defaults" then
+        if object.ClassName == "TextLabel" and object.Text == "Restore defaults" then
             resetButton = object.Parent
             break
         end
     end
-    Expect(resetButton ~= nil, "Reset defaults button not found")
+    Expect(resetButton ~= nil, "Restore defaults button not found")
     resetButton.MouseButton1Click:Fire()
 
-    Expect(win.FontName == "Gotham", "font not reset: " .. tostring(win.FontName))
     Expect(math.abs(win.TextScale - 1) < .001, "text scale not reset")
-    Expect(math.abs(win.BaseScale - 1) < .001, "menu scale not reset")
     Expect(math.abs(win.AnimSpeed - 1) < .001, "animation speed not reset")
     Expect(win.Palette == "Default", "palette not reset")
     Expect(win.Theme.Accent == win._DefaultTheme.Accent, "accent colour not reset")
@@ -292,9 +327,10 @@ end)
 
 Check("toggle window", function()
     win:Toggle(false)
+    SmokeEnv.FlushDelayed(50)
+    Expect(win.Root.Visible == false, "window did not close")
     win:Toggle(true)
-    win:SetVisible(false)
-    win:SetVisible(true)
+    Expect(win.Root.Visible == true, "window did not reopen")
 end)
 
 Check("render step", function()

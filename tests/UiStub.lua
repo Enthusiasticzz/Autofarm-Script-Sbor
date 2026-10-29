@@ -617,6 +617,8 @@ PropTable(LocalPlayer).Name = "TestPlayer"
 PropTable(LocalPlayer).DisplayName = "Test Player"
 PropTable(LocalPlayer).UserId = 1
 PropTable(LocalPlayer).PlayerGui = PlayerGui
+PropTable(LocalPlayer).CharacterAdded = Signal.new()
+PropTable(LocalPlayer).CharacterRemoving = Signal.new()
 ChildList(LocalPlayer)
 
 local Players = {
@@ -624,6 +626,9 @@ local Players = {
     PlayerAdded = Signal.new(),
     PlayerRemoving = Signal.new(),
     GetPlayers = function() return { LocalPlayer } end,
+    GetUserThumbnailAsync = function()
+        return "rbxthumb://type=AvatarHeadShot&id=1&w=100&h=100", false
+    end,
 }
 function Players:get_local() return LocalPlayer end
 

@@ -34,3 +34,6 @@ tests/output/
 
 # Local one-off helper scripts, not part of the tree.
 _*.py
+
+# local tooling (luau binaries for the test harness)
+.tools/

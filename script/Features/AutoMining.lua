@@ -779,7 +779,7 @@ return {
                 S.LastStatus = now
 
                 if UIRef.MineStatusLabel then
-                    UIRef.MineStatusLabel.Text = "STATUS  " .. GetStatusText(now)
+                    UIRef.MineStatusLabel:Set("STATUS  " .. GetStatusText(now))
                 end
             end
 
@@ -901,17 +901,27 @@ return {
 
             AICUI.RefreshOrePicker(true)
 
-            Section:AddButton("Refresh Ore List", function()
-                AICUI.RefreshOrePicker(true)
-            end)
+            Section:AddButton{
+                Name = "Refresh Ore List",
+                Callback = function()
+                    AICUI.RefreshOrePicker(true)
+                end,
+            }
 
             --// For ores not loaded right now (streamed out with distance).
-            UIRef.OreNameBox = Section:AddTextbox("Ore Name", "", function() end)
+            UIRef.OreNameBox = Section:AddTextBox{
+                Name = "Ore Name",
+                Default = "",
+                Callback = function() end,
+            }
 
-            Section:AddButton("Add Ore By Name", function()
-                AddOre(UIRef.OreNameBox:Get())
-                UIRef.OreNameBox:Set("")
-            end)
+            Section:AddButton{
+                Name = "Add Ore By Name",
+                Callback = function()
+                    AddOre(UIRef.OreNameBox:Get())
+                    UIRef.OreNameBox:Set("")
+                end,
+            }
 
             --// Called from updateFeatureButtons on every profile load.
             function AICUI.RefreshMiningUI()

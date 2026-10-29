@@ -142,13 +142,13 @@ return {
                 AICUI.updateEventCurrency()
 
                 if UIRef.WayPointLabel then
-                    UIRef.WayPointLabel.Text = "WAYPOINTS:  ".. CONFIG.CURRENT_WAYPOINT_TARGET .. "/" .. (PlaceConfig and #PlaceConfig.WAYPOINTS or 0)
+                    UIRef.WayPointLabel:Set("WAYPOINTS:  ".. CONFIG.CURRENT_WAYPOINT_TARGET .. "/" .. (PlaceConfig and #PlaceConfig.WAYPOINTS or 0))
                 end
                 if UIRef.WalkSpeedLabel then
-                    UIRef.WalkSpeedLabel.Text = "WALKSPEED:  " .. tostring(math.floor(Humanoid.WalkSpeed + 0.5))
+                    UIRef.WalkSpeedLabel:Set("WALKSPEED:  " .. tostring(math.floor(Humanoid.WalkSpeed + 0.5)))
                 end
                 if UIRef.DeathLabel then
-                    UIRef.DeathLabel.Text = "DEATH:  " .. tostring(AICFeature.S.DEATH_COUNT)
+                    UIRef.DeathLabel:Set("DEATH:  " .. tostring(AICFeature.S.DEATH_COUNT))
                 end
             end
 

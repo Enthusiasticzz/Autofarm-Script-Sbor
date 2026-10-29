@@ -183,7 +183,7 @@ return {
 
         local function SetStatus(Text)
             if UIRef.GatherStatusLabel then
-                UIRef.GatherStatusLabel.Text = "GATHER  " .. Text
+                UIRef.GatherStatusLabel:Set("GATHER  " .. Text)
             end
         end
 

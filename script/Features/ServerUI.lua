@@ -120,27 +120,42 @@ return {
         UIRef.ServerPingLabel = Section:AddLabel("PING  -- MS")
         UIRef.ServerStatusLabel = Section:AddLabel("STATUS  IDLE")
 
-        Section:AddButton("Rejoin", function()
-            ServerHop:Rejoin()
-        end)
+        Section:AddButton{
+            Name = "Rejoin",
+            Callback = function()
+                ServerHop:Rejoin()
+            end,
+        }
 
-        Section:AddButton("Server Hop", function()
-            ServerHop:Hop()
-        end)
+        Section:AddButton{
+            Name = "Server Hop",
+            Callback = function()
+                ServerHop:Hop()
+            end,
+        }
 
-        Section:AddButton("Copy Job ID", function()
-            CopyJobId(tostring(game.JobId or ""))
-        end)
+        Section:AddButton{
+            Name = "Copy Job ID",
+            Callback = function()
+                CopyJobId(tostring(game.JobId or ""))
+            end,
+        }
 
-        UIRef.JoinJobIdBox = Section:AddTextbox("Job ID", "", function() end)
+        UIRef.JoinJobIdBox = Section:AddTextBox{ Name = "Job ID", Default = "", Callback = function() end }
 
-        Section:AddButton("Join Job ID", function()
-            ServerHop:Join(UIRef.JoinJobIdBox:Get())
-        end)
+        Section:AddButton{
+            Name = "Join Job ID",
+            Callback = function()
+                ServerHop:Join(UIRef.JoinJobIdBox:Get())
+            end,
+        }
 
-        Section:AddButton("Open Server Browser", function()
-            Module:ToggleBrowser()
-        end)
+        Section:AddButton{
+            Name = "Open Server Browser",
+            Callback = function()
+                Module:ToggleBrowser()
+            end,
+        }
 
         ------------------------------------------------------------------------
         --// Server Safety
@@ -199,26 +214,29 @@ return {
             ServerHop:ResetGroupChecks()
         end)
 
-        local DangerGroupBox = SafetySection:AddTextbox("Group ID", "", function() end)
+        local DangerGroupBox = SafetySection:AddTextBox{ Name = "Group ID", Default = "", Callback = function() end }
 
-        SafetySection:AddButton("Add Group ID", function()
-            local Id = tostring(DangerGroupBox:Get() or ""):gsub("%s+", "")
+        SafetySection:AddButton{
+            Name = "Add Group ID",
+            Callback = function()
+                local Id = tostring(DangerGroupBox:Get() or ""):gsub("%s+", "")
 
-            if not Id:match("^%d+$") then
-                NotifyAction("Danger Groups", "Enter a numeric group ID")
-                return
-            end
+                if not Id:match("^%d+$") then
+                    NotifyAction("Danger Groups", "Enter a numeric group ID")
+                    return
+                end
 
-            if table.find(CONFIG.DANGER_GROUP_IDS or {}, Id) then
-                NotifyAction("Danger Groups", Id .. " is already on the list")
-                return
-            end
+                if table.find(CONFIG.DANGER_GROUP_IDS or {}, Id) then
+                    NotifyAction("Danger Groups", Id .. " is already on the list")
+                    return
+                end
 
-            DangerGroups:Add(Id)
-            SaveDangerGroups()
-            DangerGroupBox:Set("")
-            NotifyAction("Danger Groups", "Added group " .. Id)
-        end)
+                DangerGroups:Add(Id)
+                SaveDangerGroups()
+                DangerGroupBox:Set("")
+                NotifyAction("Danger Groups", "Added group " .. Id)
+            end,
+        }
 
         --// Players Leave On Danger Group stays for, separate from the Auto
         --// Block whitelist.
@@ -270,53 +288,57 @@ return {
 
             --// A new dropdown is appended to the section, so it takes the
             --// old one's slot to keep its place in the list.
-            local Order = DangerPlayerDropdown and DangerPlayerDropdown.Frame and DangerPlayerDropdown.Frame.LayoutOrder
+            local Order = DangerPlayerDropdown and DangerPlayerDropdown.Row and DangerPlayerDropdown.Row.LayoutOrder
 
-            if DangerPlayerDropdown then
-                if DangerPlayerDropdown.Popup then
-                    DangerPlayerDropdown.Popup:Destroy()
-                end
-
-                if DangerPlayerDropdown.Frame then
-                    DangerPlayerDropdown.Frame:Destroy()
-                end
+            if DangerPlayerDropdown and DangerPlayerDropdown.Remove then
+                DangerPlayerDropdown:Remove()
             end
 
-            DangerPlayerDropdown = SafetySection:AddDropdown("Add Player In Server", Options, function(Value)
-                local Id = DangerPlayerOptions[Value]
+            DangerPlayerDropdown = SafetySection:AddDropdown{
+                Name = "Add Player In Server",
+                Options = Options,
+                Callback = function(Value)
+                    local Id = DangerPlayerOptions[Value]
 
-                if Id then
-                    AddDangerWhitelist(Id, Value)
-                end
-            end)
+                    if Id then
+                        AddDangerWhitelist(Id, Value)
+                    end
+                end,
+            }
 
-            if Order and DangerPlayerDropdown.Frame then
-                DangerPlayerDropdown.Frame.LayoutOrder = Order
+            if Order and DangerPlayerDropdown.Row then
+                DangerPlayerDropdown.Row.LayoutOrder = Order
             end
         end
 
         RefreshDangerPlayerDropdown()
 
-        local DangerWhitelistBox = SafetySection:AddTextbox("User ID", "", function() end)
+        local DangerWhitelistBox = SafetySection:AddTextBox{ Name = "User ID", Default = "", Callback = function() end }
 
-        SafetySection:AddButton("Add User ID", function()
-            local Id = tostring(DangerWhitelistBox:Get() or ""):gsub("%s+", "")
+        SafetySection:AddButton{
+            Name = "Add User ID",
+            Callback = function()
+                local Id = tostring(DangerWhitelistBox:Get() or ""):gsub("%s+", "")
 
-            if not Id:match("^%d+$") then
-                NotifyAction("Danger Whitelist", "Enter a numeric UserId")
-                return
-            end
+                if not Id:match("^%d+$") then
+                    NotifyAction("Danger Whitelist", "Enter a numeric UserId")
+                    return
+                end
 
-            if AddDangerWhitelist(Id, Id) then
-                DangerWhitelistBox:Set("")
-            end
-        end)
+                if AddDangerWhitelist(Id, Id) then
+                    DangerWhitelistBox:Set("")
+                end
+            end,
+        }
 
-        SafetySection:AddButton("Clear Danger Whitelist", function()
-            DangerWhitelist:SetPriority({})
-            SaveDangerWhitelist()
-            NotifyAction("Danger Whitelist", "Cleared")
-        end)
+        SafetySection:AddButton{
+            Name = "Clear Danger Whitelist",
+            Callback = function()
+                DangerWhitelist:SetPriority({})
+                SaveDangerWhitelist()
+                NotifyAction("Danger Whitelist", "Cleared")
+            end,
+        }
 
         Context.Connect(Players.PlayerAdded, function()
             RefreshDangerPlayerDropdown()
@@ -340,9 +362,12 @@ return {
 
         local LogSection = UIRef.ServerLogSection
 
-        LogSection:AddButton("Clear Log", function()
-            ServerHop:ClearLog()
-        end)
+        LogSection:AddButton{
+            Name = "Clear Log",
+            Callback = function()
+                ServerHop:ClearLog()
+            end,
+        }
 
         local function DescribeLogEntry(Entry)
             local Tags = ""
@@ -392,12 +417,12 @@ return {
                     S.LogLabels[Index] = LogLabel
                 end
 
-                LogLabel.Text = Text
-                LogLabel.Visible = true
+                LogLabel:Set(Text)
+                LogLabel:SetVisible(true)
             end
 
             for Index = #Lines + 1, #S.LogLabels do
-                S.LogLabels[Index].Visible = false
+                S.LogLabels[Index]:SetVisible(false)
             end
         end
 
@@ -686,13 +711,13 @@ return {
         local function RefreshInfo()
             local Ping = GetPingMs()
 
-            UIRef.ServerPlayersLabel.Text = string.format("PLAYERS  %d / %d  //  %s", #Players:GetPlayers(), Players.MaxPlayers, S.PlaceName)
-            UIRef.ServerJobLabel.Text = string.format("JOB ID  %s  //  PLACE  %d", ShortJobId(game.JobId), game.PlaceId)
-            UIRef.ServerFPSLabel.Text = "FPS  " .. (S.FPS and tostring(S.FPS) or "--")
-            UIRef.ServerFPSLabel.TextColor3 = ColorBand(S.FPS, FPS_GOOD, FPS_OK, false)
-            UIRef.ServerPingLabel.Text = "PING  " .. (Ping and tostring(Ping) or "--") .. " MS"
-            UIRef.ServerPingLabel.TextColor3 = ColorBand(Ping, PING_GOOD, PING_OK, true)
-            UIRef.ServerStatusLabel.Text = "STATUS  " .. ServerHop:GetStatus()
+            UIRef.ServerPlayersLabel:Set(string.format("PLAYERS  %d / %d  //  %s", #Players:GetPlayers(), Players.MaxPlayers, S.PlaceName))
+            UIRef.ServerJobLabel:Set(string.format("JOB ID  %s  //  PLACE  %d", ShortJobId(game.JobId), game.PlaceId))
+            UIRef.ServerFPSLabel:Set("FPS  " .. (S.FPS and tostring(S.FPS) or "--"))
+            UIRef.ServerFPSLabel:SetColor(ColorBand(S.FPS, FPS_GOOD, FPS_OK, false))
+            UIRef.ServerPingLabel:Set("PING  " .. (Ping and tostring(Ping) or "--") .. " MS")
+            UIRef.ServerPingLabel:SetColor(ColorBand(Ping, PING_GOOD, PING_OK, true))
+            UIRef.ServerStatusLabel:Set("STATUS  " .. ServerHop:GetStatus())
 
             RefreshLog()
 

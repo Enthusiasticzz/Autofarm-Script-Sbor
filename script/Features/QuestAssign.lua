@@ -50,18 +50,25 @@ return {
 
         local Section = UIRef.QuestSection
 
-        UIRef.QuestIdBox = Section:AddTextbox("Quest ID", "", function() end)
+        UIRef.QuestIdBox = Section:AddTextBox{
+            Name = "Quest ID",
+            Default = "",
+            Callback = function() end,
+        }
 
-        Section:AddButton("Assign Quest", function()
-            local QuestId = ReadQuestId(UIRef.QuestIdBox:Get())
+        Section:AddButton{
+            Name = "Assign Quest",
+            Callback = function()
+                local QuestId = ReadQuestId(UIRef.QuestIdBox:Get())
 
-            if not QuestId then
-                NotifyAction("QUEST", "Enter a quest ID first", 4)
-                return
-            end
+                if not QuestId then
+                    NotifyAction("QUEST", "Enter a quest ID first", 4)
+                    return
+                end
 
-            AssignQuest(QuestId)
-        end)
+                AssignQuest(QuestId)
+            end,
+        }
 
         return Module
     end,

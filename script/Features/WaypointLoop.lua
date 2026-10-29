@@ -653,15 +653,15 @@ return {
         end
 
         if UIRef.WaypointSection then
-            FeatureState.WaypointLoop.Button = UIRef.WaypointSection:AddToggle(
-                "Waypoint Loop",
-                FeatureState.WaypointLoop.Enabled,
-                function(Value)
+            FeatureState.WaypointLoop.Button = UIRef.WaypointSection:AddToggle{
+                Name = "Waypoint Loop",
+                Default = FeatureState.WaypointLoop.Enabled,
+                Callback = function(Value)
                     FeatureState.WaypointLoop.Enabled = Value
                     AICFeature.ResetWaypointLoop()
                     AICProfile.SaveActiveProfile()
-                end
-            )
+                end,
+            }
 
             AICUI.RefreshWaypointPairPickers()
         end

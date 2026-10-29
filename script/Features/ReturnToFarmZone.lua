@@ -183,17 +183,17 @@ return {
                 --// Defaults to on. Without this the toggle drew as off while the
                 --// return logic was actually running.
                 self.Enabled = FeatureState.ReturnToFarmZone.Enabled == true
-                self.Button = UIRef.FeatureSection:AddToggle(
-                    "Return To Farm Zone",
-                    self.Enabled,
-                    function(Value)
+                self.Button = UIRef.FeatureSection:AddToggle{
+                    Name = "Return To Farm Zone",
+                    Default = self.Enabled,
+                    Callback = function(Value)
                         self:SetEnabled(Value)
 
                         AICFeature.S.FarmReturnPosition = nil
                         AICFeature.S.LastFarmReturnCalculateTime = 0
                         AICProfile.SaveActiveProfile()
-                    end
-                )
+                    end,
+                }
                 FeatureState.ReturnToFarmZone.Button = self.Button
             end
         end
