@@ -422,6 +422,37 @@ Check("pinned panel", function()
     value.Value = "Ore|15"
 end)
 
+Check("a pinned count does not rebuild the panel", function()
+    --// The panel refreshes on every inventory change. Rebuilding every row
+    --// there, and saving from it, is what made an open pinned panel with the
+    --// heartbeat running freeze the game.
+    local pin = win:AddPin("Count test")
+    pin:SetItems({ "Board", "Stone" })
+
+    local saves = 0
+    pin.OnChanged = function() saves += 1 end
+
+    local before = saves
+
+    for i = 1, 20 do
+        pin:UpdateCounts({ Board = i, Stone = i })
+    end
+
+    Expect(saves == before, "a count change saved the pinned state: " .. (saves - before))
+
+    --// The number on screen is the one that was pushed in, so the count label
+    --// is updated where it is rather than by rebuilding the row.
+    local found = false
+
+    for _, label in ipairs(pin.Panel:GetDescendants()) do
+        if label:IsA("TextLabel") and label.Text == "20" then
+            found = true
+        end
+    end
+
+    Expect(found, "the count label did not follow the count")
+end)
+
 Check("loader + settings tab", function()
     win:SetLoadingProgress(.5, "Half way")
     win:SetLoadingProgress(nil, "Load failed", true)

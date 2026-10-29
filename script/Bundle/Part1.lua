@@ -3249,13 +3249,25 @@ function Library:BindPinToValue(pin, valueObject: Instance?, parser)
         return counts
     end)
 
+    --// The value can change several times a second (every pickup, every
+    --// currency tick). Each change used to parse the whole inventory and push
+    --// it through the panel; now a burst collapses into one refresh that
+    --// reads the newest value when it runs.
+    local RefreshQueued = false
+
     local function Refresh()
-        local counts = Read()
-        pin:UpdateCounts(counts)
+        if RefreshQueued then
+            return
+        end
+
+        RefreshQueued = true
+
+        task.delay(0.2, function()
+            RefreshQueued = false
+            pin:UpdateCounts(Read())
+        end)
     end
 
-    --// Event driven: the value only changes when the server says so, and one
-    --// parse refreshes every pinned count.
     self:_Connect(valueObject:GetPropertyChangedSignal("Value"), Refresh)
     Refresh()
 
@@ -3464,7 +3476,22 @@ function Library:AddPin(name: string?)
 
     local RefreshResults
 
+    --// Count label per pinned item, so a number changing updates that number
+    --// instead of rebuilding the row it sits in.
+    local RowFor = {}
+
+    --// Persisting is for what GetState actually saves: the list, its order and
+    --// where the panel is. A count is not saved, and firing this on every
+    --// inventory change meant a file write per change.
+    local function NotifyChanged()
+        if component.OnChanged then
+            task.spawn(component.OnChanged, component)
+        end
+    end
+
     local function RefreshItems()
+        table.clear(RowFor)
+
         for _, child in ipairs(itemHolder:GetChildren()) do
             if not child:IsA("UIListLayout") then
                 child:Destroy()
@@ -3526,10 +3553,8 @@ function Library:AddPin(name: string?)
             self:_Connect(remove.MouseButton1Click, function()
                 component:Remove(entry.Name)
             end)
-        end
 
-        if component.OnChanged then
-            task.spawn(component.OnChanged, component)
+            RowFor[entry.Name] = { Label = count, Entry = entry }
         end
     end
 
@@ -3627,6 +3652,7 @@ function Library:AddPin(name: string?)
 
         RefreshItems()
         RefreshResults()
+        NotifyChanged()
         return true
     end
 
@@ -3640,6 +3666,7 @@ function Library:AddPin(name: string?)
         table.remove(self.Items, index)
         RefreshItems()
         RefreshResults()
+        NotifyChanged()
         return true
     end
 
@@ -3652,6 +3679,7 @@ function Library:AddPin(name: string?)
 
         self.Items[index], self.Items[index - 1] = self.Items[index - 1], self.Items[index]
         RefreshItems()
+        NotifyChanged()
         return true
     end
 
@@ -3664,6 +3692,7 @@ function Library:AddPin(name: string?)
 
         self.Items[index], self.Items[index + 1] = self.Items[index + 1], self.Items[index]
         RefreshItems()
+        NotifyChanged()
         return true
     end
 
@@ -3695,6 +3724,7 @@ function Library:AddPin(name: string?)
 
         RefreshItems()
         RefreshResults()
+        NotifyChanged()
     end
 
     --// Counts arrive from outside. Anything not mentioned reads as zero, so a
@@ -3703,11 +3733,29 @@ function Library:AddPin(name: string?)
     function component:UpdateCounts(counts)
         counts = counts or {}
 
+        --// Only the numbers change here, so only the numbers are written. This
+        --// runs on every inventory change; rebuilding every row each time made
+        --// an open pinned panel the most expensive thing on screen.
         for _, entry in ipairs(self.Items) do
             entry.Count = tonumber(counts[entry.Name]) or 0
-        end
 
-        RefreshItems()
+            local Row = RowFor[entry.Name]
+
+            if Row and Row.Entry == entry then
+                local Text = tostring(entry.Count)
+
+                if Row.Label.Text ~= Text then
+                    Row.Label.Text = Text
+                end
+
+                local Theme = self.Library.Theme
+                local Colour = entry.Count > 0 and Theme.Cyan or Theme.TextMuted
+
+                if Row.Label.TextColor3 ~= Colour then
+                    Row.Label.TextColor3 = Colour
+                end
+            end
+        end
     end
 
     function component:SetSearchSource(source)
@@ -3897,6 +3945,16 @@ function Library:AddPin(name: string?)
     --// which is the gesture someone will reach for first. It is kept on
     --// screen so it cannot be dragged somewhere it can no longer be grabbed.
     self:_MakeDraggable(header, panel, true)
+
+    --// Where the panel was left is part of what GetState saves. One write per
+    --// drag, on release, rather than leaning on the next inventory change to
+    --// happen to save it.
+    self:_Connect(header.InputEnded, function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+            NotifyChanged()
+        end
+    end)
 
     --// Rotating a device or resizing the window can leave a floating panel
     --// off screen, so it is pulled back whenever the bounds change.
