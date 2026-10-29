@@ -1,17 +1,17 @@
 -- Esp outlines players, mobs and equipped weapons in the world.
 --
 -- Each enabled kind draws either an outline (Highlight) or a 2D box, never
--- both, and can add text around the box: the name above it, the level (and
--- the EXP a mob gives) down its right side, the distance below it.
--- Outlines live in a folder inside one ScreenGui. Boxes, health bars and
--- labels are drawn with the executor's Drawing API when it has one, because a
--- Drawing object costs no GUI work per frame; otherwise they fall back to
--- Frames and TextLabels inside that same ScreenGui.
+-- both, and can add text around the box: the name with the HP under it above
+-- the box, the level (and the EXP a mob gives) down its right side, the
+-- distance below it.
+-- Outlines live in a folder inside one ScreenGui. Boxes and labels are drawn
+-- with the executor's Drawing API when it has one, because a Drawing object
+-- costs no GUI work per frame; otherwise they fall back to Frames and
+-- TextLabels inside that same ScreenGui.
 --
 -- The box look follows the reference ESPs: a black backing behind a thinner
--- coloured box, corner brackets instead of a closed box if that style is
--- picked, a red-to-green health bar on the box's left edge, and text that
--- grows with proximity.
+-- coloured box, and corner brackets instead of a closed box if that style is
+-- picked.
 --
 -- Players are the models directly in workspace that have a Humanoid. Mobs are
 -- the models in workspace.Mobs. Weapons are the Sword and Sword2 models on a
@@ -43,11 +43,9 @@ return {
         --// only a few of those per scan, so a rig that was still spawning
         --// when it was first seen is picked up without a hitch.
         local MEASURE_PER_SCAN = 12
-        --// Label text and health are refreshed this often from the render
-        --// loop, so they read live instead of at the scan's rate.
+        --// Label text is refreshed this often from the render loop, so it
+        --// reads live instead of at the scan's rate.
         local LABEL_INTERVAL = 0.25
-
-        local TEXT_SIZE = 14
 
         local KINDS = { "Player", "Mob", "Weapon" }
         local TITLES = { Player = "Players", Mob = "Mobs", Weapon = "Weapons" }
@@ -64,14 +62,12 @@ return {
         local BOX_STYLE_NAMES = { Full = "Full box", Corners = "Corners" }
 
         local BLACK = Color3.fromRGB(0, 0, 0)
-        local HEALTH_LOW = Color3.fromRGB(255, 60, 60)
-        local HEALTH_HIGH = Color3.fromRGB(60, 220, 90)
 
         local S = {
             Kinds = {},
             --// [Target] = { Kind, BoxStyle, Highlight?, BoxLines?, BoxShadow?,
-            --//              Frame?, Stroke?, HealthLines?, HealthFrames?, TextParts?,
-            --//              Anchor?, BoxHeight?/BoxWidth?/BoxOffsetY? }
+            --//              Frame?, Stroke?, TextParts?, Anchor?,
+            --//              BoxHeight?/BoxWidth?/BoxOffsetY? }
             Entries = {},
             StyleToggles = {}, -- [Kind] = { Outline = toggle, Box = toggle }
             Settings = {
@@ -79,7 +75,6 @@ return {
                 AutoThickness = true,
                 Range = 900, -- studs; nothing past this is drawn
                 BoxStyle = "Full",
-                HealthBar = true,
             },
             Timer = 0,
             LabelRefresh = 0,
@@ -190,17 +185,12 @@ return {
                     if Part.Gui then pcall(function() Part.Gui:Destroy() end) end
                 end
             end
-            for _, Key in ipairs({ "BoxLines", "BoxShadow", "HealthLines" }) do
+            for _, Key in ipairs({ "BoxLines", "BoxShadow" }) do
                 local List = Entry[Key]
                 if List then
                     for _, Object in ipairs(List) do
                         pcall(function() Object:Remove() end)
                     end
-                end
-            end
-            if Entry.HealthFrames then
-                for _, Frame in ipairs(Entry.HealthFrames) do
-                    pcall(function() Frame:Destroy() end)
                 end
             end
             S.Entries[Target] = nil
@@ -230,7 +220,6 @@ return {
             S.Settings.Thickness = ReadSetting("ESP_THICKNESS", S.Settings.Thickness)
             S.Settings.AutoThickness = ReadSetting("ESP_AUTO_THICKNESS", S.Settings.AutoThickness) == true
             S.Settings.Range = ReadSetting("ESP_RANGE", S.Settings.Range)
-            S.Settings.HealthBar = ReadSetting("ESP_HEALTH_BAR", S.Settings.HealthBar) == true
             S.Settings.BoxStyle = BOX_STYLE_KEYS[ReadSetting("ESP_BOX_STYLE", nil) or ""] or "Full"
 
             for _, Kind in ipairs(KINDS) do
@@ -255,7 +244,6 @@ return {
             end
 
             if Controls.BoxStyle then Controls.BoxStyle:Set(BOX_STYLE_NAMES[S.Settings.BoxStyle], true) end
-            if Controls.HealthBar then Controls.HealthBar:Set(S.Settings.HealthBar, true) end
             if Controls.Thickness then Controls.Thickness:Set(S.Settings.Thickness, true) end
             if Controls.AutoThickness then Controls.AutoThickness:Set(S.Settings.AutoThickness, true) end
             if Controls.Range then Controls.Range:Set(S.Settings.Range, true) end
@@ -280,8 +268,8 @@ return {
         end
 
         --// One ScreenGui holds the highlights and, when there is no Drawing
-        --// API, every box, health bar and label. It goes in a hidden UI
-        --// container when the executor has one, then CoreGui, then PlayerGui.
+        --// API, every box and label. It goes in a hidden UI container when
+        --// the executor has one, then CoreGui, then PlayerGui.
         --// If it is ever lost (PlayerGui reset, etc.) it is rebuilt and all
         --// entries are redrawn on the same scan.
         local function GetRoot()
@@ -365,6 +353,17 @@ return {
 
         local LineSupported = ProbeDrawing("Line")
         local TextSupported = ProbeDrawing("Text")
+
+        --// The default Drawing font (UI) is thin and hard to read at a
+        --// glance. Plex is the heavier one the popular ESP libraries pick,
+        --// and 2 is the number it has when the executor has no named table.
+        local TextFont = 2
+        do
+            local Ok, Plex = pcall(function() return DrawingApi.Fonts.Plex end)
+            if Ok and Plex ~= nil then
+                TextFont = Plex
+            end
+        end
 
         local function NewLine()
             if not LineSupported then return nil end
@@ -551,9 +550,10 @@ return {
             return math.clamp(600 / math.max(Distance, 1), 8, 40)
         end
 
-        --// Every piece of text is the same pixel size at any distance, like the
-        --// popular ESP libraries. Change this one number to resize all of it.
-        local TEXT_SIZE = 14
+        --// Every piece of text is the same pixel size at any distance, like
+        --// the popular ESP libraries. Change this one number to resize all
+        --// of it.
+        local TEXT_SIZE = 18
         local function TextSizeFor()
             return TEXT_SIZE
         end
@@ -576,10 +576,6 @@ return {
             if Index == 2 then return X2, Y1, X2, Y2 end
             if Index == 3 then return X2, Y2, X1, Y2 end
             return X1, Y2, X1, Y1
-        end
-
-        local function HealthColor(Fraction)
-            return HEALTH_LOW:Lerp(HEALTH_HIGH, math.clamp(Fraction, 0, 1))
         end
 
         ----------------------------------------------------------------------
@@ -607,8 +603,9 @@ return {
         end
 
         --// The label is split into three pieces that sit around the box:
-        --// Top is the name, Right is the level (and, for a mob, the EXP it
-        --// gives), Bottom is the distance. Missing pieces are left out.
+        --// Top is the name with the HP under it ("100 / 100 HP"), Right is
+        --// the level (and, for a mob, the EXP it gives), Bottom is the
+        --// distance. Missing pieces are left out.
         local function LabelParts(Target, Kind, Entry)
             local Owner = Kind == "Player" and Players:GetPlayerFromCharacter(Target) or nil
             local Config = Kind == "Mob" and Target:FindFirstChild("Config") or nil
@@ -617,6 +614,12 @@ return {
             local Name = Owner and Owner.Name
                 or (MobEntity and MobEntity:IsA("StringValue") and MobEntity.Value ~= "" and MobEntity.Value)
                 or Target.Name
+
+            local Top = Name
+            local Humanoid = Target:FindFirstChildOfClass("Humanoid")
+            if Humanoid and Kind ~= "Weapon" then
+                Top = Top .. "\n" .. math.floor(Humanoid.Health) .. " / " .. math.floor(Humanoid.MaxHealth) .. " HP"
+            end
 
             local Right = {}
 
@@ -654,7 +657,7 @@ return {
                 Bottom = math.floor(Distance + 0.5) .. "m"
             end
 
-            return { Top = Name, Right = table.concat(Right, "\n"), Bottom = Bottom }
+            return { Top = Top, Right = table.concat(Right, "\n"), Bottom = Bottom }
         end
 
         local function SetLabelText(Target, Kind, Entry)
@@ -675,20 +678,12 @@ return {
             end
         end
 
-        --// Rewrites every live label and health fraction from the render
-        --// loop, so the numbers read live without re-projecting anything.
+        --// Rewrites every live label from the render loop, so the numbers
+        --// read live without re-projecting anything.
         local function RefreshLabels()
             for Target, Entry in pairs(S.Entries) do
-                if Target.Parent then
-                    local Humanoid = Entry.Health
-                    if Humanoid and Humanoid.Parent then
-                        local Max = Humanoid.MaxHealth
-                        Entry.HealthFrac = Max > 0 and math.clamp(Humanoid.Health / Max, 0, 1) or 1
-                    end
-
-                    if Entry.TextParts then
-                        SetLabelText(Target, Entry.Kind, Entry)
-                    end
+                if Target.Parent and Entry.TextParts then
+                    SetLabelText(Target, Entry.Kind, Entry)
                 end
             end
         end
@@ -738,41 +733,6 @@ return {
             Entry.Highlight = Highlight
         end
 
-        --// Reference health bar: a black track on the box's left edge with a
-        --// coloured fill that drains downwards as health drops.
-        local function AddHealth(Entry, Target)
-            local Humanoid = Target:FindFirstChildOfClass("Humanoid")
-            if not Humanoid then return end
-
-            local Max = Humanoid.MaxHealth
-            Entry.Health = Humanoid
-            Entry.HealthFrac = Max > 0 and math.clamp(Humanoid.Health / Max, 0, 1) or 1
-
-            local Lines = MakeLines(2, BLACK, 2)
-            if Lines then
-                Entry.HealthLines = Lines
-                return
-            end
-
-            local Track = Instance.new("Frame")
-            Track.Name = "HealthTrack"
-            Track.BackgroundColor3 = BLACK
-            Track.BorderSizePixel = 0
-            Track.Visible = false
-            Track.ZIndex = 1
-            Track.Parent = Root
-
-            local Fill = Instance.new("Frame")
-            Fill.Name = "HealthFill"
-            Fill.BackgroundColor3 = HEALTH_HIGH
-            Fill.BorderSizePixel = 0
-            Fill.Visible = false
-            Fill.ZIndex = 2
-            Fill.Parent = Root
-
-            Entry.HealthFrames = { Track, Fill }
-        end
-
         local function AddBox(Entry, Target, C, Kind)
             local Style = S.Settings.BoxStyle
             local Count = Style == "Corners" and 8 or 4
@@ -816,12 +776,6 @@ return {
                 Entry.Frame, Entry.Stroke = Frame, Stroke
                 Entry.ShadowFrame, Entry.ShadowStroke = ShadowFrame, ShadowStroke
             end
-
-            --// The health bar sits against the box, so it is only built when
-            --// a box is.
-            if S.Settings.HealthBar then
-                AddHealth(Entry, Target)
-            end
         end
 
         --// One text object per side of the box. Weapons only have a name and
@@ -837,7 +791,8 @@ return {
                 if DrawText then
                     SetProps(DrawText, {
                         Color = C.Color,
-                        Size = 13,
+                        Size = TEXT_SIZE,
+                        Font = TextFont,
                         Center = Key ~= "Right",
                         Transparency = 1,
                         Visible = false,
@@ -854,13 +809,13 @@ return {
                     Text.TextStrokeColor3 = BLACK
                     Text.TextStrokeTransparency = 0
                     Text.Font = Enum.Font.GothamBold
-                    Text.TextSize = 12
+                    Text.TextSize = TEXT_SIZE
                     Text.Visible = false
                     Text.ZIndex = 3
 
                     if Key == "Top" then
                         Text.AnchorPoint = Vector2.new(0.5, 1)
-                        Text.Size = UDim2.fromOffset(340, 40)
+                        Text.Size = UDim2.fromOffset(340, 80)
                         Text.TextXAlignment = Enum.TextXAlignment.Center
                         Text.TextYAlignment = Enum.TextYAlignment.Bottom
                     elseif Key == "Bottom" then
@@ -1019,9 +974,8 @@ return {
             Line.To = Vector2.new(X2, Y2)
         end
 
-        --// Boxes, health bars and labels follow the camera, so they move on
-        --// RenderStepped rather than on the slower scan (otherwise they trail
-        --// the target).
+        --// Boxes and labels follow the camera, so they move on RenderStepped
+        --// rather than on the slower scan (otherwise they trail the target).
         local function UpdateDrawings()
             local Camera = workspace.CurrentCamera
             --// Drawing needs no ScreenGui, so a lost Root must not stop the
@@ -1036,9 +990,8 @@ return {
                 local Frame, ShadowFrame = Entry.Frame, Entry.ShadowFrame
                 local TextParts = Entry.TextParts
                 local Lines, Shadow = Entry.BoxLines, Entry.BoxShadow
-                local HealthLines, HealthFrames = Entry.HealthLines, Entry.HealthFrames
 
-                if Frame or TextParts or Lines or HealthLines or HealthFrames then
+                if Frame or TextParts or Lines then
                     local X1, Y1, X2, Y2
                     local Anchor = Entry.Anchor
                     local Distance = math.huge
@@ -1060,7 +1013,7 @@ return {
                     end
 
                     local Thickness = ThicknessFor(Distance)
-                    local TextSize = TextSizeFor(Distance)
+                    local TextSize = TextSizeFor()
                     local Style = Entry.BoxStyle or "Full"
                     local Count = Style == "Corners" and 8 or 4
                     local Arm = CornerLength(Distance)
@@ -1120,58 +1073,13 @@ return {
                         end
                     end
 
-                    --// Health bar: black track, coloured fill that drains
-                    --// downwards, red at empty and green at full.
-                    if HealthLines then
-                        if X1 then
-                            local Fraction = math.clamp(Entry.HealthFrac or 1, 0, 1)
-                            local BarX = X1 - 8
-                            local Height = Y2 - Y1
-                            local Track, Fill = HealthLines[1], HealthLines[2]
-
-                            SetLine(Track, BarX, Y1, BarX, Y2)
-                            SetLine(Fill, BarX, Y2, BarX, Y2 - Height * Fraction)
-
-                            Track.Thickness = 6
-                            Fill.Thickness = 4
-                            Fill.Color = HealthColor(Fraction)
-                            Track.Visible = true
-                            Fill.Visible = true
-                        else
-                            for _, Line in ipairs(HealthLines) do
-                                Line.Visible = false
-                            end
-                        end
-                    end
-
-                    if HealthFrames then
-                        if X1 then
-                            local Fraction = math.clamp(Entry.HealthFrac or 1, 0, 1)
-                            local BarX = X1 - 11
-                            local Height = Y2 - Y1
-                            local Track, Fill = HealthFrames[1], HealthFrames[2]
-
-                            Track.Position = UDim2.fromOffset(BarX, Y1)
-                            Track.Size = UDim2.fromOffset(7, Height)
-                            Track.Visible = true
-
-                            Fill.Position = UDim2.fromOffset(BarX, Y2 - Height * Fraction)
-                            Fill.Size = UDim2.fromOffset(7, math.max(1, Height * Fraction))
-                            Fill.BackgroundColor3 = HealthColor(Fraction)
-                            Fill.Visible = true
-                        else
-                            for _, Item in ipairs(HealthFrames) do
-                                Item.Visible = false
-                            end
-                        end
-                    end
-
                     --// Text is spaced around the box rather than stacked on
-                    --// top of it: the name above the top edge, the level (and
-                    --// a mob's EXP) down the right edge, the distance below
-                    --// the bottom edge. Each piece is centred on the edge it
-                    --// belongs to, and a multi-line piece is offset by half
-                    --// its own height so it never creeps back onto the box.
+                    --// top of it: the name and HP above the top edge, the
+                    --// level (and a mob's EXP) down the right edge, the
+                    --// distance below the bottom edge. Each piece is centred
+                    --// on the edge it belongs to, and a multi-line piece is
+                    --// offset by half its own height so it never creeps
+                    --// back onto the box.
                     if TextParts then
                         local Pad = 6 + Thickness
                         local CenterX = X1 and (X1 + X2) * 0.5
@@ -1263,7 +1171,7 @@ return {
         end
 
         --// Colour changes are applied live, with no rebuild. The black backing
-        --// stays black, and the health fill keeps its own health colour.
+        --// stays black.
         local function Recolor(Kind)
             local Color = S.Kinds[Kind].Color
             for _, Entry in pairs(S.Entries) do
@@ -1299,16 +1207,6 @@ return {
                 Callback = function(Value)
                     S.Settings.BoxStyle = BOX_STYLE_KEYS[Value] or "Full"
                     SaveSetting("ESP_BOX_STYLE", S.Settings.BoxStyle)
-                    Clear()
-                    S.Timer = SCAN_INTERVAL
-                end,
-            }
-            Controls.HealthBar = SettingsSection:AddToggle{
-                Name = "Health bar",
-                Default = S.Settings.HealthBar,
-                Callback = function(Value)
-                    S.Settings.HealthBar = Value == true
-                    SaveSetting("ESP_HEALTH_BAR", S.Settings.HealthBar)
                     Clear()
                     S.Timer = SCAN_INTERVAL
                 end,
