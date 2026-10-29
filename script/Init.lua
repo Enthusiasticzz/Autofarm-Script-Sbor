@@ -482,12 +482,55 @@ local function loadLocal()
     return Specs
 end
 
+--// Every module in one file, so a run costs one download instead of one per
+--// module. Those requests are what the executor's HTTP queue kept stalling.
+local function fetchBundle()
+    local Body = fetchOnce("Bundle.lua")
+
+    if not Body then
+        return nil
+    end
+
+    local Chunk = loadstring(Body, "@Bundle.lua")
+
+    if not Chunk then
+        return nil
+    end
+
+    local Ok, Map = pcall(Chunk)
+
+    if Ok and type(Map) == "table" then
+        return Map
+    end
+
+    return nil
+end
+
 local function loadRemote()
     local Paths = table.clone(MODULES)
     table.insert(Paths, 1, UTILS_PATH)
 
-    local Bodies, GetPending = fetchParallel(Paths)
     local Total = #Paths
+    local Bundle = fetchBundle()
+    local Bodies, GetPending
+
+    if Bundle then
+        --// The bundle is only a shortcut: a module missing from it (added
+        --// after the last build) is simply downloaded on its own.
+        Bodies = {}
+
+        for _, Path in ipairs(Paths) do
+            Bodies[Path] = Bundle[Path]
+        end
+
+        report(FETCH_SHARE * 0.5, "BUNDLE LOADED  //  " .. tostring(#Paths) .. " MODULES")
+
+        GetPending = function()
+            return 0
+        end
+    else
+        Bodies, GetPending = fetchParallel(Paths)
+    end
 
     --// Show the window as soon as Utils arrives; the modules keep
     --// downloading behind the loader.
@@ -531,6 +574,13 @@ local function loadRemote()
 
     for _, Path in ipairs(MODULES) do
         local Body = Bodies[Path]
+
+        --// Not in the bundle: a module added after the last build. One
+        --// download is still better than failing the boot.
+        if not Body and Bundle then
+            Body = fetchOnce(Path)
+            Bodies[Path] = Body
+        end
 
         if not Body then
             fail("Failed to fetch " .. Path)
