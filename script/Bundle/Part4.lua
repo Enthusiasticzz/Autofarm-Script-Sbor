@@ -10,10 +10,15 @@ Dependencies = {
 "Components",
 },
 Start = function(Context)
+local Services = Context.Services
+local Players = Services.Players
 local Player = Context.Player
 local UIRef = Context.UIRef
+local AICUI = Context.AICUI
 local RunService = game:GetService("RunService")
 local SCAN_INTERVAL = 0.5
+local MEASURE_INTERVAL = 1
+local MAX_DRAW_DISTANCE = 900
 local KINDS = { "Player", "Mob", "Weapon" }
 local TITLES = { Player = "Players", Mob = "Mobs", Weapon = "Weapons" }
 local COLORS = {
@@ -23,7 +28,8 @@ Weapon = Color3.fromRGB(255, 200, 60),
 }
 local S = {
 Kinds = {},
-Entries = {}, -- [Target] = { Kind, Highlight?, Frame?, Stroke? }
+Entries = {}, -- [Target] = { Kind, Highlight?, Frame?, Stroke?, Label?, ... }
+StyleToggles = {}, -- [Kind] = { Outline = toggle, Box = toggle }
 Timer = 0,
 }
 for _, Kind in ipairs(KINDS) do
@@ -32,6 +38,7 @@ Enabled = false,
 Color = COLORS[Kind],
 Outline = true,
 Box = false,
+Label = false,
 }
 end
 local function IsEnabled(Kind)
@@ -46,6 +53,7 @@ end
 local function Remove(Target, Entry)
 if Entry.Highlight then pcall(function() Entry.Highlight:Destroy() end) end
 if Entry.Frame then pcall(function() Entry.Frame:Destroy() end) end
+if Entry.Label then pcall(function() Entry.Label:Destroy() end) end
 S.Entries[Target] = nil
 end
 local function Clear(Kind)
@@ -105,11 +113,7 @@ table.insert(CORNERS, Vector3.new(X, Y, Z))
 end
 end
 end
-local function ProjectBox(Target)
-local Camera = workspace.CurrentCamera
-if not Camera then return nil end
-local Ok, CF, Size = pcall(Target.GetBoundingBox, Target)
-if not Ok then return nil end
+local function Project(CF, Size, Camera)
 local MinX, MinY = math.huge, math.huge
 local MaxX, MaxY = -math.huge, -math.huge
 local InFront = 0
@@ -126,21 +130,65 @@ end
 if InFront == 0 then return nil end
 return MinX, MinY, MaxX, MaxY
 end
-local function UpdateBoxes()
+local function Measure(Target, Entry)
+Entry.NextMeasure = os.clock() + MEASURE_INTERVAL
+local Ok, CF, Size = pcall(Target.GetBoundingBox, Target)
+if not Ok or not CF then return end
+local OkPivot, Pivot = pcall(Target.GetPivot, Target)
+if not OkPivot then return end
+Entry.LocalCF = Pivot:ToObjectSpace(CF)
+Entry.Size = Size
+end
+local function DistanceTo(Target)
+local Camera = workspace.CurrentCamera
+if not Camera then return nil end
+local Ok, Pivot = pcall(Target.GetPivot, Target)
+if not Ok then return nil end
+return (Pivot.Position - Camera.CFrame.Position).Magnitude
+end
+local function LabelText(Target, Kind)
+local Lines = {}
+local Owner = Kind == "Player" and Players:GetPlayerFromCharacter(Target) or nil
+local Config = Kind == "Mob" and Target:FindFirstChild("Config") or nil
+local MobEntity = Config and Config:FindFirstChild("Entity")
+local Name = Owner and Owner.Name
+or (MobEntity and MobEntity:IsA("StringValue") and MobEntity.Value ~= "" and MobEntity.Value)
+or Target.Name
+table.insert(Lines, Name)
+if Owner then
+local Stats = Owner:FindFirstChild("PlayerStats")
+local LevelStat = Stats and Stats:FindFirstChild("Level")
+local ExpStat = Stats and Stats:FindFirstChild("EXP")
+local Level = LevelStat and tonumber(LevelStat.Value)
+if Level then
+table.insert(Lines, "Lv " .. math.floor(Level))
+if ExpStat and type(AICUI.neededExp) == "function" then
+local Needed = tonumber(AICUI.neededExp(Level)) or 0
+table.insert(Lines, "EXP " .. math.floor(ExpStat.Value) .. "/" .. math.floor(Needed))
+end
+end
+elseif Config then
+local LvlStat = Config:FindFirstChild("LVL")
+local Level = LvlStat and tonumber(LvlStat.Value)
+if Level then
+table.insert(Lines, "Lv " .. math.floor(Level))
+end
+end
+local Humanoid = Target:FindFirstChildOfClass("Humanoid")
+if Humanoid and Kind ~= "Weapon" then
+table.insert(Lines, "HP " .. math.floor(Humanoid.Health) .. "/" .. math.floor(Humanoid.MaxHealth))
+end
+local Distance = DistanceTo(Target)
+if Distance then
+table.insert(Lines, math.floor(Distance + 0.5) .. "m")
+end
+return table.concat(Lines, "\n")
+end
+local function RefreshLabels()
 for Target, Entry in pairs(S.Entries) do
-local Frame = Entry.Frame
-if Frame then
-local X1, Y1, X2, Y2
-if Target.Parent then
-X1, Y1, X2, Y2 = ProjectBox(Target)
-end
-if X1 then
-Frame.Position = UDim2.fromOffset(X1, Y1)
-Frame.Size = UDim2.fromOffset(X2 - X1, Y2 - Y1)
-Frame.Visible = true
-else
-Frame.Visible = false
-end
+local Label = Entry.Label
+if Label and Label.Parent and Target.Parent then
+Label.Text = LabelText(Target, Entry.Kind)
 end
 end
 end
@@ -170,17 +218,41 @@ Frame.Parent = Root
 Entry.Frame = Frame
 Entry.Stroke = Stroke
 end
+local function AddLabel(Entry, Target, C, Kind)
+local Text = Instance.new("TextLabel")
+Text.Name = Kind .. "Label"
+Text.BackgroundTransparency = 1
+Text.AnchorPoint = Vector2.new(0.5, 1)
+Text.Size = UDim2.fromOffset(240, 90)
+Text.TextColor3 = C.Color
+Text.TextStrokeTransparency = 0.4
+Text.Font = Enum.Font.GothamBold
+Text.TextSize = 12
+Text.TextYAlignment = Enum.TextYAlignment.Bottom
+Text.TextXAlignment = Enum.TextXAlignment.Center
+Text.Visible = false
+Text.ZIndex = 3
+Text.Text = LabelText(Target, Kind)
+Text.Parent = Root
+Entry.Label = Text
+end
 local function Mark(Target, Kind)
 if not Target or Target.Parent == nil then return end
 if S.Entries[Target] then return end
 local C = S.Kinds[Kind]
-if not (C.Outline or C.Box) then return end
+if not (C.Outline or C.Box or C.Label) then return end
 local Entry = { Kind = Kind }
 if C.Outline then
 pcall(AddOutline, Entry, Target, C, Kind)
 end
 if C.Box then
 pcall(AddBox, Entry, C, Kind)
+end
+if C.Label then
+pcall(AddLabel, Entry, Target, C, Kind)
+end
+if Entry.Frame or Entry.Label then
+Measure(Target, Entry)
 end
 S.Entries[Target] = Entry
 end
@@ -239,6 +311,16 @@ end
 end
 end
 end
+local Now = os.clock()
+for Target, Entry in pairs(S.Entries) do
+if Target.Parent then
+if (Entry.Frame or Entry.Label)
+and (not Entry.NextMeasure or Now >= Entry.NextMeasure) then
+Measure(Target, Entry)
+end
+end
+end
+RefreshLabels()
 Prune()
 end
 local Feature = {
@@ -253,9 +335,42 @@ if S.Timer < SCAN_INTERVAL then return end
 S.Timer = 0
 Scan()
 end
+local function UpdateDrawings()
+local Camera = workspace.CurrentCamera
+if not Camera or not Root or not Root.Parent then return end
+local CameraPosition = Camera.CFrame.Position
+for Target, Entry in pairs(S.Entries) do
+local Frame, Label = Entry.Frame, Entry.Label
+if Frame or Label then
+local X1, Y1, X2, Y2
+local Ok, Pivot = pcall(Target.GetPivot, Target)
+if Ok and Entry.LocalCF and Entry.Size
+and (Pivot.Position - CameraPosition).Magnitude <= MAX_DRAW_DISTANCE then
+X1, Y1, X2, Y2 = Project(Pivot * Entry.LocalCF, Entry.Size, Camera)
+end
+if Frame and Frame.Parent then
+if X1 then
+Frame.Position = UDim2.fromOffset(X1, Y1)
+Frame.Size = UDim2.fromOffset(X2 - X1, Y2 - Y1)
+Frame.Visible = true
+else
+Frame.Visible = false
+end
+end
+if Label and Label.Parent then
+if X1 then
+Label.Position = UDim2.fromOffset((X1 + X2) / 2, Y1 - 4)
+Label.Visible = true
+else
+Label.Visible = false
+end
+end
+end
+end
+end
 local RenderConnection = RunService.RenderStepped:Connect(function()
 if AnyEnabled() then
-UpdateBoxes()
+UpdateDrawings()
 end
 end)
 local function SetKind(Kind, Value)
@@ -270,12 +385,24 @@ local function Rebuild(Kind)
 Clear(Kind)
 S.Timer = SCAN_INTERVAL
 end
+local function SetStyle(Kind, Style)
+local C = S.Kinds[Kind]
+C.Outline = Style == "Outline"
+C.Box = Style == "Box"
+local Toggles = S.StyleToggles[Kind]
+if Toggles then
+if Toggles.Outline then Toggles.Outline:Set(C.Outline, true) end
+if Toggles.Box then Toggles.Box:Set(C.Box, true) end
+end
+Rebuild(Kind)
+end
 local function Recolor(Kind)
 local Color = S.Kinds[Kind].Color
 for _, Entry in pairs(S.Entries) do
 if Entry.Kind == Kind then
 if Entry.Highlight then Entry.Highlight.OutlineColor = Color end
 if Entry.Stroke then Entry.Stroke.Color = Color end
+if Entry.Label then Entry.Label.TextColor3 = Color end
 end
 end
 end
@@ -289,19 +416,36 @@ Bold = true,
 Default = false,
 Callback = function(Value) SetKind(Kind, Value) end,
 }
-Sec:AddToggle{
+local OutlineToggle = Sec:AddToggle{
 Name = Kind .. " outline",
 Default = C.Outline,
 Callback = function(Value)
-C.Outline = Value == true
+if Value then
+SetStyle(Kind, "Outline")
+else
+C.Outline = false
 Rebuild(Kind)
+end
 end,
 }
-Sec:AddToggle{
+local BoxToggle = Sec:AddToggle{
 Name = Kind .. " 2D box",
 Default = C.Box,
 Callback = function(Value)
-C.Box = Value == true
+if Value then
+SetStyle(Kind, "Box")
+else
+C.Box = false
+Rebuild(Kind)
+end
+end,
+}
+S.StyleToggles[Kind] = { Outline = OutlineToggle, Box = BoxToggle }
+Sec:AddToggle{
+Name = Kind .. " info text",
+Default = C.Label,
+Callback = function(Value)
+C.Label = Value == true
 Rebuild(Kind)
 end,
 }
@@ -6716,415 +6860,6 @@ Context.Lifetime.Disconnect(S.FolderConnections)
 end)
 BindFolders(false)
 return Module
-end,
-}
-]======],
-	["Features/WalkController.lua"] = [======[
-return {
-Name = "WalkController",
-Dependencies = {"Runtime", "CombatUtils"},
-Start = function(Context)
-local Runtime = Context.Runtime
-local Services = Context.Services
-local Players = Services.Players
-local PathfindingService = Services.PathfindingService
-local FeatureState = Context.Feature
-local AICCombatUtils = Context.AICCombatUtils
-local DIRECT_CHECK_INTERVAL = 0.1
-local MAX_DIRECT_RISE = 6
-local OBSTACLE_PROBE_DISTANCE = 8
-local BODY_PROBE_SIZE = Vector3.new(2.4, 3.5, 2.4)
-local BODY_PROBE_LIFT = 1
-local WALKABLE_NORMAL_Y = 0.6
-local HOLE_JUMP_EDGE = 2.5
-local MAX_HOP_RISE = 3
-local HOP_LANDING = 2
-local HOP_EDGE = 2
-local PATH_HOLD_SECONDS = 4
-local PATH_RECALCULATE_INTERVAL = 3
-local PATH_RETRY_INTERVAL = 2
-local PATH_WAYPOINT_REACH = 3
-local PATH_DESTINATION_TOLERANCE = 4
-local STUCK_PATH_SECONDS = 1.5
-local ZONE_SAMPLE_DISTANCE = 4
-local DETOUR_ANGLES = { 30, 60, 90, 120, 150 }
-local DETOUR_PROBE_DISTANCE = 10
-local DETOUR_MIN_FREE = 4
-local DETOUR_REACH = 2
-local DETOUR_TIMEOUT = 2.5
-local MAX_DETOURS = 4
-local DETOUR_PROGRESS = 2
-local Movement = {
-Name = "WalkController",
-S = {
-Holding = false,
-PathUntil = 0,
-StuckSince = nil,
-LastDirectCheck = 0,
-DirectBlocked = false,
-Unsafe = false,
-HoleCanJump = false,
-HoleEdge = nil,
-BumpDistance = nil,
-PathToken = 0,
-Path = {},
-Detour = nil,
-DetourSide = 1,
-DetourCount = 0,
-BestDistance = math.huge,
-ProgressDestination = nil,
-},
-}
-local S = Movement.S
-local function CanUseGround(Position, KeepInsideMine)
-if not FeatureState.IgnoreFarmZone.Enabled and AICCombatUtils.IsInsideFarmDeadzone(Position) then
-return false
-end
-return not KeepInsideMine or AICCombatUtils.IsInsideMineZone(Position)
-end
-local function SegmentStaysInMine(From, To)
-local Offset = To - From
-local Distance = Offset.Magnitude
-if Distance <= 0 then
-return AICCombatUtils.IsInsideMineZone(To)
-end
-for Travelled = ZONE_SAMPLE_DISTANCE, Distance, ZONE_SAMPLE_DISTANCE do
-if not AICCombatUtils.IsInsideMineZone(From + Offset.Unit * Travelled) then
-return false
-end
-end
-return AICCombatUtils.IsInsideMineZone(To)
-end
-local function BuildWallParams(Character, IgnoreModel)
-local Filter = { Character }
-if IgnoreModel then
-table.insert(Filter, IgnoreModel)
-end
-local MobFolder = workspace:FindFirstChild("Mobs")
-if MobFolder then
-table.insert(Filter, MobFolder)
-end
-for _, OtherPlayer in ipairs(Players:GetPlayers()) do
-if OtherPlayer.Character and OtherPlayer.Character ~= Character then
-table.insert(Filter, OtherPlayer.Character)
-end
-end
-if AICCombatUtils.S.DebugFolder then
-table.insert(Filter, AICCombatUtils.S.DebugFolder)
-end
-local Params = RaycastParams.new()
-Params.FilterType = Enum.RaycastFilterType.Exclude
-Params.FilterDescendantsInstances = Filter
-return Params
-end
-local function GetFeet(RootPart, Humanoid)
-local Hip = Humanoid.RigType == Enum.HumanoidRigType.R6 and 2 or Humanoid.HipHeight
-return RootPart.Position - Vector3.new(0, Hip + RootPart.Size.Y * 0.5, 0)
-end
-local function CastBody(RootPart, Humanoid, Params, Direction, Distance)
-local Center = GetFeet(RootPart, Humanoid) + Vector3.new(0, BODY_PROBE_LIFT + BODY_PROBE_SIZE.Y * 0.5, 0)
-local Hit = workspace:Blockcast(CFrame.new(Center), BODY_PROBE_SIZE, Direction * Distance, Params)
-if Hit and Hit.Normal.Y < WALKABLE_NORMAL_Y then
-return Hit.Distance
-end
-return nil
-end
-local function IsHoppable(RootPart, Humanoid, Params, Direction, HitDistance)
-local Center = GetFeet(RootPart, Humanoid) + Vector3.new(0, MAX_HOP_RISE + BODY_PROBE_SIZE.Y * 0.5, 0)
-return workspace:Blockcast(CFrame.new(Center), BODY_PROBE_SIZE, Direction * (HitDistance + HOP_LANDING), Params) == nil
-end
-local function CheckObstacleAhead(RootPart, Humanoid, Character, Destination, IgnoreModel)
-local Offset = Destination - RootPart.Position
-local Flat = Vector3.new(Offset.X, 0, Offset.Z)
-if Flat.Magnitude <= 0.5 then
-return false, nil
-end
-local Params = BuildWallParams(Character, IgnoreModel)
-local Distance = math.min(Flat.Magnitude, OBSTACLE_PROBE_DISTANCE)
-local HitDistance = CastBody(RootPart, Humanoid, Params, Flat.Unit, Distance)
-if not HitDistance then
-return false, nil
-end
-if IsHoppable(RootPart, Humanoid, Params, Flat.Unit, HitDistance) then
-return false, HitDistance
-end
-return true, nil
-end
-local function UpdateDirectCheck(now, RootPart, Humanoid, Character, Destination, Options)
-if now - S.LastDirectCheck < DIRECT_CHECK_INTERVAL then
-return
-end
-S.LastDirectCheck = now
-local IsHole, CanJump, Edge = AICCombatUtils.IsHoleAhead(Destination)
-S.HoleCanJump = IsHole and CanJump
-S.HoleEdge = Edge
-S.Unsafe = (IsHole and not CanJump)
-or Destination.Y - RootPart.Position.Y > MAX_DIRECT_RISE
-or AICCombatUtils.IsPathThroughDeadzone(Destination)
-or (Options.KeepInsideMine and not SegmentStaysInMine(RootPart.Position, Destination))
-local Blocked, BumpDistance = CheckObstacleAhead(RootPart, Humanoid, Character, Destination, Options.Ignore)
-S.BumpDistance = BumpDistance
-S.DirectBlocked = S.Unsafe or Blocked
-end
-local function JumpHoleIfClose()
-if S.HoleCanJump and S.HoleEdge and S.HoleEdge <= HOLE_JUMP_EDGE then
-AICCombatUtils.DoJump()
-end
-end
-local function JumpBumpIfClose()
-if S.BumpDistance and S.BumpDistance <= HOP_EDGE then
-AICCombatUtils.DoJump()
-end
-end
-local function IsRouteAllowed(Waypoints, KeepInsideMine)
-for Index = 2, #Waypoints do
-if not CanUseGround(Waypoints[Index].Position, KeepInsideMine) then
-return false
-end
-end
-return true
-end
-local function RequestPath(RootPart, Destination, KeepInsideMine)
-local Path = S.Path
-local From = RootPart.Position
-local AgentRadius = math.max(RootPart.Size.X * 0.5, 2)
-local AgentHeight = math.max(RootPart.Size.Y, 5)
-S.PathToken += 1
-local Token = S.PathToken
-Path.Computing = true
-task.spawn(function()
-local Solver = PathfindingService:CreatePath({
-AgentRadius = AgentRadius,
-AgentHeight = AgentHeight,
-AgentCanJump = true,
-WaypointSpacing = 4,
-})
-local Ok = pcall(function()
-Solver:ComputeAsync(From, Destination)
-end)
-if Token ~= S.PathToken then
-return
-end
-Path.Computing = false
-local Waypoints = Ok and Solver.Status == Enum.PathStatus.Success and Solver:GetWaypoints()
-if not Waypoints or #Waypoints < 2 or not IsRouteAllowed(Waypoints, KeepInsideMine) then
-Path.Waypoints = nil
-Path.FailedAt = os.clock()
-return
-end
-Path.Waypoints = Waypoints
-Path.Index = 2
-Path.Destination = Destination
-Path.Time = os.clock()
-Path.FailedAt = nil
-end)
-end
-local function FollowPath(now, RootPart, Humanoid, Destination, KeepInsideMine)
-local Path = S.Path
-local Stale = not Path.Waypoints
-or (Path.Destination - Destination).Magnitude > PATH_DESTINATION_TOLERANCE
-or now - Path.Time >= PATH_RECALCULATE_INTERVAL
-local MayRetry = not Path.FailedAt or now - Path.FailedAt >= PATH_RETRY_INTERVAL
-if Stale and not Path.Computing and MayRetry then
-RequestPath(RootPart, Destination, KeepInsideMine)
-end
-if not Path.Waypoints then
-return Path.Computing and "waiting" or "failed"
-end
-while Path.Index <= #Path.Waypoints do
-local Waypoint = Path.Waypoints[Path.Index]
-if AICCombatUtils.GetHorizontalDistance(Waypoint.Position, RootPart.Position) <= PATH_WAYPOINT_REACH then
-Path.Index += 1
-continue
-end
-if Waypoint.Action == Enum.PathWaypointAction.Jump
-and (AICCombatUtils.IsJumpableObstacleAhead(Waypoint.Position) or AICCombatUtils.IsStuck())
-then
-AICCombatUtils.DoJump()
-end
-JumpHoleIfClose()
-Humanoid:MoveTo(Waypoint.Position)
-return "moving"
-end
-Path.Waypoints = nil
-S.PathUntil = 0
-return "done"
-end
-local function UpdateStuck(now)
-if not AICCombatUtils.IsStuck() then
-S.StuckSince = nil
-return
-end
-S.StuckSince = S.StuckSince or now
-AICCombatUtils.DoJump()
-if now - S.StuckSince >= STUCK_PATH_SECONDS then
-if now < S.PathUntil then
-S.Path.Time = 0
-end
-S.PathUntil = now + PATH_HOLD_SECONDS
-S.StuckSince = nil
-AICCombatUtils.ResetStuckTracker()
-end
-end
-local function TrackProgress(RootPart, Destination)
-if not S.ProgressDestination
-or (S.ProgressDestination - Destination).Magnitude > PATH_DESTINATION_TOLERANCE
-then
-S.ProgressDestination = Destination
-S.BestDistance = math.huge
-S.DetourCount = 0
-end
-local Distance = (Destination - RootPart.Position).Magnitude
-if Distance < S.BestDistance - DETOUR_PROGRESS then
-S.BestDistance = Distance
-S.DetourCount = 0
-end
-end
-local function IsDetourAllowed(RootPart, Candidate, KeepInsideMine)
-local IsHole, CanJump = AICCombatUtils.IsHoleAhead(Candidate)
-return CanUseGround(Candidate, KeepInsideMine)
-and not (IsHole and not CanJump)
-and not AICCombatUtils.IsPathThroughDeadzone(Candidate)
-and not (KeepInsideMine and not SegmentStaysInMine(RootPart.Position, Candidate))
-end
-local function FindDetour(RootPart, Humanoid, Character, Destination, Options)
-local Offset = Destination - RootPart.Position
-local Heading = Vector3.new(Offset.X, 0, Offset.Z)
-Heading = Heading.Magnitude > 0.01 and Heading.Unit or RootPart.CFrame.LookVector
-local Params = BuildWallParams(Character, Options.Ignore)
-S.DetourSide = -S.DetourSide
-for _, Angle in ipairs(DETOUR_ANGLES) do
-for _, Sign in ipairs({ S.DetourSide, -S.DetourSide }) do
-local Direction = CFrame.Angles(0, math.rad(Angle * Sign), 0):VectorToWorldSpace(Heading)
-local HitDistance = CastBody(RootPart, Humanoid, Params, Direction, DETOUR_PROBE_DISTANCE)
-local Free = HitDistance and HitDistance - 1 or DETOUR_PROBE_DISTANCE
-if Free >= DETOUR_MIN_FREE then
-local Candidate = RootPart.Position + Direction * Free
-if IsDetourAllowed(RootPart, Candidate, Options.KeepInsideMine) then
-return Candidate
-end
-end
-end
-end
-return nil
-end
-local function StartDetour(now, RootPart, Humanoid, Character, Destination, Options)
-if S.DetourCount >= MAX_DETOURS then
-return false
-end
-local Position = FindDetour(RootPart, Humanoid, Character, Destination, Options)
-if not Position then
-return false
-end
-S.DetourCount += 1
-S.Detour = { Position = Position, Until = now + DETOUR_TIMEOUT }
-AICCombatUtils.ResetStuckTracker()
-return true
-end
-local function WalkDetour(now, RootPart, Humanoid)
-local Detour = S.Detour
-if not Detour then
-return false
-end
-if now > Detour.Until or AICCombatUtils.GetHorizontalDistance(RootPart.Position, Detour.Position) <= DETOUR_REACH then
-S.Detour = nil
-S.PathUntil = 0
-S.LastDirectCheck = 0
-return false
-end
-AICCombatUtils.DoJumpIfObstacle(Detour.Position)
-Humanoid:MoveTo(Detour.Position)
-return true
-end
-function Movement:Hold()
-local _, Humanoid, RootPart = Runtime:GetCharacter()
-if not Humanoid or not RootPart then
-return
-end
-if not S.Holding then
-S.Holding = true
-Humanoid:MoveTo(RootPart.Position)
-end
-Humanoid:Move(Vector3.zero)
-end
-function Movement:MoveTo(Destination, Options)
-local Character, Humanoid, RootPart = Runtime:GetCharacter()
-if not Humanoid or not RootPart then
-return "failed"
-end
-Options = Options or {}
-local now = os.clock()
-local FaceOrientation = Runtime:GetFaceOrientation()
-if FaceOrientation then
-FaceOrientation.Enabled = false
-end
-Humanoid.AutoRotate = true
-S.Holding = false
-UpdateStuck(now)
-TrackProgress(RootPart, Destination)
-if WalkDetour(now, RootPart, Humanoid) then
-return "moving"
-end
-UpdateDirectCheck(now, RootPart, Humanoid, Character, Destination, Options)
-if S.DirectBlocked and now >= S.PathUntil then
-S.PathUntil = now + PATH_HOLD_SECONDS
-end
-if now < S.PathUntil then
-local Result = FollowPath(now, RootPart, Humanoid, Destination, Options.KeepInsideMine)
-if Result == "moving" then
-return Result
-end
-if Result == "waiting" then
-self:Hold()
-return Result
-end
-if Result == "failed" then
-if StartDetour(now, RootPart, Humanoid, Character, Destination, Options) then
-WalkDetour(now, RootPart, Humanoid)
-return "moving"
-end
-if S.Unsafe or (S.DirectBlocked and not AICCombatUtils.IsJumpableObstacleAhead(Destination)) then
-self:Hold()
-return "failed"
-end
-end
-end
-JumpHoleIfClose()
-JumpBumpIfClose()
-AICCombatUtils.DoJumpIfObstacle(Destination)
-Humanoid:MoveTo(Destination)
-return "moving"
-end
-function Movement:GetApproachPoint(Part, Standoff, Ignore)
-local Character, _, RootPart = Runtime:GetCharacter()
-local Offset = RootPart and RootPart.Position - Part.Position or Vector3.xAxis
-local Flat = Vector3.new(Offset.X, 0, Offset.Z)
-local Direction = Flat.Magnitude > 0.01 and Flat.Unit or Vector3.xAxis
-local Point = Part.Position + Direction * (math.max(Part.Size.X, Part.Size.Z) * 0.5 + Standoff)
-local Params = RaycastParams.new()
-Params.FilterType = Enum.RaycastFilterType.Exclude
-Params.FilterDescendantsInstances = { Character, Ignore, AICCombatUtils.S.DebugFolder }
-local Hit = workspace:Raycast(Point + Vector3.new(0, 8, 0), Vector3.new(0, -30, 0), Params)
-return Hit and Hit.Position + Vector3.new(0, 3, 0) or Point
-end
-function Movement:Reset()
-S.PathToken += 1
-S.Holding = false
-S.PathUntil = 0
-S.StuckSince = nil
-S.LastDirectCheck = 0
-S.DirectBlocked = false
-S.BumpDistance = nil
-S.Unsafe = false
-S.HoleCanJump = false
-S.HoleEdge = nil
-S.Detour = nil
-S.DetourCount = 0
-S.BestDistance = math.huge
-S.ProgressDestination = nil
-table.clear(S.Path)
-end
-return Movement
 end,
 }
 ]======],
