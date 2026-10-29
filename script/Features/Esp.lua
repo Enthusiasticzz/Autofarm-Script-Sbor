@@ -47,6 +47,8 @@ return {
         --// loop, so they read live instead of at the scan's rate.
         local LABEL_INTERVAL = 0.25
 
+        local TEXT_SIZE = 14
+
         local KINDS = { "Player", "Mob", "Weapon" }
         local TITLES = { Player = "Players", Mob = "Mobs", Weapon = "Weapons" }
         local COLORS = {
@@ -549,12 +551,11 @@ return {
             return math.clamp(600 / math.max(Distance, 1), 8, 40)
         end
 
-        --// Reference text auto-scale: clamp(1/distance*1000, 2, 30), with the
-        --// range narrowed so a distant label stays readable and a near one
-        --// does not swallow the screen.
-        local function TextSizeFor(Distance)
-            if Distance == math.huge then return 12 end
-            return math.clamp(1000 / math.max(Distance, 1), 6, 16)
+        --// Every piece of text is the same pixel size at any distance, like the
+        --// popular ESP libraries. Change this one number to resize all of it.
+        local TEXT_SIZE = 14
+        local function TextSizeFor()
+            return TEXT_SIZE
         end
 
         --// One segment of the box, written as four numbers so the render loop
@@ -1179,7 +1180,7 @@ return {
                         for _, Part in ipairs(TextParts) do
                             local Show = X1 ~= nil and not Part.Empty
                             local Key = Part.Key
-                            local Size = Key == "Top" and TextSize or math.max(6, TextSize * 0.85)
+                            local Size = TextSize
                             local Block = Part.Lines * (Size + 2) * 0.5
 
                             if Part.Draw then
