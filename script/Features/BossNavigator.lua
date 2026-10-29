@@ -844,7 +844,8 @@ return {
                     end
 
                     AICUI.RefreshBossNames()
-                end
+                end,
+                true
             )
         end
 
@@ -932,7 +933,8 @@ return {
                         RefreshEditor()
                         AICUI.RefreshBossNames()
                     end
-                end
+                end,
+                true
             )
 
             if Selected then
@@ -2693,11 +2695,11 @@ return {
         --// UI
         ------------------------------------------------------------------------
 
-        UIRef.BossSection = UIRef.BossTab:AddSection{ Title = "Route Controls", Full = true }
-        UIRef.BossStopsSection = UIRef.BossTab:AddSection{ Title = "Boss Stops", Full = true }
-        UIRef.BossEditorSection = UIRef.BossTab:AddSection{ Title = "Selected Stop", Full = true }
-        UIRef.BossNamesSection = UIRef.BossTab:AddSection{ Title = "Boss Targets", Full = true }
-        UIRef.BossTravelSection = UIRef.BossTab:AddSection{ Title = "Teleport and Prompt", Full = true }
+        UIRef.BossSection = UIRef.BossTab:AddSection{ Title = "Route Controls", Side = "Left" }
+        UIRef.BossStopsSection = UIRef.BossTab:AddSection{ Title = "Boss Stops", Side = "Left" }
+        UIRef.BossEditorSection = UIRef.BossTab:AddSection{ Title = "Selected Stop", Side = "Right" }
+        UIRef.BossNamesSection = UIRef.BossTab:AddSection{ Title = "Boss Targets", Side = "Right" }
+        UIRef.BossTravelSection = UIRef.BossTab:AddSection{ Title = "Teleport and Prompt", Side = "Right" }
 
         UIRef.BossToggle = AICUI.BindFeatureToggle("BossRoute", "Boss Route", function(Enabled)
             if Enabled then
@@ -2880,6 +2882,7 @@ return {
             return UIRef.BossEditorSection:AddTextBox{
                 Name = Label,
                 Default = "",
+                Inline = true,
                 Callback = function(Value)
                 local Stop = SelectedStop()
 
@@ -3250,7 +3253,7 @@ return {
         --// Path to Boss: the points walked to reach each stop
         ------------------------------------------------------------------------
 
-        UIRef.BossPathSection = UIRef.BossTab:AddSection{ Title = "Path to Boss", Full = true }
+        UIRef.BossPathSection = UIRef.BossTab:AddSection{ Title = "Path to Boss", Side = "Left" }
         UIRef.BossPathLabel = UIRef.BossPathSection:AddLabel("PATH TO BOSS  NO STOP SELECTED")
 
         UIRef.BossPathSection:AddButton{

@@ -73,6 +73,29 @@ Check("AddTextbox", function()
     Expect(textbox:Get() == "https://example.invalid/hook", "textbox value")
 end)
 
+Check("inline labeled controls", function()
+    local calls = 0
+    local inlineBox = section:AddTextBox{ Name = "Stop name", Default = "One", Inline = true, Callback = function() calls += 1 end }
+    Expect(inlineBox.Box.Position.X.Scale == .5, "text box is not on the right")
+    local label = inlineBox.Row:FindFirstChildOfClass("TextLabel")
+    Expect(label and label.Text == "Stop name", "left label missing")
+    inlineBox:Set("Two", true)
+    Expect(inlineBox:Get() == "Two" and calls == 0, "silent textbox set failed")
+    inlineBox.Box.FocusLost:Fire()
+    Expect(calls == 1, "text box callback missing")
+    local check = section:AddToggle{ Name = "Reset", Default = false, Callback = function() calls += 1 end }
+    check:Set(true)
+    Expect(check:Get() and calls == 2, "inline checkmark callback missing")
+    local picker = section:AddDropdown{ Name = "Stop", Options = { "A", "B" }, Inline = true, Callback = function() calls += 1 end }
+    Expect(picker.Row.Size.Y.Offset == 42, "inline dropdown is not compact")
+    picker:OpenList()
+    Expect(picker.Open and picker.Row.Size.Y.Offset > 42, "inline dropdown did not open")
+    picker:Set("B")
+    Expect(picker:Get() == "B" and calls == 3, "inline dropdown selection failed")
+    picker:Close()
+    Expect(not picker.Open and picker.Row.Size.Y.Offset == 42, "inline dropdown did not close")
+end)
+
 Check("AddButton / AddLabel / AddDivider", function()
     local clicked = false
     section:AddButton("Run once", function() clicked = true end, "Runs once.")

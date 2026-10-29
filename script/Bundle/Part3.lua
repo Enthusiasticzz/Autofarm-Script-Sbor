@@ -4112,7 +4112,8 @@ AICProfile.SaveActiveProfile()
 Say("Boss Route", "Boss name added: " .. Value)
 end
 AICUI.RefreshBossNames()
-end
+end,
+true
 )
 end
 local function RefreshEditor()
@@ -4185,7 +4186,8 @@ AICProfile.S.SelectedBossStopIndex = Index
 RefreshEditor()
 AICUI.RefreshBossNames()
 end
-end
+end,
+true
 )
 if Selected then
 UIRef.BossPicker:Set(Selected, true)
@@ -5323,11 +5325,11 @@ S.SkipSpotWaitNext = false
 SyncDeathMark()
 ResetWalk()
 end
-UIRef.BossSection = UIRef.BossTab:AddSection{ Title = "Route Controls", Full = true }
-UIRef.BossStopsSection = UIRef.BossTab:AddSection{ Title = "Boss Stops", Full = true }
-UIRef.BossEditorSection = UIRef.BossTab:AddSection{ Title = "Selected Stop", Full = true }
-UIRef.BossNamesSection = UIRef.BossTab:AddSection{ Title = "Boss Targets", Full = true }
-UIRef.BossTravelSection = UIRef.BossTab:AddSection{ Title = "Teleport and Prompt", Full = true }
+UIRef.BossSection = UIRef.BossTab:AddSection{ Title = "Route Controls", Side = "Left" }
+UIRef.BossStopsSection = UIRef.BossTab:AddSection{ Title = "Boss Stops", Side = "Left" }
+UIRef.BossEditorSection = UIRef.BossTab:AddSection{ Title = "Selected Stop", Side = "Right" }
+UIRef.BossNamesSection = UIRef.BossTab:AddSection{ Title = "Boss Targets", Side = "Right" }
+UIRef.BossTravelSection = UIRef.BossTab:AddSection{ Title = "Teleport and Prompt", Side = "Right" }
 UIRef.BossToggle = AICUI.BindFeatureToggle("BossRoute", "Boss Route", function(Enabled)
 if Enabled then
 S.Index = 1
@@ -5465,6 +5467,7 @@ local function AddStopBox(Label, Write)
 return UIRef.BossEditorSection:AddTextBox{
 Name = Label,
 Default = "",
+Inline = true,
 Callback = function(Value)
 local Stop = SelectedStop()
 if not Stop then
@@ -5743,7 +5746,7 @@ end
 SetStatus(CONFIG.BOSS_ROUTE_LOOP and "ROUTE LOOPS" or "ROUTE RUNS ONCE")
 end,
 }
-UIRef.BossPathSection = UIRef.BossTab:AddSection{ Title = "Path to Boss", Full = true }
+UIRef.BossPathSection = UIRef.BossTab:AddSection{ Title = "Path to Boss", Side = "Left" }
 UIRef.BossPathLabel = UIRef.BossPathSection:AddLabel("PATH TO BOSS  NO STOP SELECTED")
 UIRef.BossPathSection:AddButton{
 Name = "Add Path Point Here",

@@ -204,6 +204,15 @@ end
 row:FindFirstChild("SelectEntry").MouseButton1Click:Fire()
 assert(notices[#notices]:find("not available", 1, true), "missing clipboard was not reported")
 
+-- A place/profile reload refreshes the boss-stop list as well as its editor.
+local refreshes = {}
+Context.UIRef.WaypointListComponent = { SetPriority = noop }
+Context.AICUI.RefreshBossRouteList = function() table.insert(refreshes, "list") end
+Context.AICUI.RefreshBossRoutePickers = function() table.insert(refreshes, "picker") end
+Context.AICUI.RefreshBossNames = function() table.insert(refreshes, "names") end
+Context.AICUI.RefreshWaypointList()
+assert(table.concat(refreshes, ",") == "list,picker,names", "profile refresh omitted boss route UI")
+
 -- Profile dropdown redraws must not invoke the selection handler: that handler
 -- loads/reset the profile and refreshes the dropdown again during boot.
 local profileLoads, defaultLoads = 0, 0

@@ -1607,10 +1607,14 @@ function Section:AddDropdown(o, ...)
 		local options, callback = ...
 		o = { Name = o, Options = options, Callback = callback }
 	end
-	local win, row = self.Win, self:_row(62)
+	local inline = o.Inline == true
+	local height = inline and 42 or 62
+	local win, row = self.Win, self:_row(height)
 	row.ClipsDescendants = true
-	win:Label(row, o.Name, { Bold = true, Position = UDim2.fromOffset(14,8), SizeUDim = UDim2.new(1,-28,0,18) })
-	local box = New("TextButton", { Position = UDim2.fromOffset(14,30), Size = UDim2.new(1,-28,0,26), Text = "", AutoButtonColor = false, BorderSizePixel = 0, Parent = row })
+	win:Label(row, o.Name, inline
+		and { Bold = true, Position = UDim2.fromOffset(14,0), SizeUDim = UDim2.new(.5,-22,0,42) }
+		or { Bold = true, Position = UDim2.fromOffset(14,8), SizeUDim = UDim2.new(1,-28,0,18) })
+	local box = New("TextButton", { Position = inline and UDim2.new(.5,0,0,8) or UDim2.fromOffset(14,30), Size = inline and UDim2.new(.5,-14,0,26) or UDim2.new(1,-28,0,26), Text = "", AutoButtonColor = false, BorderSizePixel = 0, Parent = row })
 	Round(box, 6); win:Themed(box, { BackgroundColor3 = "Element" })
 	local st = Stroke(box); win:_hover(box, st)
 	local txt = win:Label(box, "", { Position = UDim2.fromOffset(10,0), SizeUDim = UDim2.new(1,-30,1,0), TextSize = 13 })
@@ -1629,7 +1633,7 @@ function Section:AddDropdown(o, ...)
 		if not self.Open then return end
 		self.Open = false
 		win:Tween(chev, { Rotation = 0 }, .18)
-		win:Tween(row, { Size = UDim2.new(1,0,0,62) }, .2, Enum.EasingStyle.Quint)
+		win:Tween(row, { Size = UDim2.new(1,0,0,height) }, .2, Enum.EasingStyle.Quint)
 		if list then win:Tween(list.Frame, { Position = UDim2.fromOffset(14, -list.Height) }, .2, Enum.EasingStyle.Quint) end
 	end
 	function obj:OpenList()
@@ -1638,7 +1642,7 @@ function Section:AddDropdown(o, ...)
 		if not list then
 			-- the list lives in a clipping container that starts right under the box, so it slides out of
 			-- the box (rather than being revealed by a wipe) and never overlaps the title or the box
-			local holder = New("Frame", { BackgroundTransparency = 1, BorderSizePixel = 0, ClipsDescendants = true, Position = UDim2.fromOffset(0, 62), Size = UDim2.new(1,0,0,0), Parent = row })
+			local holder = New("Frame", { BackgroundTransparency = 1, BorderSizePixel = 0, ClipsDescendants = true, Position = UDim2.fromOffset(0, height), Size = UDim2.new(1,0,0,0), Parent = row })
 			list = win:_makeList(holder, self.Options, self.Value, function(v) self:Set(v); self:Close() end, o.Visible or 5)
 			list.Container = holder
 			holder.Size = UDim2.new(1,0,0,list.Height + 10)
@@ -1646,7 +1650,7 @@ function Section:AddDropdown(o, ...)
 			list.Frame.Position = UDim2.fromOffset(14, -list.Height)
 		end
 		win:Tween(chev, { Rotation = 180 }, .18)
-		win:Tween(row, { Size = UDim2.new(1,0,0,62 + list.Height + 10) }, .22, Enum.EasingStyle.Quint)
+		win:Tween(row, { Size = UDim2.new(1,0,0,height + list.Height + 10) }, .22, Enum.EasingStyle.Quint)
 		win:Tween(list.Frame, { Position = UDim2.fromOffset(14, 0) }, .22, Enum.EasingStyle.Quint)
 	end
 	box.MouseButton1Click:Connect(function() if obj.Open then obj:Close() else obj:OpenList() end end)
@@ -1813,7 +1817,11 @@ function Section:AddTextBox(o, ...)
 		o = { Name = o, Default = default, Callback = callback }
 	end
 	local win, row = self.Win, self:_row(42)
-	local tb = New("TextBox", { Position = UDim2.fromOffset(14,8), Size = UDim2.new(1,-28,0,26), Text = o.Default or "", PlaceholderText = o.Placeholder or o.Name or "",
+	local inline = o.Inline == true
+	if inline then
+		win:Label(row, o.Name, { Color = "SubText", Position = UDim2.fromOffset(14,0), SizeUDim = UDim2.new(.5,-22,1,0) })
+	end
+	local tb = New("TextBox", { Position = inline and UDim2.new(.5,0,0,8) or UDim2.fromOffset(14,8), Size = inline and UDim2.new(.5,-14,0,26) or UDim2.new(1,-28,0,26), Text = o.Default or "", PlaceholderText = o.Placeholder or o.Name or "",
 		ClearTextOnFocus = false, Font = Fonts.Medium, TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left, BorderSizePixel = 0, Parent = row })
 	Round(tb, 6); New("UIPadding", { PaddingLeft = UDim.new(0,10), PaddingRight = UDim.new(0,10), Parent = tb })
 	win:Themed(tb, { BackgroundColor3 = "Element", TextColor3 = "Text", PlaceholderColor3 = "SubText" })

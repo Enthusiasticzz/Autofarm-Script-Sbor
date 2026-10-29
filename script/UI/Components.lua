@@ -383,11 +383,11 @@ return {
         --// appended to the end of its section, so it takes Old's slot;
         --// without this a rebuilt dropdown dropped below every control
         --// after it.
-        function AICUI.ReplaceDropdown(Old, Section, Label, Options, Callback)
+        function AICUI.ReplaceDropdown(Old, Section, Label, Options, Callback, Inline)
             local Order = Old and Old.Row and Old.Row.LayoutOrder
             DestroyDropdown(Old)
 
-            local Dropdown = Section:AddDropdown{ Name = Label, Options = Options, Callback = Callback }
+            local Dropdown = Section:AddDropdown{ Name = Label, Options = Options, Callback = Callback, Inline = Inline }
 
             if Order and Dropdown.Row then
                 Dropdown.Row.LayoutOrder = Order
@@ -634,8 +634,14 @@ return {
 
             --// The Boss Route editor reads the same place config, so a profile
             --// load refreshes it too (BossNavigator).
+            if AICUI.RefreshBossRouteList then
+                AICUI.RefreshBossRouteList()
+            end
             if AICUI.RefreshBossRoutePickers then
                 AICUI.RefreshBossRoutePickers()
+            end
+            if AICUI.RefreshBossNames then
+                AICUI.RefreshBossNames()
             end
         end
         function AICUI.RefreshFarmZoneList()

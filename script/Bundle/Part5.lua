@@ -1499,10 +1499,10 @@ end
 Component:SetPriority(Names, Values)
 end
 end
-function AICUI.ReplaceDropdown(Old, Section, Label, Options, Callback)
+function AICUI.ReplaceDropdown(Old, Section, Label, Options, Callback, Inline)
 local Order = Old and Old.Row and Old.Row.LayoutOrder
 DestroyDropdown(Old)
-local Dropdown = Section:AddDropdown{ Name = Label, Options = Options, Callback = Callback }
+local Dropdown = Section:AddDropdown{ Name = Label, Options = Options, Callback = Callback, Inline = Inline }
 if Order and Dropdown.Row then
 Dropdown.Row.LayoutOrder = Order
 end
@@ -1679,8 +1679,14 @@ table.clone(PlaceConfig.WAYPOINT_JUMPS)
 if AICUI.RefreshWaypointPairPickers then
 AICUI.RefreshWaypointPairPickers()
 end
+if AICUI.RefreshBossRouteList then
+AICUI.RefreshBossRouteList()
+end
 if AICUI.RefreshBossRoutePickers then
 AICUI.RefreshBossRoutePickers()
+end
+if AICUI.RefreshBossNames then
+AICUI.RefreshBossNames()
 end
 end
 function AICUI.RefreshFarmZoneList()
