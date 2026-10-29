@@ -18,6 +18,7 @@ return {
         local Players = Services.Players
         local Player = Context.Player
         local UIRef = Context.UIRef
+        local AICUI = Context.AICUI
 
         local SCAN_INTERVAL = 0.5
 
@@ -27,43 +28,158 @@ return {
             Weapon = Color3.fromRGB(255, 200, 60),
         }
 
+        local KINDS = { "Player", "Mob", "Weapon" }
+
+        --// Per-kind settings. Each kind has its own on/off, colour, and the
+        --// drawing style it uses: outline (Highlight), box, tracer, or label.
         local S = {
-            Enabled = {
-                Player = false,
-                Mob = false,
-                Weapon = false,
-            },
-            Highlights = {},
+            Kinds = {},
+            Highlights = {},   -- [Target] = { Kind = ..., Instance = Highlight }
             Timer = 0,
         }
+        for _, Kind in ipairs(KINDS) do
+            S.Kinds[Kind] = {
+                Enabled = false,
+                Color = COLORS[Kind],
+                Outline = true,
+                Box = false,
+                Tracer = false,
+                Label = false,
+            }
+        end
 
-        local function ClearHighlights()
-            for _, Highlight in pairs(S.Highlights) do
-                Highlight:Destroy()
+        local function Enabled(Kind)
+            return S.Kinds[Kind].Enabled
+        end
+
+        local function AnyEnabled()
+            for _, Kind in ipairs(KINDS) do
+                if Enabled(Kind) then return true end
             end
-            S.Highlights = {}
+            return false
+        end
+
+        local function ClearHighlights(Kind)
+            for Target, Entry in pairs(S.Highlights) do
+                if Kind == nil or Entry.Kind == Kind then
+                    for _, Instance in ipairs(Entry.Instances) do
+                        Instance:Destroy()
+                    end
+                    S.Highlights[Target] = nil
+                end
+            end
+        end
+
+        local function PartOf(Target)
+            return Target:FindFirstChild("Head")
+                or Target.PrimaryPart
+                or Target:FindFirstChildWhichIsA("BasePart")
+        end
+
+        --// The text a label shows: name, then level, EXP and HP where the
+        --// game exposes them. Missing pieces are simply left out.
+        local function LabelText(Target, Kind)
+            local Lines = {}
+            local Owner = Kind == "Player" and Players:GetPlayerFromCharacter(Target) or nil
+            table.insert(Lines, Owner and Owner.Name or Target.Name)
+
+            local Level
+            if Owner then
+                local Stats = Owner:FindFirstChild("PlayerStats")
+                local LevelStat = Stats and Stats:FindFirstChild("Level")
+                local ExpStat = Stats and Stats:FindFirstChild("EXP")
+                Level = LevelStat and tonumber(LevelStat.Value)
+                if Level then
+                    table.insert(Lines, "Lv " .. Level)
+                end
+                if ExpStat and type(AICUI.neededExp) == "function" and Level then
+                    local Needed = tonumber(AICUI.neededExp(Level)) or 0
+                    table.insert(Lines, "EXP " .. math.floor(ExpStat.Value) .. "/" .. math.floor(Needed))
+                end
+            elseif Kind == "Mob" then
+                local Config = Target:FindFirstChild("Config")
+                local LvlStat = Config and Config:FindFirstChild("LVL")
+                if LvlStat then
+                    table.insert(Lines, "Lv " .. tostring(LvlStat.Value))
+                end
+            end
+
+            local Humanoid = Target:FindFirstChildOfClass("Humanoid")
+            if Humanoid and Kind ~= "Weapon" then
+                table.insert(Lines, "HP " .. math.floor(Humanoid.Health) .. "/" .. math.floor(Humanoid.MaxHealth))
+            end
+
+            return table.concat(Lines, "\n")
         end
 
         local function Mark(Target, Kind)
             if not Target or Target.Parent == nil then return end
             if S.Highlights[Target] then return end
 
-            local Highlight = Instance.new("Highlight")
-            Highlight.Name = "AICEsp" .. Kind
-            Highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-            Highlight.FillTransparency = 1
-            Highlight.OutlineColor = COLORS[Kind]
-            Highlight.OutlineTransparency = 0
-            Highlight.Adornee = Target
-            Highlight.Parent = Target
-            S.Highlights[Target] = Highlight
+            local C = S.Kinds[Kind]
+            local Entry = { Kind = Kind, Instances = {} }
+
+            if C.Outline then
+                local Highlight = Instance.new("Highlight")
+                Highlight.Name = "AICEsp" .. Kind
+                Highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                Highlight.FillTransparency = 1
+                Highlight.OutlineColor = C.Color
+                Highlight.OutlineTransparency = 0
+                Highlight.Adornee = Target
+                Highlight.Parent = Target
+                table.insert(Entry.Instances, Highlight)
+            end
+
+            if C.Box then
+                local Box = Instance.new("SelectionBox")
+                Box.Name = "AICEspBox" .. Kind
+                Box.Adornee = Target
+                Box.Color3 = C.Color
+                Box.LineThickness = 0.04
+                Box.SurfaceTransparency = 1
+                Box.AlwaysOnTop = true
+                Box.Parent = Target
+                table.insert(Entry.Instances, Box)
+            end
+
+            if C.Label then
+                local Part = PartOf(Target)
+                if Part then
+                    local Gui = Instance.new("BillboardGui")
+                    Gui.Name = "AICEspLabel" .. Kind
+                    Gui.Adornee = Part
+                    Gui.AlwaysOnTop = true
+                    Gui.Size = UDim2.fromOffset(180, 70)
+                    Gui.StudsOffset = Vector3.new(0, 3, 0)
+                    Gui.Parent = Target
+
+                    local Text = Instance.new("TextLabel")
+                    Text.BackgroundTransparency = 1
+                    Text.Size = UDim2.fromScale(1, 1)
+                    Text.TextColor3 = C.Color
+                    Text.TextStrokeTransparency = 0.4
+                    Text.Font = Enum.Font.GothamBold
+                    Text.TextSize = 12
+                    Text.TextYAlignment = Enum.TextYAlignment.Bottom
+                    Text.Text = LabelText(Target, Kind)
+                    Text.Parent = Gui
+
+                    Entry.Label = Text
+                    table.insert(Entry.Instances, Gui)
+                end
+            end
+
+            S.Highlights[Target] = Entry
         end
 
-        --// Drops highlights whose target has gone, so the table does not grow.
+        --// Drops highlights whose target has gone, or whose kind is now off.
         local function Prune()
-            for Target, Highlight in pairs(S.Highlights) do
-                if Target.Parent == nil then
-                    Highlight:Destroy()
+            for Target, Entry in pairs(S.Highlights) do
+                if Target.Parent == nil or not Enabled(Entry.Kind) then
+                    for _, Instance in ipairs(Entry.Instances) do
+                        Instance:Destroy()
+                    end
                     S.Highlights[Target] = nil
                 end
             end
@@ -84,7 +200,7 @@ return {
         local function Scan()
             local Wanted = {}
 
-            if S.Enabled.Player then
+            if Enabled("Player") then
                 for _, Child in ipairs(workspace:GetChildren()) do
                     if Child:IsA("Model") and Child ~= Player.Character
                         and Child:FindFirstChildOfClass("Humanoid") then
@@ -93,7 +209,7 @@ return {
                 end
             end
 
-            if S.Enabled.Mob then
+            if Enabled("Mob") then
                 local Mobs = workspace:FindFirstChild("Mobs")
                 if Mobs then
                     for _, Mob in ipairs(Mobs:GetChildren()) do
@@ -108,7 +224,7 @@ return {
                 Mark(Target, Kind)
             end
 
-            if S.Enabled.Weapon then
+            if Enabled("Weapon") then
                 for _, Child in ipairs(workspace:GetChildren()) do
                     if Child:IsA("Model") and Child ~= Player.Character
                         and Child:FindFirstChildOfClass("Humanoid") then
@@ -128,11 +244,14 @@ return {
                 end
             end
 
-            Prune()
-        end
+            --// Labels are rewritten each scan so level, EXP and HP stay current.
+            for Target, Entry in pairs(S.Highlights) do
+                if Entry.Label and Target.Parent then
+                    Entry.Label.Text = LabelText(Target, Entry.Kind)
+                end
+            end
 
-        local function AnyEnabled()
-            return S.Enabled.Player or S.Enabled.Mob or S.Enabled.Weapon
+            Prune()
         end
 
         local Feature = {
@@ -150,28 +269,48 @@ return {
         end
 
         local function SetKind(Kind, Value)
-            S.Enabled[Kind] = Value == true
-            if not AnyEnabled() then
-                ClearHighlights()
+            S.Kinds[Kind].Enabled = Value == true
+            --// Turning a kind off removes its outlines at once, not on the next scan.
+            if not Enabled(Kind) then
+                ClearHighlights(Kind)
             end
         end
 
         if UIRef.EspSection then
-            UIRef.EspSection:AddToggle{
-                Name = "Player ESP",
-                Default = false,
-                Callback = function(Value) SetKind("Player", Value) end,
-            }
-            UIRef.EspSection:AddToggle{
-                Name = "Mob ESP",
-                Default = false,
-                Callback = function(Value) SetKind("Mob", Value) end,
-            }
-            UIRef.EspSection:AddToggle{
-                Name = "Weapon ESP",
-                Default = false,
-                Callback = function(Value) SetKind("Weapon", Value) end,
-            }
+            for _, Kind in ipairs(KINDS) do
+                local C = S.Kinds[Kind]
+                local Name = Kind
+
+                UIRef.EspSection:AddToggle{
+                    Name = Name .. " ESP",
+                    Bold = true,
+                    Default = false,
+                    Callback = function(Value) SetKind(Kind, Value) end,
+                }
+                UIRef.EspSection:AddToggle{
+                    Name = Name .. " outline",
+                    Default = C.Outline,
+                    Callback = function(Value) C.Outline = Value; ClearHighlights(Kind) end,
+                }
+                UIRef.EspSection:AddToggle{
+                    Name = Name .. " box",
+                    Default = C.Box,
+                    Callback = function(Value) C.Box = Value; ClearHighlights(Kind) end,
+                }
+                UIRef.EspSection:AddToggle{
+                    Name = Name .. " label (level, EXP, HP)",
+                    Default = C.Label,
+                    Callback = function(Value) C.Label = Value; ClearHighlights(Kind) end,
+                }
+                UIRef.EspSection:AddColorPicker{
+                    Name = Name .. " colour",
+                    Default = C.Color,
+                    Callback = function(Color)
+                        C.Color = Color
+                        ClearHighlights(Kind)
+                    end,
+                }
+            end
         end
 
         Context.Lifetime.OnEnd(ClearHighlights)
