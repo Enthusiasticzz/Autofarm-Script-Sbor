@@ -25,6 +25,10 @@ return {
         local Player = Context.Player
         local UIRef = Context.UIRef
         local AICUI = Context.AICUI
+        local CONFIG = Context.CONFIG
+        local SaveConfig = Context.SaveConfig
+        local AICProfile = Context.AICProfile
+        local Window = Context.UI
         local RunService = game:GetService("RunService")
 
         local SCAN_INTERVAL = 0.5
@@ -71,6 +75,77 @@ return {
         end
 
         ----------------------------------------------------------------------
+        -- Saved settings
+        ----------------------------------------------------------------------
+
+        --// Everything the ESP tab can change is a SaveConfig setting, so it
+        --// is written with the profile and restored on the next execution.
+        local ENABLED_KEYS = {
+            Player = "ESP_PLAYER_ENABLED",
+            Mob = "ESP_MOB_ENABLED",
+            Weapon = "ESP_WEAPON_ENABLED",
+        }
+        local STYLE_KEYS = {
+            Player = "ESP_PLAYER_STYLE",
+            Mob = "ESP_MOB_STYLE",
+            Weapon = "ESP_WEAPON_STYLE",
+        }
+        local TEXT_KEYS = {
+            Player = "ESP_PLAYER_TEXT",
+            Mob = "ESP_MOB_TEXT",
+            Weapon = "ESP_WEAPON_TEXT",
+        }
+
+        local function ReadSetting(Key, Fallback)
+            local Entry = SaveConfig and SaveConfig.GetSetting(Key)
+            if not Entry then return Fallback end
+            return SaveConfig.NormalizeSetting(Entry, CONFIG and CONFIG[Key])
+        end
+
+        local function SaveSetting(Key, Value)
+            if CONFIG then CONFIG[Key] = Value end
+            if AICProfile and type(AICProfile.QueueProfileSave) == "function" then
+                AICProfile.QueueProfileSave()
+            end
+        end
+
+        local function HexToColor(Hex, Fallback)
+            if type(Hex) ~= "string" then return Fallback end
+            local Clean = string.upper((string.gsub(Hex, "#", "")))
+            if not string.match(Clean, "^%x%x%x%x%x%x$") then return Fallback end
+            return Color3.fromRGB(
+                tonumber(string.sub(Clean, 1, 2), 16),
+                tonumber(string.sub(Clean, 3, 4), 16),
+                tonumber(string.sub(Clean, 5, 6), 16)
+            )
+        end
+
+        local SavedColors = { Player = "50C8FF", Mob = "FF5A5A", Weapon = "FFC83C" }
+
+        --// Filled in by the UI below, so a profile restored after this module
+        --// has started can put the loaded values back on the controls.
+        local Controls = {
+            Kinds = {},
+            Text = {},
+            Colors = {},
+        }
+
+        local function SaveStyle(Kind)
+            local C = S.Kinds[Kind]
+            SaveSetting(STYLE_KEYS[Kind], C.Box and "Box" or (C.Outline and "Outline" or "None"))
+        end
+
+        local function SaveColor(Kind, Color)
+            SavedColors[Kind] = string.format(
+                "%02X%02X%02X",
+                math.floor(Color.R * 255 + 0.5),
+                math.floor(Color.G * 255 + 0.5),
+                math.floor(Color.B * 255 + 0.5)
+            )
+            SaveSetting("ESP_COLORS", SavedColors)
+        end
+
+        ----------------------------------------------------------------------
         -- Helpers
         ----------------------------------------------------------------------
 
@@ -105,6 +180,55 @@ return {
                 end
             end
         end
+
+        ----------------------------------------------------------------------
+        -- Loaded settings
+        ----------------------------------------------------------------------
+
+        --// Reads every ESP setting back into the live state and repaints the
+        --// controls. Called at start and again whenever a profile is loaded,
+        --// since the profile is restored after the features have started.
+        local function LoadSettings()
+            local Colors = ReadSetting("ESP_COLORS", nil)
+            if type(Colors) == "table" then
+                SavedColors = Colors
+            end
+
+            S.Settings.Thickness = ReadSetting("ESP_THICKNESS", S.Settings.Thickness)
+            S.Settings.AutoThickness = ReadSetting("ESP_AUTO_THICKNESS", S.Settings.AutoThickness) == true
+            S.Settings.Range = ReadSetting("ESP_RANGE", S.Settings.Range)
+
+            for _, Kind in ipairs(KINDS) do
+                local C = S.Kinds[Kind]
+                local Style = ReadSetting(STYLE_KEYS[Kind], "Outline")
+
+                C.Enabled = ReadSetting(ENABLED_KEYS[Kind], false) == true
+                C.Outline = Style ~= "Box" and Style ~= "None"
+                C.Box = Style == "Box"
+                C.Label = ReadSetting(TEXT_KEYS[Kind], false) == true
+                C.Color = HexToColor(SavedColors[Kind], COLORS[Kind])
+
+                local StyleToggles = S.StyleToggles[Kind]
+                if StyleToggles then
+                    if StyleToggles.Outline then StyleToggles.Outline:Set(C.Outline, true) end
+                    if StyleToggles.Box then StyleToggles.Box:Set(C.Box, true) end
+                end
+
+                if Controls.Kinds[Kind] then Controls.Kinds[Kind]:Set(C.Enabled, true) end
+                if Controls.Text[Kind] then Controls.Text[Kind]:Set(C.Label, true) end
+                if Controls.Colors[Kind] then Controls.Colors[Kind]:Set(C.Color, true) end
+            end
+
+            if Controls.Thickness then Controls.Thickness:Set(S.Settings.Thickness, true) end
+            if Controls.AutoThickness then Controls.AutoThickness:Set(S.Settings.AutoThickness, true) end
+            if Controls.Range then Controls.Range:Set(S.Settings.Range, true) end
+
+            --// A loaded profile may change a style or colour, so redraw.
+            Clear()
+            S.Timer = SCAN_INTERVAL
+        end
+
+        LoadSettings()
 
         ----------------------------------------------------------------------
         -- ScreenGui root
@@ -620,6 +744,10 @@ return {
             local CameraPosition = Camera.CFrame.Position
             local Viewport = Camera.ViewportSize
             local Range = S.Settings.Range
+            --// The window covers the world and Drawing draws over Roblox UI,
+            --// so nothing is drawn while the menu is open. A minimised window
+            --// is only its title bar, so that does not hide the ESP.
+            local MenuOpen = Window ~= nil and type(Window.IsOpen) == "function" and Window:IsOpen()
 
             for _, Entry in pairs(S.Entries) do
                 local Frame, Label = Entry.Frame, Entry.Label
@@ -642,7 +770,7 @@ return {
 
                     --// Off-screen targets are hidden rather than moved, so a
                     --// busy zone does not pay for drawing it cannot show.
-                    if X1 and (X2 < 0 or Y2 < 0 or X1 > Viewport.X or Y1 > Viewport.Y) then
+                    if X1 and (MenuOpen or X2 < 0 or Y2 < 0 or X1 > Viewport.X or Y1 > Viewport.Y) then
                         X1 = nil
                     end
 
@@ -710,6 +838,7 @@ return {
 
         local function SetKind(Kind, Value)
             S.Kinds[Kind].Enabled = Value == true
+            SaveSetting(ENABLED_KEYS[Kind], S.Kinds[Kind].Enabled)
             if IsEnabled(Kind) then
                 S.Timer = SCAN_INTERVAL
             else
@@ -737,6 +866,7 @@ return {
                 if Toggles.Box then Toggles.Box:Set(C.Box, true) end
             end
 
+            SaveStyle(Kind)
             Rebuild(Kind)
         end
 
@@ -765,7 +895,7 @@ return {
         if UIRef.EspTab then
             local SettingsSection = UIRef.EspTab:AddSection{ Title = "ESP Settings" }
 
-            SettingsSection:AddSlider{
+            Controls.Thickness = SettingsSection:AddSlider{
                 Name = "Box thickness",
                 Default = S.Settings.Thickness,
                 Min = 1,
@@ -773,16 +903,18 @@ return {
                 Decimals = 1,
                 Callback = function(Value)
                     S.Settings.Thickness = Value
+                    SaveSetting("ESP_THICKNESS", Value)
                 end,
             }
-            SettingsSection:AddToggle{
+            Controls.AutoThickness = SettingsSection:AddToggle{
                 Name = "Auto thickness",
-                Default = true,
+                Default = S.Settings.AutoThickness,
                 Callback = function(Value)
                     S.Settings.AutoThickness = Value == true
+                    SaveSetting("ESP_AUTO_THICKNESS", S.Settings.AutoThickness)
                 end,
             }
-            SettingsSection:AddSlider{
+            Controls.Range = SettingsSection:AddSlider{
                 Name = "Draw range",
                 Default = S.Settings.Range,
                 Min = 100,
@@ -790,6 +922,7 @@ return {
                 Suffix = "m",
                 Callback = function(Value)
                     S.Settings.Range = Value
+                    SaveSetting("ESP_RANGE", Value)
                 end,
             }
 
@@ -797,10 +930,10 @@ return {
                 local C = S.Kinds[Kind]
                 local Sec = UIRef.EspTab:AddSection{ Title = TITLES[Kind] }
 
-                Sec:AddToggle{
+                Controls.Kinds[Kind] = Sec:AddToggle{
                     Name = Kind .. " ESP",
                     Bold = true,
-                    Default = false,
+                    Default = C.Enabled,
                     Callback = function(Value) SetKind(Kind, Value) end,
                 }
 
@@ -812,6 +945,7 @@ return {
                             SetStyle(Kind, "Outline")
                         else
                             C.Outline = false
+                            SaveStyle(Kind)
                             Rebuild(Kind)
                         end
                     end,
@@ -824,21 +958,23 @@ return {
                             SetStyle(Kind, "Box")
                         else
                             C.Box = false
+                            SaveStyle(Kind)
                             Rebuild(Kind)
                         end
                     end,
                 }
                 S.StyleToggles[Kind] = { Outline = OutlineToggle, Box = BoxToggle }
 
-                Sec:AddToggle{
+                Controls.Text[Kind] = Sec:AddToggle{
                     Name = Kind .. " info text",
                     Default = C.Label,
                     Callback = function(Value)
                         C.Label = Value == true
+                        SaveSetting(TEXT_KEYS[Kind], C.Label)
                         Rebuild(Kind)
                     end,
                 }
-                Sec:AddColorPicker{
+                Controls.Colors[Kind] = Sec:AddColorPicker{
                     Name = Kind .. " colour",
                     Default = C.Color,
                     Callback = function(Color)
@@ -847,6 +983,7 @@ return {
                         end
                         if typeof(Color) == "Color3" then
                             C.Color = Color
+                            SaveColor(Kind, Color)
                             Recolor(Kind)
                         end
                     end,
@@ -854,7 +991,14 @@ return {
             end
         end
 
+        --// ProfileManager restores a profile after the features start and
+        --// calls this through Components, the same hook Party and Mining use.
+        AICUI.RefreshEspSettings = LoadSettings
+
         Context.Lifetime.OnEnd(function()
+            if AICUI.RefreshEspSettings == LoadSettings then
+                AICUI.RefreshEspSettings = nil
+            end
             RenderConnection:Disconnect()
             Clear()
             if Root then Root:Destroy() end

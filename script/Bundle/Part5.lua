@@ -2521,6 +2521,9 @@ end
 if AICUI.RefreshSmithingUI then
 AICUI.RefreshSmithingUI()
 end
+if AICUI.RefreshEspSettings then
+AICUI.RefreshEspSettings()
+end
 if AICFeature.RefreshBoosterToggles then
 AICFeature.RefreshBoosterToggles()
 end

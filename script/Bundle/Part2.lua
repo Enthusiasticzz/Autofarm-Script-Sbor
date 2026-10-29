@@ -4791,6 +4791,32 @@ SaveConfig.Settings = {
 { Name = "Copper Ingot", Target = 500 },
 }, Normalize = NormalizeCountList("Target", SaveConfig.ITEM_MAX_STACK) },
 { Key = "SMITH_RESERVES", Default = {}, Normalize = NormalizeCountList("Keep", 0) },
+{ Key = "ESP_PLAYER_ENABLED", Default = false },
+{ Key = "ESP_MOB_ENABLED", Default = false },
+{ Key = "ESP_WEAPON_ENABLED", Default = false },
+{ Key = "ESP_PLAYER_STYLE", Default = "Outline", Options = { "Outline", "Box", "None" } },
+{ Key = "ESP_MOB_STYLE", Default = "Outline", Options = { "Outline", "Box", "None" } },
+{ Key = "ESP_WEAPON_STYLE", Default = "Outline", Options = { "Outline", "Box", "None" } },
+{ Key = "ESP_PLAYER_TEXT", Default = false },
+{ Key = "ESP_MOB_TEXT", Default = false },
+{ Key = "ESP_WEAPON_TEXT", Default = false },
+{ Key = "ESP_COLORS", Default = { Player = "50C8FF", Mob = "FF5A5A", Weapon = "FFC83C" }, Normalize = function(Value)
+local Defaults = { Player = "50C8FF", Mob = "FF5A5A", Weapon = "FFC83C" }
+local Colors = {}
+for Kind, Fallback in pairs(Defaults) do
+local Hex = type(Value) == "table" and Value[Kind] or nil
+if type(Hex) == "string" then
+local Clean = string.upper((string.gsub(Hex, "#", "")))
+Colors[Kind] = string.match(Clean, "^%x%x%x%x%x%x$") and Clean or Fallback
+else
+Colors[Kind] = Fallback
+end
+end
+return Colors
+end },
+{ Key = "ESP_THICKNESS", Default = 1.5, Min = 1, Max = 6 },
+{ Key = "ESP_AUTO_THICKNESS", Default = true },
+{ Key = "ESP_RANGE", Default = 900, Min = 100, Max = 2000 },
 }
 SaveConfig.GlobalSettings = {
 { Key = "BOSS_PATH_VISIBLE", Default = true },

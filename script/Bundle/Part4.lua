@@ -15,6 +15,10 @@ local Players = Services.Players
 local Player = Context.Player
 local UIRef = Context.UIRef
 local AICUI = Context.AICUI
+local CONFIG = Context.CONFIG
+local SaveConfig = Context.SaveConfig
+local AICProfile = Context.AICProfile
+local Window = Context.UI
 local RunService = game:GetService("RunService")
 local SCAN_INTERVAL = 0.5
 local MEASURE_INTERVAL = 2
@@ -48,6 +52,61 @@ Box = false,
 Label = false,
 }
 end
+local ENABLED_KEYS = {
+Player = "ESP_PLAYER_ENABLED",
+Mob = "ESP_MOB_ENABLED",
+Weapon = "ESP_WEAPON_ENABLED",
+}
+local STYLE_KEYS = {
+Player = "ESP_PLAYER_STYLE",
+Mob = "ESP_MOB_STYLE",
+Weapon = "ESP_WEAPON_STYLE",
+}
+local TEXT_KEYS = {
+Player = "ESP_PLAYER_TEXT",
+Mob = "ESP_MOB_TEXT",
+Weapon = "ESP_WEAPON_TEXT",
+}
+local function ReadSetting(Key, Fallback)
+local Entry = SaveConfig and SaveConfig.GetSetting(Key)
+if not Entry then return Fallback end
+return SaveConfig.NormalizeSetting(Entry, CONFIG and CONFIG[Key])
+end
+local function SaveSetting(Key, Value)
+if CONFIG then CONFIG[Key] = Value end
+if AICProfile and type(AICProfile.QueueProfileSave) == "function" then
+AICProfile.QueueProfileSave()
+end
+end
+local function HexToColor(Hex, Fallback)
+if type(Hex) ~= "string" then return Fallback end
+local Clean = string.upper((string.gsub(Hex, "#", "")))
+if not string.match(Clean, "^%x%x%x%x%x%x$") then return Fallback end
+return Color3.fromRGB(
+tonumber(string.sub(Clean, 1, 2), 16),
+tonumber(string.sub(Clean, 3, 4), 16),
+tonumber(string.sub(Clean, 5, 6), 16)
+)
+end
+local SavedColors = { Player = "50C8FF", Mob = "FF5A5A", Weapon = "FFC83C" }
+local Controls = {
+Kinds = {},
+Text = {},
+Colors = {},
+}
+local function SaveStyle(Kind)
+local C = S.Kinds[Kind]
+SaveSetting(STYLE_KEYS[Kind], C.Box and "Box" or (C.Outline and "Outline" or "None"))
+end
+local function SaveColor(Kind, Color)
+SavedColors[Kind] = string.format(
+"%02X%02X%02X",
+math.floor(Color.R * 255 + 0.5),
+math.floor(Color.G * 255 + 0.5),
+math.floor(Color.B * 255 + 0.5)
+)
+SaveSetting("ESP_COLORS", SavedColors)
+end
 local function IsEnabled(Kind)
 return S.Kinds[Kind].Enabled
 end
@@ -76,6 +135,38 @@ Remove(Target, Entry)
 end
 end
 end
+local function LoadSettings()
+local Colors = ReadSetting("ESP_COLORS", nil)
+if type(Colors) == "table" then
+SavedColors = Colors
+end
+S.Settings.Thickness = ReadSetting("ESP_THICKNESS", S.Settings.Thickness)
+S.Settings.AutoThickness = ReadSetting("ESP_AUTO_THICKNESS", S.Settings.AutoThickness) == true
+S.Settings.Range = ReadSetting("ESP_RANGE", S.Settings.Range)
+for _, Kind in ipairs(KINDS) do
+local C = S.Kinds[Kind]
+local Style = ReadSetting(STYLE_KEYS[Kind], "Outline")
+C.Enabled = ReadSetting(ENABLED_KEYS[Kind], false) == true
+C.Outline = Style ~= "Box" and Style ~= "None"
+C.Box = Style == "Box"
+C.Label = ReadSetting(TEXT_KEYS[Kind], false) == true
+C.Color = HexToColor(SavedColors[Kind], COLORS[Kind])
+local StyleToggles = S.StyleToggles[Kind]
+if StyleToggles then
+if StyleToggles.Outline then StyleToggles.Outline:Set(C.Outline, true) end
+if StyleToggles.Box then StyleToggles.Box:Set(C.Box, true) end
+end
+if Controls.Kinds[Kind] then Controls.Kinds[Kind]:Set(C.Enabled, true) end
+if Controls.Text[Kind] then Controls.Text[Kind]:Set(C.Label, true) end
+if Controls.Colors[Kind] then Controls.Colors[Kind]:Set(C.Color, true) end
+end
+if Controls.Thickness then Controls.Thickness:Set(S.Settings.Thickness, true) end
+if Controls.AutoThickness then Controls.AutoThickness:Set(S.Settings.AutoThickness, true) end
+if Controls.Range then Controls.Range:Set(S.Settings.Range, true) end
+Clear()
+S.Timer = SCAN_INTERVAL
+end
+LoadSettings()
 local Root, HighlightFolder
 local function TryParent(Gui, Parent)
 if not Parent then return false end
@@ -458,6 +549,7 @@ if not Camera or not Root or not Root.Parent then return end
 local CameraPosition = Camera.CFrame.Position
 local Viewport = Camera.ViewportSize
 local Range = S.Settings.Range
+local MenuOpen = Window ~= nil and type(Window.IsOpen) == "function" and Window:IsOpen()
 for _, Entry in pairs(S.Entries) do
 local Frame, Label = Entry.Frame, Entry.Label
 local Lines, DrawText = Entry.BoxLines, Entry.DrawText
@@ -472,7 +564,7 @@ local BoxCF = Entry.BoxCF + (Anchor.Position - Entry.MeasurePoint)
 X1, Y1, X2, Y2 = Project(BoxCF, Entry.Size, Camera)
 end
 end
-if X1 and (X2 < 0 or Y2 < 0 or X1 > Viewport.X or Y1 > Viewport.Y) then
+if X1 and (MenuOpen or X2 < 0 or Y2 < 0 or X1 > Viewport.X or Y1 > Viewport.Y) then
 X1 = nil
 end
 local Thickness = ThicknessFor(Distance)
@@ -532,6 +624,7 @@ end
 end)
 local function SetKind(Kind, Value)
 S.Kinds[Kind].Enabled = Value == true
+SaveSetting(ENABLED_KEYS[Kind], S.Kinds[Kind].Enabled)
 if IsEnabled(Kind) then
 S.Timer = SCAN_INTERVAL
 else
@@ -551,6 +644,7 @@ if Toggles then
 if Toggles.Outline then Toggles.Outline:Set(C.Outline, true) end
 if Toggles.Box then Toggles.Box:Set(C.Box, true) end
 end
+SaveStyle(Kind)
 Rebuild(Kind)
 end
 local function Recolor(Kind)
@@ -571,7 +665,7 @@ end
 end
 if UIRef.EspTab then
 local SettingsSection = UIRef.EspTab:AddSection{ Title = "ESP Settings" }
-SettingsSection:AddSlider{
+Controls.Thickness = SettingsSection:AddSlider{
 Name = "Box thickness",
 Default = S.Settings.Thickness,
 Min = 1,
@@ -579,16 +673,18 @@ Max = 6,
 Decimals = 1,
 Callback = function(Value)
 S.Settings.Thickness = Value
+SaveSetting("ESP_THICKNESS", Value)
 end,
 }
-SettingsSection:AddToggle{
+Controls.AutoThickness = SettingsSection:AddToggle{
 Name = "Auto thickness",
-Default = true,
+Default = S.Settings.AutoThickness,
 Callback = function(Value)
 S.Settings.AutoThickness = Value == true
+SaveSetting("ESP_AUTO_THICKNESS", S.Settings.AutoThickness)
 end,
 }
-SettingsSection:AddSlider{
+Controls.Range = SettingsSection:AddSlider{
 Name = "Draw range",
 Default = S.Settings.Range,
 Min = 100,
@@ -596,15 +692,16 @@ Max = 2000,
 Suffix = "m",
 Callback = function(Value)
 S.Settings.Range = Value
+SaveSetting("ESP_RANGE", Value)
 end,
 }
 for _, Kind in ipairs(KINDS) do
 local C = S.Kinds[Kind]
 local Sec = UIRef.EspTab:AddSection{ Title = TITLES[Kind] }
-Sec:AddToggle{
+Controls.Kinds[Kind] = Sec:AddToggle{
 Name = Kind .. " ESP",
 Bold = true,
-Default = false,
+Default = C.Enabled,
 Callback = function(Value) SetKind(Kind, Value) end,
 }
 local OutlineToggle = Sec:AddToggle{
@@ -615,6 +712,7 @@ if Value then
 SetStyle(Kind, "Outline")
 else
 C.Outline = false
+SaveStyle(Kind)
 Rebuild(Kind)
 end
 end,
@@ -627,20 +725,22 @@ if Value then
 SetStyle(Kind, "Box")
 else
 C.Box = false
+SaveStyle(Kind)
 Rebuild(Kind)
 end
 end,
 }
 S.StyleToggles[Kind] = { Outline = OutlineToggle, Box = BoxToggle }
-Sec:AddToggle{
+Controls.Text[Kind] = Sec:AddToggle{
 Name = Kind .. " info text",
 Default = C.Label,
 Callback = function(Value)
 C.Label = Value == true
+SaveSetting(TEXT_KEYS[Kind], C.Label)
 Rebuild(Kind)
 end,
 }
-Sec:AddColorPicker{
+Controls.Colors[Kind] = Sec:AddColorPicker{
 Name = Kind .. " colour",
 Default = C.Color,
 Callback = function(Color)
@@ -649,13 +749,18 @@ Color = Color.Color or Color.Value or Color[1]
 end
 if typeof(Color) == "Color3" then
 C.Color = Color
+SaveColor(Kind, Color)
 Recolor(Kind)
 end
 end,
 }
 end
 end
+AICUI.RefreshEspSettings = LoadSettings
 Context.Lifetime.OnEnd(function()
+if AICUI.RefreshEspSettings == LoadSettings then
+AICUI.RefreshEspSettings = nil
+end
 RenderConnection:Disconnect()
 Clear()
 if Root then Root:Destroy() end

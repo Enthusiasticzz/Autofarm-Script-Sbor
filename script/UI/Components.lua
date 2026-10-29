@@ -560,6 +560,12 @@ return {
                 AICUI.RefreshSmithingUI()
             end
 
+            --// ESP keeps its own state table, so the loaded profile is
+            --// applied through this hook rather than a per-key slider sync.
+            if AICUI.RefreshEspSettings then
+                AICUI.RefreshEspSettings()
+            end
+
             --// AutoRefill's per-booster toggles follow RESET_BOOSTERS.
             if AICFeature.RefreshBoosterToggles then
                 AICFeature.RefreshBoosterToggles()

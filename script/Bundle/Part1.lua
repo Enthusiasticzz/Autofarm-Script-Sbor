@@ -455,6 +455,9 @@ else
 self:Notify{ Title = title or self.Text.Copied, Text = self.Text.ClipboardUnavailable, Force = true }
 end
 end
+function Library:IsOpen()
+return self._open == true and self._minimized ~= true
+end
 function Library:Toggle(state)
 if state == nil then state = not self._open end
 if state == self._open then return end

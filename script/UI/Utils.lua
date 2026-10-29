@@ -579,6 +579,11 @@ function Library:Copy(text, title)
 	end
 end
 
+--// Whether the window is on screen. A minimised window is a title bar in the
+--// corner, so it does not cover the world the way the full window does.
+function Library:IsOpen()
+	return self._open == true and self._minimized ~= true
+end
 function Library:Toggle(state)
 	if state == nil then state = not self._open end
 	if state == self._open then return end
