@@ -1405,3 +1405,14 @@ were added.
 > - Docs: `USAGE.md` covers the toggle under *Boss Route* and in *What a stop does*, `UI/Descriptions.lua` has its tooltip.
 > - Harness, Lua 5.4 over the real `GetResetCost` / `GetResetHold` with the game's curve — toggle off: level 216 at 260 EXP (inside the protected 20%) gives cost 0 and hold 0, while 1,200 EXP costs 939.6 and holds 12; toggle on: the same free 260 EXP holds 12, a `Reset (s)` of 4 holds 6, a 0 holds 12, and the costly cases are unchanged (34.6 at 900/4,900 and 540.6 at a full bar, both holding 12). File brackets balance.
 > - Not run: `luau-compile` (no Luau toolchain here), and the toggle has not been clicked in game.
+
+### [x] Boss Route: Always Wait After Kill, and the row's Reset (s) is the exact pause
+
+> **Asked:** an **Always Wait After Kill** toggle on the Bosses tab that ignores the EXP check and always waits the per-boss time, and the `Reset (s)` number in the route list to be what controls how long that wait is.
+> **Changed (v3.79):**
+> - **Always Wait After Kill** is the toggle that used to be **Always Wait Before Reset** — same saved setting (`BOSS_RESET_ALWAYS_WAIT`), so profiles keep their choice. The label, the tooltip and the status line (`ALWAYS WAIT AFTER KILL` / `INSTANT RESET WHEN NOTHING IS AT RISK`) follow it.
+> - `RESET_HOLD_EXTRA` (2 s) is gone. `GetResetHold` returns the row's `Reset (s)` itself — 10 when the stop has never set one — so the list and the `CLEARING n s` countdown always read the same number. With the toggle on, that number is waited whatever the EXP check would have said.
+> - A **0** that was actually typed in is now taken at its word and resets at the kill grace; only a missing value falls back to the 10 s default.
+> - The held status reads `CLEARING  10s  ALWAYS WAIT` when the toggle is what holds a reset the EXP check called free, keeping `LOSE n EXP` / `COST UNKNOWN` for the real cases.
+> - Docs: `USAGE.md` (*Boss Route*, the list row, *What a stop does*) and `UI/Descriptions.lua` renamed and rewritten.
+> - Checks: `luau-compile` clean on `Features/BossNavigator.lua` and `UI/Descriptions.lua`; bundle rebuilt, `tests/run-bundle-check.ps1` reports 0 compile failures. Not clicked in game.

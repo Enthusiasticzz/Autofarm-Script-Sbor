@@ -124,12 +124,9 @@ return {
         --// Only the EXP above that protected part is lost, and what a reset
         --// would take is read before the reset, because the hold at the corpse
         --// is only worth having when there is something to lose.
-        --// The hold a stop that has no Reset (s) of its own gets.
+        --// The hold a stop that has no Reset (s) of its own gets. A stop that
+        --// does have one is waited exactly that long, with nothing added.
         local DEFAULT_RESET_HOLD = 10
-        --// How much later than the stop asks for the reset fires. The wait is
-        --// there to sit out the EXP a reset would cost, so it runs a little
-        --// past the row's Reset (s) rather than exactly on it.
-        local RESET_HOLD_EXTRA = 2
         --// A reset that costs nothing is not waited for: one scan tick after
         --// the kill is enough to know nothing else of the stop is standing.
         local FREE_RESET_GRACE = 0.2
@@ -544,29 +541,33 @@ return {
             return Loss, Bar, Loss / Bar, Level
         end
 
-        --// Seconds held at the corpse before the reset: the row's Reset (s),
-        --// ten when it has none, plus RESET_HOLD_EXTRA. Always Wait Before Reset
-        --// takes that pause every time, so nothing resets on the spot even when
-        --// the EXP check would have called it free. Otherwise nothing is held
-        --// when the character's EXP sits inside the part of the bar a reset
-        --// keeps. A reset that costs EXP always pauses - a 0 in the box is not a
-        --// licence to throw the EXP away - and a cost that cannot be read is a
-        --// loss.
+        --// Seconds held at the corpse before the reset: the stop's own
+        --// Reset (s), ten when it has never been set. That number is the whole
+        --// pause - nothing is added to it - so the row and the CLEARING
+        --// countdown always read the same. Always Wait After Kill takes it every
+        --// time, so nothing resets on the spot even when the EXP check would
+        --// have called the reset free. Otherwise nothing is held when the
+        --// character's EXP sits inside the part of the bar a reset keeps, and a
+        --// cost that cannot be read is a loss and is waited out.
         local function GetResetHold(Stop)
             local Wait = tonumber(Stop and Stop.ResetWait)
 
-            if not Wait or Wait <= 0 then
+            --// A stop saved before Reset (s) existed keeps the default. A 0 that
+            --// was actually set is taken at its word and resets on the spot.
+            if Wait == nil then
                 Wait = DEFAULT_RESET_HOLD
             end
 
+            Wait = math.max(0, Wait)
+
             if CONFIG.BOSS_RESET_ALWAYS_WAIT == true then
-                return Wait + RESET_HOLD_EXTRA
+                return Wait
             end
 
             local Loss = GetResetCost()
 
             if Loss == nil then
-                return Wait + RESET_HOLD_EXTRA
+                return Wait
             end
 
             --// Below the protected line the reset is free. At the line or
@@ -575,7 +576,7 @@ return {
                 return 0
             end
 
-            return Wait + RESET_HOLD_EXTRA
+            return Wait
         end
 
         ------------------------------------------------------------------------
@@ -2453,9 +2454,9 @@ return {
                 --// The pause belongs to the reset; with Reset After Kill off
                 --// there is nothing to wait for and the route moves on after
                 --// the grace. A reset that costs no EXP is not held at all, so
-                --// the ten seconds only ever show up when there is something
-                --// to lose - unless Always Wait Before Reset is on, which holds
-                --// every reset for its pause whatever the EXP would cost.
+                --// the row's Reset (s) only shows up when there is something to
+                --// lose - unless Always Wait After Kill is on, which holds every
+                --// reset for that number whatever the EXP would cost.
                 local Hold = Stop.ResetAfterKill and GetResetHold(Stop) or 0
                 --// A reset with nothing to lose is not held at all: one scan
                 --// tick after the kill, not the two-second grace the held
@@ -2469,12 +2470,13 @@ return {
                         local Loss = GetResetCost()
                         local Fleeing = FleeStep(Humanoid, RootPart, Stop)
 
-                        --// With nothing at risk the hold is the Always Wait
-                        --// toggle holding a reset the EXP check called free,
-                        --// so say that rather than "LOSE 0 EXP".
+                        --// With nothing at risk the hold is Always Wait After
+                        --// Kill holding a reset the EXP check called free, so
+                        --// say that rather than "LOSE 0 EXP".
                         local Risk = Loss == nil and "COST UNKNOWN"
                             or (Loss > 0 and string.format("LOSE %d EXP", math.floor(Loss + 0.5))
-                                or "NO EXP AT RISK")
+                                or (CONFIG.BOSS_RESET_ALWAYS_WAIT == true and "ALWAYS WAIT"
+                                    or "NO EXP AT RISK"))
 
                         SetStatus(string.format(
                             "STOP %d/%d  CLEARING  %ds  %s%s",
@@ -2834,11 +2836,11 @@ return {
             end,
         }
 
-        --// Turns instant resets off: with it on, every stop takes its Reset (s)
-        --// before resetting, even when the character's EXP is inside the part of
-        --// the bar a reset keeps and the wait would cost nothing.
+        --// Turns the EXP check off: with it on, every stop waits its Reset (s)
+        --// after the kill before resetting, even when the character's EXP is
+        --// inside the part of the bar a reset keeps and nothing would be lost.
         UIRef.BossAlwaysWaitToggle = UIRef.BossSection:AddToggle{
-            Name = "Always Wait Before Reset",
+            Name = "Always Wait After Kill",
             Default = CONFIG.BOSS_RESET_ALWAYS_WAIT == true,
             Callback = function(Value)
                 CONFIG.BOSS_RESET_ALWAYS_WAIT = Value == true
@@ -2848,7 +2850,7 @@ return {
                 end
 
                 SetStatus(CONFIG.BOSS_RESET_ALWAYS_WAIT
-                    and "ALWAYS WAIT BEFORE RESET"
+                    and "ALWAYS WAIT AFTER KILL"
                     or "INSTANT RESET WHEN NOTHING IS AT RISK")
             end,
         }
@@ -2909,9 +2911,9 @@ return {
         }
 
         UIRef.BossListComponent = UIRef.BossStopsSection:AddPriority("Boss Route", BuildLabels(), {
-            --// Seconds held at the corpse before a reset that costs EXP. The
-            --// reset is not held at all when it would cost nothing, unless
-            --// Always Wait Before Reset is on.
+            --// Seconds held at the corpse before a reset that costs EXP - the
+            --// whole pause, waited exactly. The reset is not held at all when it
+            --// would cost nothing, unless Always Wait After Kill is on.
             Values = true,
             ValueLabel = "Reset (s)",
             Default = AICConfig.DEFAULT_BOSS_RESET_WAIT,

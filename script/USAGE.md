@@ -431,12 +431,13 @@ teleport) to a boss, fight it, and reset back to spawn before the next one.
   `… CLEARING  7s  LOSE 95 EXP  RUNNING`, `… BOSS DOWN`,
   `… TELEPORT WP3`, `… TELEPORT <prompt>`, `… RESET PENDING`, `… RESET RETRY 1`,
   `ROUTE FINISHED`, `OFF`.
-- **Always Wait Before Reset** (off by default) — sits just under the status
-  line. On, every stop takes its **Reset (s)** pause before resetting even when
-  the reset would cost no EXP, so nothing ever resets on the spot; off, a reset
-  inside the part of the bar the game protects still happens immediately. The
-  status shows `CLEARING  12s  NO EXP AT RISK` while it waits. The setting is
-  saved with the profile.
+- **Always Wait After Kill** (off by default) — sits just under the status
+  line. On, every stop waits its **Reset (s)** after the kill before resetting
+  even when the reset would cost no EXP, so nothing ever resets on the spot;
+  off, a reset inside the part of the bar the game protects still happens
+  immediately. The EXP check is skipped entirely, so the wait is the same at
+  every level. The status shows `CLEARING  10s  ALWAYS WAIT` while it waits.
+  The setting is saved with the profile.
 - **Add Boss Stop Here** — saves a stop at your current position, with an empty
   **Path to Boss**. A new stop starts with **Reset After Kill on**, a 10 s
   **Reset (s)**, **Dodge Skills on**, **Teleport To Prompt off** and a 120-stud
@@ -444,11 +445,12 @@ teleport) to a boss, fight it, and reset back to spawn before the next one.
 - **Boss Route** (list) — one row per stop, `#1  Boss 1  > WP3  P6  Goblin
   (x, y, z)`: the stop's name, its teleport waypoint, how many path points it
   has, its first boss name and where it is. Drag a row (or use ▲▼) to reorder
-  the  route. Its `Reset (s)` box is the pause held at the corpse before the
-  character resets (0–600), used **only when the EXP sits above the part of
-  the bar a reset keeps** — or on every reset with **Always Wait Before Reset**
-  on; see *What a stop does*; ✕ removes the row. There is no fight timer: the
-  row can never reset while the boss lives.
+  the route. Its `Reset (s)` box is the pause held at the corpse before the
+  character resets (0–600), and it is waited **exactly** — the row and the
+  `CLEARING` countdown always agree. It is used **only when the EXP sits above
+  the part of the bar a reset keeps** — or on every kill with **Always Wait
+  After Kill** on; see *What a stop does*; ✕ removes the row. There is no fight
+  timer: the row can never reset while the boss lives.
 - **Clear Boss Route** — removes every stop.
 - **Edit Boss Stop** — picks which stop the boxes below change, and which stop
   **Path to Boss** and **Boss Names** edit.
@@ -599,8 +601,8 @@ the route started on the stop are still walked.
      waits instead of firing the moment the boss drops.
    - **Inside the kept part it resets at once** — one scan tick after the kill,
      `RESET NOW` — because the game takes nothing there. With **Always Wait
-     Before Reset** on, that same reset takes the pause instead (the bar check
-     still runs, it just cannot skip the wait).
+     After Kill** on, that same reset waits the stop's **Reset (s)** instead
+     (the bar check is skipped, it just always waits).
    - **EXP it cannot place** (the stats are not readable yet, or a number that
      fits no bar) counts as a loss and is waited out.
 
@@ -610,11 +612,11 @@ the route started on the stop are still walked.
    **running total** in `PlayerStats.EXP` is read too — a value between this
    level's floor and its reach is progress in this level's bar.
 
-   A reset that costs EXP always pauses, even when the row's **Reset (s)** is
-   **0**: the box sizes the pause, it does not license throwing the EXP away.
-   The pause is the row's **Reset (s) plus 2 seconds** — 12 s for a stop that
-   has not set one (10), 6 s for a stop set to 4 — and `CLEARING  7s  LOSE 50
-   EXP` counts it down. A cost that cannot be read waits the same.
+   The pause is the row's **Reset (s)** exactly, with nothing added — **10 s**
+   for a stop that has not set one, **4 s** for a stop set to 4 — and
+   `CLEARING  7s  LOSE 50 EXP` counts it down. A cost that cannot be read waits
+   the same. A **0** that was actually set is taken at its word: that stop
+   resets at the kill grace, and the EXP above the protected part goes with it.
    During that hold a living mob within **40 studs** is run from: the character
    sprints to a ring 45 studs on the far side of it (further when the stop's
    **Dodge Distance** is larger), and the status adds `RUNNING`. Standing at

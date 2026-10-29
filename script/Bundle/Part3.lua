@@ -3716,7 +3716,6 @@ local KILL_GRACE = 2
 local TARGET_KEEP_TIME = 4
 local RESPAWN_TIMEOUT = 20
 local DEFAULT_RESET_HOLD = 10
-local RESET_HOLD_EXTRA = 2
 local FREE_RESET_GRACE = 0.2
 local RESET_RETRY_TIME = 3
 local RESET_RETRIES = 2
@@ -3915,20 +3914,21 @@ return Loss, Bar, Loss / Bar, Level
 end
 local function GetResetHold(Stop)
 local Wait = tonumber(Stop and Stop.ResetWait)
-if not Wait or Wait <= 0 then
+if Wait == nil then
 Wait = DEFAULT_RESET_HOLD
 end
+Wait = math.max(0, Wait)
 if CONFIG.BOSS_RESET_ALWAYS_WAIT == true then
-return Wait + RESET_HOLD_EXTRA
+return Wait
 end
 local Loss = GetResetCost()
 if Loss == nil then
-return Wait + RESET_HOLD_EXTRA
+return Wait
 end
 if Loss < 0 then
 return 0
 end
-return Wait + RESET_HOLD_EXTRA
+return Wait
 end
 local function ResetWalk()
 S.WalkFrom = nil
@@ -5186,7 +5186,8 @@ local Loss = GetResetCost()
 local Fleeing = FleeStep(Humanoid, RootPart, Stop)
 local Risk = Loss == nil and "COST UNKNOWN"
 or (Loss > 0 and string.format("LOSE %d EXP", math.floor(Loss + 0.5))
-or "NO EXP AT RISK")
+or (CONFIG.BOSS_RESET_ALWAYS_WAIT == true and "ALWAYS WAIT"
+or "NO EXP AT RISK"))
 SetStatus(string.format(
 "STOP %d/%d  CLEARING  %ds  %s%s",
 S.Index,
@@ -5448,7 +5449,7 @@ QueueColorSave()
 end,
 }
 UIRef.BossAlwaysWaitToggle = UIRef.BossSection:AddToggle{
-Name = "Always Wait Before Reset",
+Name = "Always Wait After Kill",
 Default = CONFIG.BOSS_RESET_ALWAYS_WAIT == true,
 Callback = function(Value)
 CONFIG.BOSS_RESET_ALWAYS_WAIT = Value == true
@@ -5456,7 +5457,7 @@ if AICProfile.S.ActiveProfileName then
 AICProfile.SaveActiveProfile()
 end
 SetStatus(CONFIG.BOSS_RESET_ALWAYS_WAIT
-and "ALWAYS WAIT BEFORE RESET"
+and "ALWAYS WAIT AFTER KILL"
 or "INSTANT RESET WHEN NOTHING IS AT RISK")
 end,
 }

@@ -38,7 +38,7 @@ return {
             ["Follower Guard"] = "Kicks you out of the game when one player keeps joining yours",
 
             --// Boss Route
-            ["Always Wait Before Reset"] = "Takes the Reset (s) pause before every reset, even when no EXP would be lost",
+            ["Always Wait After Kill"] = "Waits each stop's Reset (s) after the kill, even when no EXP would be lost",
             ["Add Boss Stop Here"] = "Saves a boss stop at the character's position",
             ["Clear Boss Route"] = "Removes every boss stop",
             ["Edit Boss Stop"] = "Picks which boss stop the boxes below edit",
