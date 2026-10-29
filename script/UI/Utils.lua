@@ -308,7 +308,11 @@ function Library.new(o)
 	end))
 	pcall(function()
 		RunService:BindToRenderStep("UILibUnlock" .. self.Title, Enum.RenderPriority.Last.Value, function()
-			local open = self.Root.Visible
+			--// Only a menu you can actually click takes the mouse. A minimised
+			--// window is a title bar, and leaving it modal locked the whole
+			--// screen: no camera, and clicks went nowhere.
+			local open = self.Root.Visible and not self._minimized
+
 			if open then
 				-- Remember what the game had the mouse doing, so closing the
 				-- menu puts it back instead of leaving the camera unlocked.
@@ -1237,31 +1241,23 @@ function Library:AddTab(o)
 			self:Tween(tab.Label, { TextColor3 = self.Theme.Text }, .12)
 			self:Tween(b, { BackgroundTransparency = .55 }, .12)
 		end
+
+		--// A tab's Description is what the page is for; it is shown on hover
+		--// rather than spending a row of the page on a heading.
+		if tab.Description then
+			self:_showTip(b, tab.Description)
+		end
 	end)
 	b.MouseLeave:Connect(function()
 		if self.CurrentTab ~= tab then self:Tween(tab.Label, { TextColor3 = self.Theme.SubText }, .12) end
 		self:Tween(b, { BackgroundTransparency = 1 }, .12)
+		self:_hideTip()
 	end)
 
 	-- page: a vertical stack of "blocks". A block is either one full-width section
 	-- or a split row holding a left and a right column.
 	local page = New("CanvasGroup", { Size = UDim2.fromScale(1,1), BackgroundTransparency = 1, Visible = false, Parent = self.Content })
-
-	--// Page header: the tab's own name and the line that explains it, so the
-	--// pane opens saying where you are rather than straight into the controls.
-	--// The space is reserved whether or not there is a description, so every
-	--// page starts its sections at the same height.
-	local HEAD = 46
-	local tabTitle = self:Label(page, tab.Name, { Bold = true, TextSize = 17, Position = UDim2.fromOffset(16, tab.Description and 6 or 0), SizeUDim = UDim2.new(1, -32, 0, tab.Description and 22 or HEAD) })
-	tabTitle.TextXAlignment = Enum.TextXAlignment.Left
-	tabTitle.TextYAlignment = tab.Description and Enum.TextYAlignment.Top or Enum.TextYAlignment.Center
-
-	if tab.Description then
-		local tabSub = self:Label(page, tab.Description, { Color = "SubText", TextSize = 12, Position = UDim2.fromOffset(16, 27), SizeUDim = UDim2.new(1, -32, 0, 16) })
-		tabSub.TextXAlignment = Enum.TextXAlignment.Left
-	end
-
-	local sc = New("ScrollingFrame", { Position = UDim2.fromOffset(0, HEAD), Size = UDim2.new(1, 0, 1, -HEAD), BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 3,
+	local sc = New("ScrollingFrame", { Size = UDim2.fromScale(1,1), BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 3,
 		CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollingDirection = Enum.ScrollingDirection.Y, Parent = page })
 	self:Bind(function() sc.ScrollBarImageColor3 = self.Theme.Border end)
 	local holder = New("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1,0,0,0), AutomaticSize = Enum.AutomaticSize.Y, Parent = sc })
@@ -1308,12 +1304,7 @@ function Library:AddTab(o)
 		New("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, Parent = sec.Frame })
 		if so.Title then
 			local r = sec:_row(34)
-			--// A short accent bar in front of the heading: the section titles read
-			--// as one column of cards instead of loose bold lines.
-			local pill = New("Frame", { Size = UDim2.fromOffset(3, 13), AnchorPoint = Vector2.new(0, .5), Position = UDim2.new(0, 14, .5, 0), BorderSizePixel = 0, Parent = r })
-			Round(pill, 2)
-			win:Bind(function() pill.BackgroundColor3 = win.Theme.Accent end, pill)
-			win:Label(r, so.Title, { Bold = true, TextSize = 15, Position = UDim2.fromOffset(25,0), SizeUDim = UDim2.new(1,-39,1,0) })
+			win:Label(r, so.Title, { Bold = true, TextSize = 15, Position = UDim2.fromOffset(14,0), SizeUDim = UDim2.new(1,-28,1,0) })
 		end
 		table.insert(self.Sections, sec)
 		return sec

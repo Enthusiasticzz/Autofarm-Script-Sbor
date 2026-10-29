@@ -111,6 +111,15 @@ task = {
     delay = function(_, fn) fn() end,
 }
 
+--// Roblox has warn() as a global; the Luau CLI does not.
+warn = function(...)
+    local parts = {}
+    for i = 1, select("#", ...) do
+        parts[i] = tostring((select(i, ...)))
+    end
+    print("[warn]", table.concat(parts, " "))
+end
+
 Stub.game = game
 Stub.UI = UI
 Stub.LocalPlayer = LocalPlayer

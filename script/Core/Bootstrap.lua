@@ -385,8 +385,61 @@ return {
         }
         
         UIRef.TargetTypeDropdown:Set(tostring(CONFIG.TARGET_HP_MODE or "Disabled"), false)
-        
-        
+
+        --// Status grid: the icon row in the sidebar, above the divider. Each
+        --// icon follows one feature's own toggle and a click flips that
+        --// toggle, so the grid and the tab can never disagree. A feature that
+        --// never built a toggle is skipped rather than faked.
+        do
+            local STATUS = {
+                { Label = "Auto Farm", Feature = "AutoFarm" },
+                { Label = "Auto Block", Feature = "AutoBlock" },
+                { Label = "Safe Combat", Feature = "SafeCombat" },
+                { Label = "Auto Skill", Feature = "AutoSkill" },
+                { Label = "Auto Mining", Feature = "AutoMining" },
+                { Label = "Auto Smithing", Feature = "AutoSmithing" },
+                { Label = "Waypoint Loop", Feature = "WaypointLoop" },
+                { Label = "Boss Route", Feature = "BossRoute" },
+            }
+
+            local Icons = {}
+
+            for _, Entry in ipairs(STATUS) do
+                local State = Feature and Feature[Entry.Feature]
+                local Button = State and State.Button
+
+                if type(Button) == "table" and type(Button.Get) == "function" then
+                    local Icon = UI:AddStatusIcon{
+                        Name = Entry.Label,
+                        Callback = function(Value)
+                            Button:Set(Value)
+                        end,
+                    }
+
+                    Icon:Set(Button:Get() == true)
+                    table.insert(Icons, { Icon = Icon, Button = Button })
+                end
+            end
+
+            --// Anything that changes the toggle elsewhere (a profile load, a
+            --// keybind, the tab) is picked up here, so the icon never lies.
+            if #Icons > 0 then
+                task.spawn(function()
+                    while Context.Lifetime and Context.Lifetime.Alive do
+                        for _, Item in ipairs(Icons) do
+                            local Value = Item.Button:Get() == true
+
+                            if Item.Icon:Get() ~= Value then
+                                Item.Icon:Set(Value)
+                            end
+                        end
+
+                        task.wait(0.25)
+                    end
+                end)
+            end
+        end
+
         AICUI.RefreshTargetDropdown()
         
         AICUI.updateFeatureButtons()

@@ -25,6 +25,7 @@ $autoFarmingState = Get-Content (Join-Path $root "script/Features/AutoFarming_St
 $autoFarmingUI = Get-Content (Join-Path $root "script/Features/AutoFarming_UI.lua") -Raw
 $autoFarmingSmithing = Get-Content (Join-Path $root "script/Features/AutoFarming_Smithing.lua") -Raw
 $autoFarmingMining = Get-Content (Join-Path $root "script/Features/AutoFarming_Mining.lua") -Raw
+$heartbeat = Get-Content (Join-Path $root "script/Core/Heartbeat.lua") -Raw
 
 $body = @'
 local RuntimeModule = assert(loadstring(RuntimeSource, "@Runtime.lua"))()
@@ -205,6 +206,54 @@ Check("AutoFarming split registers its helpers", function()
     end
 end)
 
+Check("Heartbeat isolates a failing feature", function()
+    local Handler
+    local FakeRun = {
+        Heartbeat = {
+            Connect = function(_, fn)
+                Handler = fn
+                return { Disconnect = function() end }
+            end,
+        },
+    }
+
+    local Ctx = {
+        Services = { RunService = FakeRun },
+        Lifetime = { Alive = true },
+    }
+
+    local Hb = assert(loadstring(HeartbeatSource, "@Heartbeat.lua"))().Start(Ctx)
+    local Good, Bad = 0, 0
+
+    local Features = {
+        { Name = "Good", Update = function() Good += 1 end },
+        { Name = "Bad", Update = function() Bad += 1; error("boom") end },
+    }
+
+    Hb:Start(Features)
+    Handler(0.1)
+    Handler(0.1)
+
+    Equal(Good, 2, "a good feature kept updating past a failing one")
+    Equal(Bad, 1, "a failing feature is backed off instead of retried every frame")
+    Equal(Hb.Failing["Bad"].Count, 1, "the failure was recorded once")
+    Equal(Hb.Failing["Good"], nil, "a feature that works was not marked")
+
+    --// It is retried once the pause is over, rather than being disabled for the
+    --// rest of the session.
+    Hb.Failing["Bad"].Until = 0
+    Handler(0.1)
+    Equal(Bad, 2, "a failing feature is retried after the pause")
+    Equal(Hb.Failing["Bad"].Count, 2, "the retry counted")
+
+    --// A run that has ended unhooks its own loop instead of touching a newer
+    --// run's state.
+    Ctx.Lifetime.Alive = false
+    Hb:Start(Features)
+    Handler(0.1)
+    Equal(Hb.Connection, nil, "a stopped run unhooked its heartbeat")
+end)
+
 Check("Logger gates debug output", function()
     Context.Logger.SetVerbose(false)
     Equal(Context.Logger.IsDebugEnabled(), false, "off")
@@ -278,6 +327,10 @@ $autoFarmingSmithing
 
 local AutoFarmingMiningSource = [====[
 $autoFarmingMining
+]====]
+
+local HeartbeatSource = [====[
+$heartbeat
 ]====]
 
 $body

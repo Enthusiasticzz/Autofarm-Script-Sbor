@@ -452,13 +452,24 @@ local function fetchParallel(Paths)
 end
 
 local function createWindow(Utils)
-    UI = Utils.new{ Title = TITLE, ManualLoading = true }
-    Context.UI = UI
+    local Window = Utils.new{ Title = TITLE, ManualLoading = true }
 
-    local Window = UI
+    --// A run that was stopped while still loading must not leave its window
+    --// behind: an orphan window keeps drawing, keeps taking the mouse and no
+    --// later run can close it.
+    if not Lifetime.Alive then
+        Window:Destroy()
+        return nil
+    end
+
+    UI = Window
+    Context.UI = Window
+
     Lifetime.OnEnd(function()
         Window:Destroy()
     end)
+
+    return Window
 end
 
 local function loadLocal()
@@ -760,12 +771,23 @@ local function start(Name)
         return Context.Modules[Name]
     end
 
+    --// A newer run stopped this one while it was still starting. Building more
+    --// modules now would only create controls in a window that is already
+    --// gone, and their loops would throw every frame from then on.
+    if not Lifetime.Alive then
+        return nil
+    end
+
     local Spec = assert(
         Specs[Name],
         "Missing dependency: " .. tostring(Name)
     )
 
     for _, Dependency in ipairs(Spec.Dependencies or {}) do
+        if not Lifetime.Alive then
+            return nil
+        end
+
         start(Dependency)
     end
 
@@ -795,6 +817,10 @@ local function start(Name)
 end
 
 for _, Name in ipairs(START_ORDER) do
+    if not Lifetime.Alive then
+        break
+    end
+
     if Specs[Name] then
         start(Name)
 
@@ -813,6 +839,10 @@ for Name in pairs(Specs) do
 end
 table.sort(Remaining)
 for _, Name in ipairs(Remaining) do
+    if not Lifetime.Alive then
+        break
+    end
+
     start(Name)
     task.wait()
 end
@@ -821,6 +851,10 @@ end
 --// and the Debug Visualizer toggle). Built here so they land below the
 --// toggles instead of wherever their module happened to start.
 for _, Name in ipairs(START_ORDER) do
+    if not Lifetime.Alive then
+        break
+    end
+
     local Module = Context.Modules[Name]
 
     if type(Module) == "table" and type(Module.BuildLateUI) == "function" then
@@ -832,12 +866,26 @@ end
 --// Runs once every control exists. ProfileSettings restores the last used
 --// profile here, which touches controls owned by several other modules.
 for _, Name in ipairs(START_ORDER) do
+    if not Lifetime.Alive then
+        break
+    end
+
     local Module = Context.Modules[Name]
 
     if type(Module) == "table" and type(Module.Finalize) == "function" then
         Module:Finalize()
         task.wait()
     end
+end
+
+--// A newer run stopped this one while it was still loading: undo what was
+--// built since, before anything starts looping on the heartbeat. Nothing has
+--// started acting yet at this point, so there is nothing to stop beyond the
+--// cleanups.
+if not Lifetime.Alive then
+    Lifetime.RunCleanups()
+    print("[AIC] A newer run started while this one was loading; stopped.")
+    return nil
 end
 
 Context.Heartbeat:Start(Context.Features)
@@ -855,14 +903,6 @@ Lifetime.OnEnd(function()
         Humanoid:MoveTo(Root.Position)
     end
 end)
-
---// A newer run stopped this one while it was still loading: undo what was
---// built since.
-if not Lifetime.Alive then
-    Lifetime.RunCleanups()
-    print("[AIC] A newer run started while this one was loading; stopped.")
-    return nil
-end
 
 if Context.UI then
     Context.UI:FinishLoading()

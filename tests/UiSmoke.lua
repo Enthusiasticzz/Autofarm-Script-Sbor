@@ -80,29 +80,46 @@ Check("AddButton / AddLabel / AddDivider", function()
     Expect(clicked == false, "button fired early")
 end)
 
-Check("tab row + page header", function()
+Check("tab row + its description as a hover tip", function()
     local t = win.Tabs[1]
     Expect(t ~= nil and t.Label ~= nil, "no tab row")
     Expect(t.Label.Text == "Farming", "tab row lost its name: " .. tostring(t.Label and t.Label.Text))
     Expect(t.Button.Parent == win.TabHolder, "tab row is not in the sidebar list")
 
-    --// The pane opens on the tab's own name, with its one line description
-    --// under it, so a page says where you are before its controls start.
+    --// A tab's description is shown on hover, not as a heading on the page.
     local described = win:AddTab{ Name = "Notes", Description = "Where the help lines went." }
-    local heading, sub
+    described.Button.MouseEnter:Fire()
+    FlushDelayed()
+
+    local tip = win._tip
+    Expect(tip ~= nil, "hovering a tab opened no tip")
+    Expect(tip.Text == "Where the help lines went.", "the tip is not the tab's description")
+    described.Button.MouseLeave:Fire()
+
+    --// The page itself starts with its sections, not with a title row.
     for _, child in ipairs(described.Page:GetChildren()) do
-        if child:IsA("TextLabel") then
-            if child.Text == "Notes" then heading = child end
-            if child.Text == "Where the help lines went." then sub = child end
-        end
+        Expect(not child:IsA("TextLabel"), "a heading was added to the page")
     end
-    Expect(heading ~= nil, "page header has no title")
-    Expect(sub ~= nil, "page header has no description line")
 
     win:SelectTab(described)
     Expect(described.Page.Visible == true, "selecting the tab did not show its page")
     win:SelectTab(t)
     Expect(described.Page.Visible == false, "the page it replaced stayed visible")
+end)
+
+Check("status icons sit in the sidebar and toggle", function()
+    local heard
+    local icon = win:AddStatusIcon{ Name = "Auto Farm", Callback = function(v) heard = v end }
+    Expect(icon ~= nil, "no icon")
+    Expect(icon.Button.Parent == win.Sidebar, "the icon is not in the sidebar")
+    Expect(icon.Button.Position.Y.Scale == 1, "the icon is not docked to the bottom")
+
+    icon:Set(true)
+    Expect(icon:Get() == true, "the icon did not light up")
+    icon.Button.MouseButton1Click:Fire()
+    Expect(icon:Get() == false, "a click did not turn it off")
+    Expect(heard == false, "the callback did not hear the new state")
+    Expect(#win.StatusIcons == 1, "the icon was not registered")
 end)
 
 Check("AddNote joins the hover tip", function()

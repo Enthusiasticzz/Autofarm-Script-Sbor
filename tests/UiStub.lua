@@ -102,6 +102,10 @@ function UDim2.new(xs, xo, ys, yo)
 end
 function UDim2.fromScale(x, y) return UDim2.new(x, 0, y, 0) end
 function UDim2.fromOffset(x, y) return UDim2.new(0, x, 0, y) end
+--// Roblox adds two UDim2s together (a tooltip slides by a few pixels).
+UDim2.__add = function(a, b)
+    return UDim2.new(a.X.Scale + b.X.Scale, a.X.Offset + b.X.Offset, a.Y.Scale + b.Y.Scale, a.Y.Offset + b.Y.Offset)
+end
 
 ------------------------------------------------------------------ Enum
 local function MakeEnumItem(enumName, itemName, value)
