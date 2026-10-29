@@ -80,6 +80,64 @@ Check("AddButton / AddLabel / AddDivider", function()
     Expect(clicked == false, "button fired early")
 end)
 
+Check("tab row + page header", function()
+    local t = win.Tabs[1]
+    Expect(t ~= nil and t.Label ~= nil, "no tab row")
+    Expect(t.Label.Text == "Farming", "tab row lost its name: " .. tostring(t.Label and t.Label.Text))
+    Expect(t.Button.Parent == win.TabHolder, "tab row is not in the sidebar list")
+
+    --// The pane opens on the tab's own name, with its one line description
+    --// under it, so a page says where you are before its controls start.
+    local described = win:AddTab{ Name = "Notes", Description = "Where the help lines went." }
+    local heading, sub
+    for _, child in ipairs(described.Page:GetChildren()) do
+        if child:IsA("TextLabel") then
+            if child.Text == "Notes" then heading = child end
+            if child.Text == "Where the help lines went." then sub = child end
+        end
+    end
+    Expect(heading ~= nil, "page header has no title")
+    Expect(sub ~= nil, "page header has no description line")
+
+    win:SelectTab(described)
+    Expect(described.Page.Visible == true, "selecting the tab did not show its page")
+    win:SelectTab(t)
+    Expect(described.Page.Visible == false, "the page it replaced stayed visible")
+end)
+
+Check("AddNote joins the hover tip", function()
+    local sec = tab:AddSection{ Title = "Notes" }
+    local row = sec:AddToggle{ Name = "Auto Block", Default = false, Description = "Blocks anyone off the whitelist." }
+    local before = #sec.Frame:GetChildren()
+    sec:AddNote("On: the game is closed to the Roblox app once Block Delay runs out")
+    Expect(#sec.Frame:GetChildren() == before, "a note still takes a row of its own")
+
+    row.Row.MouseEnter:Fire()
+    FlushDelayed()
+    local tip = win._tip
+    Expect(tip ~= nil, "hovering the control opened no tip")
+    Expect(tip.Text:find("Blocks anyone", 1, true) ~= nil, "the tip lost the description")
+    Expect(tip.Text:find("Block Delay", 1, true) ~= nil, "the tip lost the note")
+    win:_hideTip(true)
+end)
+
+Check("a long tip wraps instead of running off the window", function()
+    local sec = tab:AddSection{ Title = "Long notes" }
+    local row = sec:AddToggle{ Name = "Whitelist Skips Safety", Default = false }
+    sec:AddNote(string.rep("Whitelisted players never make Auto Block or Leave On Danger Group leave the server, even if they were blocked earlier. ", 3))
+
+    row.Row.MouseEnter:Fire()
+    FlushDelayed()
+    local tip = win._tip
+    Expect(tip ~= nil, "no tip")
+    Expect(tip.TextWrapped == true, "a long tip was not wrapped")
+    Expect(tip.Size.Y.Offset > 24, "a wrapped tip kept a single line's height")
+    Expect(tip.Size.X.Offset <= 300, "tip ran past the window")
+    -- no room above the row in the stub (it sits at 0,0), so it drops below it
+    Expect(tip.AnchorPoint.Y == 0, "a tip with no room above did not drop below its control")
+    win:_hideTip(true)
+end)
+
 Check("AddPriority", function()
     priority = section:AddPriority("Enemy Priority", { "Slime", "Golem" }, {
         Values = true,

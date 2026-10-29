@@ -62,6 +62,12 @@ Vector2.__mul = function(a, b)
     if IsTable(b) then return Vector2.new(a.X * b.X, a.Y * b.Y) end
     return Vector2.new(a.X * b, a.Y * b)
 end
+--// Roblox divides a Vector2 by a number (and by another Vector2); the window
+--// measures a control against its own scale that way.
+Vector2.__div = function(a, b)
+    if IsTable(b) then return Vector2.new(a.X / b.X, a.Y / b.Y) end
+    return Vector2.new(a.X / b, a.Y / b)
+end
 function Vector2:__tostring() return string.format("(%.1f, %.1f)", self.X, self.Y) end
 function Vector2:Dot(other) return self.X * other.X + self.Y * other.Y end
 Vector2.__index = function(self, key)

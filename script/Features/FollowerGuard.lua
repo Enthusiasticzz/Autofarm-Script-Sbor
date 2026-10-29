@@ -494,7 +494,7 @@ return {
         end, UIRef.ServerSafetySection)
 
         if UIRef.ServerSafetySection then
-            UIRef.ServerSafetySection:AddLabel("Kicks you out of the game when one player keeps joining yours")
+            UIRef.ServerSafetySection:AddNote("Kicks you out of the game when one player keeps joining yours")
         end
 
         return FollowerGuard

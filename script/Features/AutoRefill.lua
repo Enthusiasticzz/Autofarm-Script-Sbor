@@ -239,7 +239,7 @@ return {
                     Feature.ScanBoosters(true)
                 end,
             }
-            Section:AddLabel("ON = that booster running out resets the character")
+            Section:AddNote("ON = that booster running out resets the character")
         end
 
         Feature.AutoRefillBooster()

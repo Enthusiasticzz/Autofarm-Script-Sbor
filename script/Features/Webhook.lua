@@ -634,7 +634,7 @@ return {
                     Save("DISCORD_DUO_PING", Trim(Value))
                 end,
             }
-            Section:AddLabel("UserId to ping, everyone, or blank for no ping")
+            Section:AddNote("UserId to ping, everyone, or blank for no ping")
             
             Section:AddTextBox{
                 Name = "Duo Username",
@@ -643,7 +643,7 @@ return {
                     Save("DISCORD_DUO", Trim(Value))
                 end,
             }
-            Section:AddLabel("Blank when not duoing")
+            Section:AddNote("Blank when not duoing")
 
             local FormatPicker = Section:AddDropdown{
                 Name = "Report Format",
@@ -666,7 +666,7 @@ return {
                     Save("DISCORD_EC_ITEM", Trim(Value))
                 end,
             }
-            Section:AddLabel("Only used by Event Currency; blank uses the event currency the script tracks")
+            Section:AddNote("Only used by Event Currency; blank uses the event currency the script tracks")
 
             Section:AddButton{
                 Name = "Send Report",
@@ -688,7 +688,7 @@ return {
             SessionLabel = Section:AddLabel("")
             RefreshLabel()
 
-            Section:AddLabel("Sending does not restart the session; Reset Session does")
+            Section:AddNote("Sending does not restart the session; Reset Session does")
         end
 
         --// The Auto Farm flag the last frame saw. The start and end reports

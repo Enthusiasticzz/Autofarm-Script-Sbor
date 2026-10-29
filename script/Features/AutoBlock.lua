@@ -496,7 +496,7 @@ return {
             --// apart by a divider: the same Block Delay, then the game is
             --// closed to the Roblox app without a block at all.
             AICUI.BindFeatureToggle("AutoBlockLeaveOnly", "Leave Instead Of Block", nil, BlockSection)
-            BlockSection:AddLabel("On: the game is closed to the Roblox app once Block Delay (s) runs out")
+            BlockSection:AddNote("On: the game is closed to the Roblox app once Block Delay (s) runs out")
 
             BlockSection:AddDivider()
 
@@ -533,11 +533,11 @@ return {
             --// is added to. On by default: nothing the script does on its own
             --// should drop the server the moment a stranger appears.
             AICUI.BindFeatureToggle("RandomLeaveDelay", "Random Leave Delay", nil, BlockSection)
-            BlockSection:AddLabel("On: every leave waits a random 2-4 s first, Follower Guard included")
+            BlockSection:AddNote("On: every leave waits a random 2-4 s first, Follower Guard included")
 
             AICUI.BindFeatureToggle("WhitelistSkipsSafety", "Whitelist Skips Safety", nil, BlockSection)
-            BlockSection:AddLabel("On: whitelisted players never make Auto Block or Leave On Danger Group leave, even if blocked")
-            BlockSection:AddLabel("Whitelist and Whitelist Skips Safety are shared by every profile")
+            BlockSection:AddNote("On: whitelisted players never make Auto Block or Leave On Danger Group leave, even if blocked")
+            BlockSection:AddNote("Whitelist and Whitelist Skips Safety are shared by every profile")
 
             self.WhitelistComponent = BlockSection:AddPriority(
                 "Block Whitelist",

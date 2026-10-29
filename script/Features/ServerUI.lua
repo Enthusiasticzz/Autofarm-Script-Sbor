@@ -167,8 +167,8 @@ return {
             ServerHop.S.LastScan = 0
         end, SafetySection)
 
-        SafetySection:AddLabel("Leaves if a Danger Group member is here (Danger Whitelist exempt; Block Whitelist too with Whitelist Skips Safety)")
-        SafetySection:AddLabel("Toggle, groups and whitelist are shared by every profile")
+        SafetySection:AddNote("Leaves if a Danger Group member is here (Danger Whitelist exempt; Block Whitelist too with Whitelist Skips Safety)")
+        SafetySection:AddNote("Toggle, groups and whitelist are shared by every profile")
 
         --// A list of IDs kept in CONFIG[Key] and the global file. Removing
         --// or reordering a row saves too; OnChanged runs after every save.
@@ -354,7 +354,7 @@ return {
             end
         end, SafetySection)
 
-        SafetySection:AddLabel("Notifies about players off the Auto Block whitelist")
+        SafetySection:AddNote("Notifies about players off the Auto Block whitelist")
 
         ------------------------------------------------------------------------
         --// Player Log

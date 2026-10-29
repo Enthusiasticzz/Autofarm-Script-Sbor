@@ -93,19 +93,21 @@ return {
 
         --// Shared UI foundation. Feature modules own their controls; Runtime
         --// only creates the tabs/sections they attach those controls to.
-        UIRef.StatusTab = UI:AddTab{ Name = "Status" }
-        UIRef.FarmTab = UI:AddTab{ Name = "Farming" }
+        --// Every tab carries the line that explains it at the top of its page,
+        --// so a page says what it is for before the controls start.
+        UIRef.StatusTab = UI:AddTab{ Name = "Status", Description = "Live readout: farm state, position, money, EXP and timers" }
+        UIRef.FarmTab = UI:AddTab{ Name = "Farming", Description = "Waypoints, targets, combat and the rules the farm follows" }
         --// Boss route: its own tab, list and timers, apart from the farming
         --// waypoints and the profile waypoints (BossNavigator).
-        UIRef.BossTab = UI:AddTab{ Name = "Bosses" }
-        UIRef.MineTab = UI:AddTab{ Name = "Mining" }
-        UIRef.CraftTab = UI:AddTab{ Name = "Crafting" }
-        UIRef.PartyTab = UI:AddTab{ Name = "Party" }
-        UIRef.ServerTab = UI:AddTab{ Name = "Server" }
-        UIRef.TeleportTab = UI:AddTab{ Name = "Teleport" }
-        UIRef.QuestTab = UI:AddTab{ Name = "Quest" }
-        UIRef.DebugTab = UI:AddTab{ Name = "Debug" }
-        UIRef.UtilityTab = UI:AddTab{ Name = "Utility" }
+        UIRef.BossTab = UI:AddTab{ Name = "Bosses", Description = "Boss stops, their timers and when a reset is taken" }
+        UIRef.MineTab = UI:AddTab{ Name = "Mining", Description = "Ore priority and the mine zones Auto Mining works in" }
+        UIRef.CraftTab = UI:AddTab{ Name = "Crafting", Description = "Recipe priority, the materials kept in reserve and the tables" }
+        UIRef.PartyTab = UI:AddTab{ Name = "Party", Description = "Follow the leader between servers" }
+        UIRef.ServerTab = UI:AddTab{ Name = "Server", Description = "Rejoin, hop, job IDs and the player log" }
+        UIRef.TeleportTab = UI:AddTab{ Name = "Teleport", Description = "Doors and waypoints, by name or by number" }
+        UIRef.QuestTab = UI:AddTab{ Name = "Quest", Description = "Assign a quest and track what it asks for" }
+        UIRef.DebugTab = UI:AddTab{ Name = "Debug", Description = "Draw zones, waypoints and targets in the world" }
+        UIRef.UtilityTab = UI:AddTab{ Name = "Utility", Description = "Webhook reports, profiles and the pinned items panel" }
         UIRef.UtilitySection = UIRef.UtilityTab:AddSection{ Title = "Utilities" }
         --// Discord reports (Webhook): URL, mention, duo and format in one
         --// place, on the tab about the machine rather than the farm.

@@ -482,28 +482,141 @@ local function loadLocal()
     return Specs
 end
 
---// Every module in one file, so a run costs one download instead of one per
---// module. Those requests are what the executor's HTTP queue kept stalling.
-local function fetchBundle()
-    local Body = fetchOnce("Bundle.lua")
+--// The modules come down in a few parts rather than one file per module (the
+--// executor's queue stalled on ~77 requests) or one huge file (which blocked
+--// the client while it arrived). Each part is fetched on its own and the run
+--// yields between them, so the game keeps drawing frames.
+local BUNDLE_PARTS = 40
+--// Parts in flight together. One after another cost the sum of their round
+--// trips, which is most of what made the boot feel slow.
+local BUNDLE_WORKERS = 4
+
+--// The bundle's part count, written next to the parts by
+--// tools/build-bundle.ps1. Without it (an older build) the loader falls back
+--// to walking the parts until one is missing.
+local function fetchBundleParts()
+    local Body = fetchOnce("Bundle/Manifest.lua")
 
     if not Body then
         return nil
     end
 
-    local Chunk = loadstring(Body, "@Bundle.lua")
+    local Chunk = loadstring(Body, "@Bundle/Manifest.lua")
+    local Ok, Value = false, nil
 
-    if not Chunk then
-        return nil
+    if Chunk then
+        Ok, Value = pcall(Chunk)
     end
 
-    local Ok, Map = pcall(Chunk)
-
-    if Ok and type(Map) == "table" then
-        return Map
+    if Ok and type(Value) == "table" and type(Value.Parts) == "number" and Value.Parts > 0 then
+        return math.min(Value.Parts, BUNDLE_PARTS)
     end
 
     return nil
+end
+
+--// Part 1 holds the window library (tools/build-bundle.ps1 writes it first),
+--// so the loader can be on screen while the rest is still coming down.
+local function fetchSeed()
+    for _ = 0, FETCH_RETRIES do
+        local Body = fetchOnce("Bundle/Part1.lua")
+
+        if Body then
+            local Chunk = loadstring(Body, "@Bundle/Part1.lua")
+            local Ok, Part = false, nil
+
+            if Chunk then
+                Ok, Part = pcall(Chunk)
+            end
+
+            if Ok and type(Part) == "table" then
+                return Part
+            end
+        end
+    end
+
+    return nil
+end
+
+--// Parts 2 and up, merged into Map. A part that does not arrive costs its
+--// modules one download each later, so a partial bundle still boots.
+local function fetchBundleRest(Map, Parts)
+    local Limit = Parts or BUNDLE_PARTS
+    local Count = Limit - 1
+
+    if Count < 1 then
+        return Map
+    end
+
+    local Bodies = {}
+    local Next, Done = 2, 0
+
+    local function Worker()
+        while true do
+            local Index = Next
+            Next += 1
+
+            if Index > Limit then
+                return
+            end
+
+            for _ = 0, FETCH_RETRIES do
+                Bodies[Index] = fetchOnce(string.format("Bundle/Part%d.lua", Index))
+
+                if Bodies[Index] then
+                    break
+                end
+            end
+
+            Done += 1
+        end
+    end
+
+    for _ = 1, math.min(BUNDLE_WORKERS, Count) do
+        task.spawn(Worker)
+    end
+
+    local Deadline = os.clock() + FETCH_DEADLINE
+
+    while Done < Count and os.clock() < Deadline do
+        report(FETCH_SHARE * 0.3 * (Done / Count), string.format("FETCHING MODULES  //  %d / %d", Done + 1, Limit))
+        task.wait(0.05)
+    end
+
+    --// Without a manifest the count is unknown, so the run stops at the first
+    --// part that is not there.
+    if not Parts then
+        while Limit > 2 and not Bodies[Limit] do
+            Limit -= 1
+        end
+    end
+
+    for Index = 2, Limit do
+        if Bodies[Index] then
+            local Chunk = loadstring(Bodies[Index], string.format("@Bundle/Part%d.lua", Index))
+            local Ok, Part = false, nil
+
+            if Chunk then
+                Ok, Part = pcall(Chunk)
+            end
+
+            if Ok and type(Part) == "table" then
+                for Path, Source in pairs(Part) do
+                    Map[Path] = Source
+                end
+            end
+        end
+
+        report(FETCH_SHARE * 0.45 * (Index / Limit), string.format("READING MODULES  //  %d / %d", Index, Limit))
+
+        --// A frame every few parts keeps the client drawing while the bundle
+        --// is turned into module sources.
+        if Index % 4 == 0 then
+            task.wait()
+        end
+    end
+
+    return Map
 end
 
 local function loadRemote()
@@ -511,19 +624,40 @@ local function loadRemote()
     table.insert(Paths, 1, UTILS_PATH)
 
     local Total = #Paths
-    local Bundle = fetchBundle()
+    local Parts = fetchBundleParts()
+    local Bundle = fetchSeed()
     local Bodies, GetPending
 
+    --// The window goes up the moment its library is here, so the download
+    --// runs behind the loader instead of in front of a frozen screen.
+    if Bundle and type(Bundle[UTILS_PATH]) == "string" then
+        local Chunk = loadstring(Bundle[UTILS_PATH], "@" .. UTILS_PATH)
+        local Ok, Utils = false, nil
+
+        if Chunk then
+            Ok, Utils = pcall(Chunk)
+        end
+
+        if Ok and Utils then
+            createWindow(Utils)
+        else
+            Bundle = nil
+        end
+    else
+        Bundle = nil
+    end
+
     if Bundle then
-        --// The bundle is only a shortcut: a module missing from it (added
-        --// after the last build) is simply downloaded on its own.
+        fetchBundleRest(Bundle, Parts)
+
+        --// The bundle is only a shortcut: a module missing from it (a part
+        --// that did not arrive, or a module added after the last build) is
+        --// simply downloaded on its own.
         Bodies = {}
 
         for _, Path in ipairs(Paths) do
             Bodies[Path] = Bundle[Path]
         end
-
-        report(FETCH_SHARE * 0.5, "BUNDLE LOADED  //  " .. tostring(#Paths) .. " MODULES")
 
         GetPending = function()
             return 0
@@ -545,13 +679,16 @@ local function loadRemote()
         fail("Failed to fetch " .. UTILS_PATH)
     end
 
-    local UtilsChunk = loadstring(UtilsBody, "@" .. UTILS_PATH)
+    --// The seed part usually put the window up already.
+    if not UI then
+        local UtilsChunk = loadstring(UtilsBody, "@" .. UTILS_PATH)
 
-    if not UtilsChunk then
-        fail("Failed to compile " .. UTILS_PATH)
+        if not UtilsChunk then
+            fail("Failed to compile " .. UTILS_PATH)
+        end
+
+        createWindow(UtilsChunk())
     end
-
-    createWindow(UtilsChunk())
 
     --// A file that never answers can no longer hold the boot: the workers
     --// time out, and this gives the whole phase a hard limit as well, after
@@ -571,6 +708,7 @@ local function loadRemote()
     report(FETCH_SHARE, "COMPILING MODULES")
 
     local Specs = {}
+    local Compiled = 0
 
     for _, Path in ipairs(MODULES) do
         local Body = Bodies[Path]
@@ -594,6 +732,14 @@ local function loadRemote()
 
         local Spec = checkSpec(Chunk(), Path)
         Specs[Spec.Name] = Spec
+
+        --// A few frames between batches: compiling and running every module in
+        --// one stretch is what froze the client until the boot finished.
+        Compiled += 1
+
+        if Compiled % 4 == 0 then
+            task.wait()
+        end
     end
 
     return Specs
@@ -651,6 +797,10 @@ end
 for _, Name in ipairs(START_ORDER) do
     if Specs[Name] then
         start(Name)
+
+        --// Each module builds its controls on start, so the game gets a frame
+        --// back between them instead of waiting for all 76 to finish.
+        task.wait()
     end
 end
 
@@ -664,6 +814,7 @@ end
 table.sort(Remaining)
 for _, Name in ipairs(Remaining) do
     start(Name)
+    task.wait()
 end
 
 --// Controls that AFV2 places after every feature toggle (the health sliders
@@ -674,6 +825,7 @@ for _, Name in ipairs(START_ORDER) do
 
     if type(Module) == "table" and type(Module.BuildLateUI) == "function" then
         Module:BuildLateUI()
+        task.wait()
     end
 end
 
@@ -684,6 +836,7 @@ for _, Name in ipairs(START_ORDER) do
 
     if type(Module) == "table" and type(Module.Finalize) == "function" then
         Module:Finalize()
+        task.wait()
     end
 end
 

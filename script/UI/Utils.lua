@@ -35,6 +35,7 @@ local TweenService = game:GetService("TweenService")
 local HttpService  = game:GetService("HttpService")
 local Stats        = game:GetService("Stats")
 local GuiService   = game:GetService("GuiService")
+local TextService  = game:GetService("TextService")
 
 local rgb = Color3.fromRGB
 local Library = {}
@@ -723,20 +724,72 @@ function Library:_hideTip(instant)
 	if st then self:Tween(st, { Transparency = 1 }, .12) end
 	task.delay(.14 / math.max(self.AnimSpeed, .1), function() tip:Destroy() end)
 end
+--// How much room text needs inside a box of the given width. Both the width
+--// of a one line tip and the height of a wrapped one come from here, so a
+--// tip with a line break in it is sized for its lines rather than for its
+--// character count.
+function Library:_measureText(text, width, size, font)
+	text = tostring(text)
+
+	local ok, bounds = pcall(function()
+		return TextService:GetTextSize(text, size, font or Fonts.Medium, Vector2.new(width, 4096))
+	end)
+
+	if ok and typeof(bounds) == "Vector2" then
+		return bounds
+	end
+
+	--// Fallback where the measuring service is not reachable.
+	local perLine = math.max(1, math.floor(width / math.max(1, size * 0.52)))
+	local lines = 0
+
+	for line in (text .. "\n"):gmatch("([^\n]*)\n") do
+		lines += math.max(1, math.ceil(#line / perLine))
+	end
+
+	return Vector2.new(width, math.max(1, lines) * (size + 4))
+end
+
+--// A tooltip is as wide as its text until that would run past the window, at
+--// which point it wraps onto more lines. It sits above the control, or drops
+--// below it when there is no room left at the top.
 function Library:_showTip(anchor, text)
 	self:_hideTip()
 	local token = self._tipToken
+
 	task.delay(.12, function()
 		if self._tipToken ~= token or not anchor.Parent then return end
+
 		local rel, asz = self:_relative(anchor)
-		local x, y = math.clamp(rel.X + asz.X / 2, 60, ROOT_W - 60), rel.Y - 6
-		local tip = New("TextLabel", { AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 24), BorderSizePixel = 0, Text = "  " .. text .. "  ",
-			Font = Fonts.Medium, TextSize = 12, AnchorPoint = Vector2.new(.5, 1),
-			Position = UDim2.fromOffset(x, y + 5), BackgroundTransparency = 1, TextTransparency = 1, Parent = self.Overlay })
+		local size = 12
+		local maxWidth = math.min(300, ROOT_W - 40)
+		local natural = self:_measureText(text, 10000, size).X
+		local wrapped = natural > maxWidth
+		local width = wrapped and maxWidth or math.ceil(natural) + 18
+		local height = math.ceil(self:_measureText(text, width - 18, size).Y) + 10
+
+		local tip = New("TextLabel", {
+			Size = UDim2.fromOffset(width, height), BorderSizePixel = 0, Text = text,
+			TextWrapped = wrapped, TextTruncate = wrapped and Enum.TextTruncate.None or Enum.TextTruncate.AtEnd,
+			TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top,
+			Font = Fonts.Medium, TextSize = size, BackgroundTransparency = 1, TextTransparency = 1,
+			Parent = self.Overlay,
+		})
+		New("UIPadding", { PaddingLeft = UDim.new(0, 9), PaddingRight = UDim.new(0, 9), PaddingTop = UDim.new(0, 5), PaddingBottom = UDim.new(0, 5), Parent = tip })
 		Round(tip, 6)
 		self:Themed(tip, { BackgroundColor3 = "Panel", TextColor3 = "Text" })
 		local st = Stroke(tip); st.Transparency = 1
 		self:Themed(st, { Color = "Border" })
+
+		local x = math.clamp(rel.X + asz.X / 2, width / 2 + 6, ROOT_W - width / 2 - 6)
+		local above = rel.Y - 6
+		local hasRoom = above - height >= 4
+		local y = hasRoom and above or (rel.Y + asz.Y + 6)
+		local anchorPoint = hasRoom and Vector2.new(.5, 1) or Vector2.new(.5, 0)
+
+		tip.AnchorPoint = anchorPoint
+		tip.Position = UDim2.fromOffset(x, y + (hasRoom and 4 or -4))
+
 		self._tip = tip
 		self:Tween(tip, { BackgroundTransparency = 0, TextTransparency = 0, Position = UDim2.fromOffset(x, y) }, .18, Enum.EasingStyle.Quint)
 		self:Tween(st, { Transparency = 0 }, .18)
@@ -1193,7 +1246,22 @@ function Library:AddTab(o)
 	-- page: a vertical stack of "blocks". A block is either one full-width section
 	-- or a split row holding a left and a right column.
 	local page = New("CanvasGroup", { Size = UDim2.fromScale(1,1), BackgroundTransparency = 1, Visible = false, Parent = self.Content })
-	local sc = New("ScrollingFrame", { Size = UDim2.fromScale(1,1), BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 3,
+
+	--// Page header: the tab's own name and the line that explains it, so the
+	--// pane opens saying where you are rather than straight into the controls.
+	--// The space is reserved whether or not there is a description, so every
+	--// page starts its sections at the same height.
+	local HEAD = 46
+	local tabTitle = self:Label(page, tab.Name, { Bold = true, TextSize = 17, Position = UDim2.fromOffset(16, tab.Description and 6 or 0), SizeUDim = UDim2.new(1, -32, 0, tab.Description and 22 or HEAD) })
+	tabTitle.TextXAlignment = Enum.TextXAlignment.Left
+	tabTitle.TextYAlignment = tab.Description and Enum.TextYAlignment.Top or Enum.TextYAlignment.Center
+
+	if tab.Description then
+		local tabSub = self:Label(page, tab.Description, { Color = "SubText", TextSize = 12, Position = UDim2.fromOffset(16, 27), SizeUDim = UDim2.new(1, -32, 0, 16) })
+		tabSub.TextXAlignment = Enum.TextXAlignment.Left
+	end
+
+	local sc = New("ScrollingFrame", { Position = UDim2.fromOffset(0, HEAD), Size = UDim2.new(1, 0, 1, -HEAD), BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 3,
 		CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollingDirection = Enum.ScrollingDirection.Y, Parent = page })
 	self:Bind(function() sc.ScrollBarImageColor3 = self.Theme.Border end)
 	local holder = New("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1,0,0,0), AutomaticSize = Enum.AutomaticSize.Y, Parent = sc })
@@ -1240,7 +1308,12 @@ function Library:AddTab(o)
 		New("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, Parent = sec.Frame })
 		if so.Title then
 			local r = sec:_row(34)
-			win:Label(r, so.Title, { Bold = true, TextSize = 15, Position = UDim2.fromOffset(14,0), SizeUDim = UDim2.new(1,-28,1,0) })
+			--// A short accent bar in front of the heading: the section titles read
+			--// as one column of cards instead of loose bold lines.
+			local pill = New("Frame", { Size = UDim2.fromOffset(3, 13), AnchorPoint = Vector2.new(0, .5), Position = UDim2.new(0, 14, .5, 0), BorderSizePixel = 0, Parent = r })
+			Round(pill, 2)
+			win:Bind(function() pill.BackgroundColor3 = win.Theme.Accent end, pill)
+			win:Label(r, so.Title, { Bold = true, TextSize = 15, Position = UDim2.fromOffset(25,0), SizeUDim = UDim2.new(1,-39,1,0) })
 		end
 		table.insert(self.Sections, sec)
 		return sec
@@ -2693,23 +2766,50 @@ function Library:_GetDescription(name, description)
 	return self.Descriptions and self.Descriptions[string.upper(tostring(name))] or nil
 end
 
---// Called for every control a section builds, so a row whose name is in the
---// description map answers a hover with its tip.
-function Library:_attachTip(row, name, description)
-	local text = self:_GetDescription(name, description)
+--// Per row: what its hover tip says. Kept beside the row instead of inside a
+--// closure so a note added later, or a description set after the control was
+--// built, is picked up by the tip that is already connected.
+local RowTips = setmetatable({}, { __mode = "k" })
 
-	if not text or not row then
+--// Called for every control a section builds. One hover handler per row: the
+--// description and any note are read when the tip opens, never copied into
+--// it, so the two always agree.
+function Library:_attachTip(row, name, description)
+	if not row then
 		return
 	end
 
+	local entry = RowTips[row]
+
+	if entry then
+		entry.Name, entry.Description = name, description
+		return
+	end
+
+	entry = { Name = name, Description = description }
+	RowTips[row] = entry
+
 	row.MouseEnter:Connect(function()
-		if row.Parent then
+		local text = self:_rowTipText(entry)
+
+		if text and row.Parent then
 			self:_showTip(row, text)
 		end
 	end)
 	row.MouseLeave:Connect(function()
 		self:_hideTip()
 	end)
+end
+
+--// The tip for a row: its description, then any notes below it, one per line.
+function Library:_rowTipText(entry)
+	local text = self:_GetDescription(entry.Name, entry.Description)
+
+	if entry.Note and entry.Note ~= "" then
+		text = (text and text ~= "" and (text .. "\n" .. entry.Note)) or entry.Note
+	end
+
+	return text
 end
 
 function Section:_decorate(row, o, obj)
@@ -2736,6 +2836,36 @@ function Section:_decorate(row, o, obj)
 	self.Win:_attachTip(row, o and o.Name, o and o.Description)
 
 	return obj
+end
+
+--// Help text for the control above it. A note used to take a whole row under
+--// its control, which pushed every section taller than it needed to be; it now
+--// joins that control's hover tip. Notes that stack on one control are shown
+--// one per line. Without a control above (nothing built yet) it stays visible,
+--// so a caller cannot lose its text.
+function Section:AddNote(text)
+	if type(text) ~= "string" or text == "" then
+		return nil
+	end
+
+	local row = self._lastRow
+
+	if not row then
+		return self:AddLabel(text)
+	end
+
+	local entry = RowTips[row]
+
+	if not entry then
+		self.Win:_attachTip(row, nil, nil)
+		entry = RowTips[row]
+	end
+
+	if entry then
+		entry.Note = entry.Note and (entry.Note .. "\n" .. text) or text
+	end
+
+	return nil
 end
 
 --------------------------------------------------------------------------------
