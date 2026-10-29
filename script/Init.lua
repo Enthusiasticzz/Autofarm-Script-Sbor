@@ -337,17 +337,23 @@ local function fail(Message)
     --// The first line names the module, the last line of a traceback is the
     --// error itself. The loader only has room for a line, so it shows both
     --// and the whole traceback goes to the console.
-    local Headline = string.match(Message, "^[^\n]*") or tostring(Message)
-    local Detail = string.match(Message, "([^\n]+)%s*$")
+    local Text = tostring(Message)
+    local Headline = string.match(Text, "^[^\n]*") or Text
+    --// The line after the module name is the error itself; the rest is the
+    --// stack, which goes on the error screen instead of the status line.
+    local Detail = string.match(Text, "\n([^\n]+)")
 
-    if Detail ~= Headline then
+    if Detail then
         Headline = Headline .. "  //  " .. Detail
     end
 
-    warn("[AIC] " .. tostring(Message))
+    warn("[AIC] " .. Text)
 
     if UI then
         UI:SetLoadingProgress(nil, "LOAD FAILED  //  " .. Headline, true)
+        pcall(function()
+            UI:ShowError(Text)
+        end)
     end
 
     --// The session stays registered with the failed window up, so running the
@@ -521,7 +527,9 @@ local function start(Name)
     local Ok, Module = xpcall(Spec.Start, debug.traceback, Context)
 
     if not Ok then
-        fail(Name .. " failed to start\n" .. tostring(Module))
+        --// The error's own type is worth reporting: a module that raises a
+        --// table has no message to show otherwise.
+        fail(Name .. " failed to start\n" .. tostring(Module) .. "\n(error value: " .. type(Module) .. ")")
     end
 
     Context.Modules[Name] = Module

@@ -315,54 +315,63 @@ return {
 
         --// Pinned items
         --// Lives outside the tabs so the panel can be dragged or popped out.
-        UIRef.PinPanel = UI:AddPin("Pinned Items")
+        --// One optional panel must never keep the rest of the menu down, so a
+        --// failure here is reported and skipped rather than raised.
+        local PinsOk, PinsError = pcall(function()
+            UIRef.PinPanel = UI:AddPin("Pinned Items")
 
-        --// Pins are global: restore them from their own file before any
-        --// profile loads, and write every change back there.
-        local StoredPinned = AICProfile.ReadPinnedState()
+            --// Pins are global: restore them from their own file before any
+            --// profile loads, and write every change back there.
+            local StoredPinned = AICProfile.ReadPinnedState()
 
-        if StoredPinned then
-            AICProfile.S.HasGlobalPinnedState = true
-            CONFIG.PINNED_STATE = StoredPinned
-            UIRef.PinPanel:SetState(StoredPinned)
-        end
-
-        UIRef.PinnedSection = UIRef.StatusTab:AddSection{ Title = "Pinned Items" }
-
-        --// The only way to show the panel again once its × closed it.
-        UIRef.PinnedVisibleToggle = UIRef.PinnedSection:AddToggle{
-            Name = "Show Pinned Items",
-            Default = UIRef.PinPanel.Visible,
-            Callback = function(Value)
-                UIRef.PinPanel:SetVisible(Value)
-                CONFIG.PINNED_STATE = UIRef.PinPanel:GetState()
-                AICProfile.QueuePinnedSave()
-            end,
-        }
-
-        UIRef.PinPanel.OnChanged = function()
-            CONFIG.PINNED_STATE = UIRef.PinPanel:GetState()
-            UIRef.PinnedVisibleToggle:Set(UIRef.PinPanel.Visible, false)
-            AICProfile.QueuePinnedSave()
-            AICProfile.QueueProfileSave()
-        end
-
-        UIRef.PinnedSection:AddButton{
-            Name = "Reset Pinned Items Position",
-            Callback = function()
-                UIRef.PinPanel:ResetPosition()
-                NotifyAction("Pinned Items", "Position reset")
-            end,
-        }
-
-        task.spawn(function()
-            local PlayerStats = Player:WaitForChild("PlayerStats", 30)
-            local Inventory = PlayerStats and PlayerStats:WaitForChild("Inventory", 30)
-
-            if Inventory then
-                UI:BindPinToValue(UIRef.PinPanel, Inventory)
+            if StoredPinned then
+                AICProfile.S.HasGlobalPinnedState = true
+                CONFIG.PINNED_STATE = StoredPinned
+                UIRef.PinPanel:SetState(StoredPinned)
             end
+
+            UIRef.PinnedSection = UIRef.StatusTab:AddSection{ Title = "Pinned Items" }
+
+            --// The only way to show the panel again once its × closed it.
+            UIRef.PinnedVisibleToggle = UIRef.PinnedSection:AddToggle{
+                Name = "Show Pinned Items",
+                Default = UIRef.PinPanel.Visible,
+                Callback = function(Value)
+                    UIRef.PinPanel:SetVisible(Value)
+                    CONFIG.PINNED_STATE = UIRef.PinPanel:GetState()
+                    AICProfile.QueuePinnedSave()
+                end,
+            }
+
+            UIRef.PinPanel.OnChanged = function()
+                CONFIG.PINNED_STATE = UIRef.PinPanel:GetState()
+                UIRef.PinnedVisibleToggle:Set(UIRef.PinPanel.Visible, false)
+                AICProfile.QueuePinnedSave()
+                AICProfile.QueueProfileSave()
+            end
+
+            UIRef.PinnedSection:AddButton{
+                Name = "Reset Pinned Items Position",
+                Callback = function()
+                    UIRef.PinPanel:ResetPosition()
+                    NotifyAction("Pinned Items", "Position reset")
+                end,
+            }
+
+            task.spawn(function()
+                local PlayerStats = Player:WaitForChild("PlayerStats", 30)
+                local Inventory = PlayerStats and PlayerStats:WaitForChild("Inventory", 30)
+
+                if Inventory then
+                    UI:BindPinToValue(UIRef.PinPanel, Inventory)
+                end
+            end)
         end)
+
+        if not PinsOk then
+            warn("[AIC] Pinned items panel unavailable: " .. tostring(PinsError))
+            UIRef.PinPanel = nil
+        end
 
         --// Breaks ties between mobs of equal priority. Disabled keeps nearest first.
         UIRef.TargetTypeDropdown = UIRef.TargetSection:AddDropdown{

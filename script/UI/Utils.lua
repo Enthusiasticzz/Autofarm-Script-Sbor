@@ -2576,6 +2576,55 @@ function Library:_BuildSettingsTab()
 	return tab
 end
 
+--// A load failure replaces the window with the full message, wrapped and
+--// scrollable, because a traceback is far longer than a status line. The text
+--// also goes to the clipboard where the executor offers one.
+function Library:ShowError(text)
+	text = tostring(text)
+
+	if self.ErrorPanel then
+		self.ErrorPanel.Text.Text = text
+		return self.ErrorPanel
+	end
+
+	local sheet = New("Frame", { Name = "LoadError", Size = UDim2.fromScale(1, 1), BorderSizePixel = 0, ZIndex = 210, Parent = self.Root })
+	Round(sheet, 10)
+	self:Themed(sheet, { BackgroundColor3 = "Panel" })
+
+	local title = self:Label(sheet, "LOAD FAILED", {
+		Bold = true, TextSize = 20, Color = "Danger",
+		Position = UDim2.fromOffset(24, 18), SizeUDim = UDim2.new(1, -48, 0, 26),
+	})
+	title.TextXAlignment = Enum.TextXAlignment.Left
+
+	local hint = self:Label(sheet, "The message is copied to the clipboard where available.", {
+		Color = "SubText", TextSize = 11,
+		Position = UDim2.fromOffset(24, 44), SizeUDim = UDim2.new(1, -48, 0, 16),
+	})
+	hint.TextXAlignment = Enum.TextXAlignment.Left
+
+	local scroll = New("ScrollingFrame", {
+		Position = UDim2.fromOffset(24, 66), Size = UDim2.new(1, -48, 1, -90),
+		BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 4,
+		CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, Parent = sheet,
+	})
+
+	local body = New("TextLabel", {
+		BackgroundTransparency = 1, Size = UDim2.new(1, -12, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
+		Text = text, TextWrapped = true, TextSize = 12, Font = Fonts.Regular,
+		TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top, Parent = scroll,
+	})
+	self:Themed(body, { TextColor3 = "SubText" })
+
+	if type(setclipboard) == "function" then
+		pcall(setclipboard, text)
+	end
+
+	self.ErrorPanel = { Sheet = sheet, Text = body }
+
+	return self.ErrorPanel
+end
+
 function Library:FinishLoading()
 	local boot = self.Loader
 
