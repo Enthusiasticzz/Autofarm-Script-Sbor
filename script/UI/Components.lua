@@ -643,6 +643,9 @@ return {
             if AICUI.RefreshBossNames then
                 AICUI.RefreshBossNames()
             end
+            if AICUI.RefreshBossVisuals then
+                AICUI.RefreshBossVisuals()
+            end
         end
         function AICUI.RefreshFarmZoneList()
         local PlaceConfig = Runtime:GetPlaceConfig()

@@ -210,8 +210,15 @@ Context.UIRef.WaypointListComponent = { SetPriority = noop }
 Context.AICUI.RefreshBossRouteList = function() table.insert(refreshes, "list") end
 Context.AICUI.RefreshBossRoutePickers = function() table.insert(refreshes, "picker") end
 Context.AICUI.RefreshBossNames = function() table.insert(refreshes, "names") end
+Context.AICUI.RefreshBossVisuals = function() table.insert(refreshes, "visuals") end
 Context.AICUI.RefreshWaypointList()
-assert(table.concat(refreshes, ",") == "list,picker,names", "profile refresh omitted boss route UI")
+assert(table.concat(refreshes, ",") == "list,picker,names,visuals", "profile refresh omitted boss route UI")
+local colorSetting
+for _, entry in ipairs(SaveConfig.GlobalSettings) do
+    if entry.Key == "BOSS_PATH_COLOR" then colorSetting = entry end
+end
+assert(colorSetting and SaveConfig.NormalizeSetting(colorSetting, "aa55ff") == "AA55FF", "boss color was not normalized")
+assert(SaveConfig.NormalizeSetting(colorSetting, "invalid") == "4F7CF5", "invalid boss color not reset")
 
 -- Profile dropdown redraws must not invoke the selection handler: that handler
 -- loads/reset the profile and refreshes the dropdown again during boot.

@@ -260,6 +260,14 @@ return {
         --// profile, shared by every profile and PlaceId. Same fields as
         --// Settings, without Scope.
         SaveConfig.GlobalSettings = {
+            --// Boss path markings are a display preference shared by profiles.
+            { Key = "BOSS_PATH_VISIBLE", Default = true },
+            { Key = "BOSS_PATH_COLOR", Default = "4F7CF5", Normalize = function(Value)
+                if type(Value) == "string" and Value:match("^%x%x%x%x%x%x$") then
+                    return string.upper(Value)
+                end
+                return "4F7CF5"
+            end },
             --// Enum.Font name the UI uses, picked in Configuration; "" keeps
             --// the built-in fonts.
             { Key = "UI_FONT", Default = "", Normalize = function(Value)

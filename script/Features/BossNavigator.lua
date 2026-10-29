@@ -951,6 +951,7 @@ return {
             AICUI.RefreshBossPathList()
             AICProfile.SaveActiveProfile()
             SetStatus(StatusText)
+            if AICUI.RefreshBossVisuals then AICUI.RefreshBossVisuals() end
             AICDebug.UpdateDebugVisualizer()
         end
 
@@ -2692,6 +2693,111 @@ return {
         end
 
         ------------------------------------------------------------------------
+        --// Boss route floor visualization (separate from the mob debugger).
+        ------------------------------------------------------------------------
+
+        local VisualFolder
+        local ColorSaveQueued = false
+        local function QueueColorSave()
+            if ColorSaveQueued then return end
+            ColorSaveQueued = true
+            task.delay(0.5, function()
+                ColorSaveQueued = false
+                if Context.Lifetime.Alive then AICProfile.WriteGlobalStore() end
+            end)
+        end
+
+        local function ClearBossVisuals()
+            if VisualFolder then
+                VisualFolder:Destroy()
+                VisualFolder = nil
+            end
+        end
+
+        local function RefreshBossVisuals()
+            ClearBossVisuals()
+            if not CONFIG.BOSS_PATH_VISIBLE then return end
+
+            local Stops = GetStops()
+            if #Stops == 0 then return end
+
+            local Color = Color3.fromHex(CONFIG.BOSS_PATH_COLOR or "4F7CF5")
+            VisualFolder = Instance.new("Folder")
+            VisualFolder.Name = "AICBossRouteVisuals"
+            VisualFolder.Parent = workspace
+
+            local Params = RaycastParams.new()
+            Params.FilterType = Enum.RaycastFilterType.Exclude
+            local Excluded = { VisualFolder }
+            if Player.Character then table.insert(Excluded, Player.Character) end
+            if AICCombatUtils.S.DebugFolder then table.insert(Excluded, AICCombatUtils.S.DebugFolder) end
+            Params.FilterDescendantsInstances = Excluded
+            Params.IgnoreWater = true
+
+            local function Ground(Position)
+                local Hit = workspace:Raycast(Position + Vector3.new(0, 2, 0), Vector3.new(0, -24, 0), Params)
+                return Hit and (Hit.Position + Vector3.new(0, 0.08, 0)) or (Position - Vector3.new(0, 2.9, 0))
+            end
+
+            local function Part(Name, Size, Placement)
+                local Item = Instance.new("Part")
+                Item.Name = Name
+                Item.Anchored = true
+                Item.CanCollide = false
+                Item.CanTouch = false
+                Item.CanQuery = false
+                Item.CastShadow = false
+                Item.Material = Enum.Material.Neon
+                Item.Color = Color
+                Item.Transparency = 0.2
+                Item.Size = Size
+                Item.CFrame = Placement
+                Item.Parent = VisualFolder
+                return Item
+            end
+
+            local function Point(Position, Name)
+                local Marker = Part(Name, Vector3.new(0.08, 1.1, 1.1), CFrame.new(Position) * CFrame.Angles(0, 0, math.rad(90)))
+                Marker.Shape = Enum.PartType.Cylinder
+            end
+
+            local function Line(From, To, Name, Width)
+                local Direction = To - From
+                local Length = Direction.Magnitude
+                if Length < 0.01 then return end
+                local Up = math.abs(Direction.Unit.Y) > 0.98 and Vector3.new(0, 0, 1) or Vector3.new(0, 1, 0)
+                Part(Name, Vector3.new(Width, 0.08, Length), CFrame.lookAt((From + To) * 0.5, To, Up))
+            end
+
+            for Index, Stop in ipairs(Stops) do
+                local Destination = Ground(Stop.Position)
+                local Previous
+                for PointIndex, Position in ipairs(Stop.Path or {}) do
+                    local Current = Ground(Position)
+                    Point(Current, string.format("Stop%d_Point%d", Index, PointIndex))
+                    if Previous then Line(Previous, Current, "PathLine", 0.18) end
+                    Previous = Current
+                end
+                if Previous then Line(Previous, Destination, "PathToStop", 0.18) end
+
+                Point(Destination, "Stop" .. Index)
+                -- A small outlined ring identifies the stop without filling the
+                -- entire engage radius or adding floating labels.
+                local Radius, Segments = 2.4, 24
+                for Segment = 1, Segments do
+                    local A = (Segment - 1) * math.pi * 2 / Segments
+                    local B = Segment * math.pi * 2 / Segments
+                    local From = Destination + Vector3.new(math.cos(A) * Radius, 0, math.sin(A) * Radius)
+                    local To = Destination + Vector3.new(math.cos(B) * Radius, 0, math.sin(B) * Radius)
+                    Line(From, To, "StopRing", 0.16)
+                end
+            end
+        end
+
+        AICUI.RefreshBossVisuals = RefreshBossVisuals
+        Context.Lifetime.OnEnd(ClearBossVisuals)
+
+        ------------------------------------------------------------------------
         --// UI
         ------------------------------------------------------------------------
 
@@ -2714,6 +2820,33 @@ return {
         end, UIRef.BossSection)
 
         UIRef.BossStatusLabel = UIRef.BossSection:AddLabel("STATUS:  IDLE")
+
+        UIRef.BossSection:AddToggle{
+            Name = "Show Boss Path",
+            Default = CONFIG.BOSS_PATH_VISIBLE == true,
+            Callback = function(Value)
+                CONFIG.BOSS_PATH_VISIBLE = Value == true
+                RefreshBossVisuals()
+                AICProfile.WriteGlobalStore()
+            end,
+        }
+
+        UIRef.BossSection:AddColorPicker{
+            Name = "Boss Path Color",
+            Default = Color3.fromHex(CONFIG.BOSS_PATH_COLOR or "4F7CF5"),
+            Callback = function(Color)
+                local Hex = Color:ToHex():upper()
+                if CONFIG.BOSS_PATH_COLOR == Hex then return end
+                CONFIG.BOSS_PATH_COLOR = Hex
+                -- Recolor existing geometry without rebuilding it during drag.
+                if VisualFolder then
+                    for _, Item in ipairs(VisualFolder:GetChildren()) do
+                        if Item:IsA("BasePart") then Item.Color = Color end
+                    end
+                end
+                QueueColorSave()
+            end,
+        }
 
         --// Turns instant resets off: with it on, every stop takes its Reset (s)
         --// before resetting, even when the character's EXP is inside the part of
@@ -3366,6 +3499,7 @@ return {
         --// stop instead of leaving them empty until the first edit.
         AICUI.RefreshBossRoutePickers()
         AICUI.RefreshBossPathList()
+        RefreshBossVisuals()
         SetStatus("IDLE")
 
         return Feature
