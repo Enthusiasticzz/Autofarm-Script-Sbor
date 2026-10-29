@@ -723,7 +723,7 @@ if not Zone then
 return
 end
 AICProfile.S.SelectedMineZoneIndex = Index
-UIRef.MineRadiusSlider:Set(tonumber(Zone.Radius) or DEFAULT_RADIUS, false)
+UIRef.MineRadiusSlider:Set(tonumber(Zone.Radius) or DEFAULT_RADIUS, true)
 end,
 }
 if Order and UIRef.MineZonePicker.Row then
@@ -731,7 +731,11 @@ UIRef.MineZonePicker.Row.LayoutOrder = Order
 end
 local Selected = Options[AICProfile.S.SelectedMineZoneIndex] or Options[1]
 if Selected then
-UIRef.MineZonePicker:Set(Selected)
+UIRef.MineZonePicker:Set(Selected, true)
+local Zone = Zones[AICProfile.S.SelectedMineZoneIndex]
+if Zone then
+UIRef.MineRadiusSlider:Set(tonumber(Zone.Radius) or DEFAULT_RADIUS, true)
+end
 end
 end
 AICUI.RefreshMineZonePicker()
@@ -2493,15 +2497,15 @@ UIRef.ProfileNameBox:Set("")
 UIRef.ReachDistanceBox:Set(tostring(PlaceConfig.REACH_DISTANCE or 5))
 UIRef.FarmRadiusSlider:Set(
 (PlaceConfig.FARM_ZONES[1] and PlaceConfig.FARM_ZONES[1].Radius) or 100,
-false
+true
 )
 UIRef.DeadzoneRadiusSlider:Set(
 (PlaceConfig.DEADZONES[1] and PlaceConfig.DEADZONES[1].Radius) or 35,
-false
+true
 )
-UIRef.RetreatHealthSlider:Set(CONFIG.RETREAT_HEALTH_PERCENT, false)
-UIRef.AutoHealHealthSlider:Set(CONFIG.AUTO_HEAL_HEALTH_PERCENT, false)
-UIRef.SafeEnemyRangeSlider:Set(CONFIG.SAFE_ENEMY_RANGE, false)
+UIRef.RetreatHealthSlider:Set(CONFIG.RETREAT_HEALTH_PERCENT, true)
+UIRef.AutoHealHealthSlider:Set(CONFIG.AUTO_HEAL_HEALTH_PERCENT, true)
+UIRef.SafeEnemyRangeSlider:Set(CONFIG.SAFE_ENEMY_RANGE, true)
 AICUI.RefreshWaypointList()
 AICUI.RefreshFarmZoneList()
 AICUI.RefreshDeadzoneList()
@@ -2523,15 +2527,15 @@ UIRef.ProfileNameBox:Set(Value)
 UIRef.ReachDistanceBox:Set(tostring(PlaceConfig.REACH_DISTANCE or 5))
 UIRef.FarmRadiusSlider:Set(
 (PlaceConfig.FARM_ZONES[1] and PlaceConfig.FARM_ZONES[1].Radius) or 100,
-false
+true
 )
 UIRef.DeadzoneRadiusSlider:Set(
 (PlaceConfig.DEADZONES[1] and PlaceConfig.DEADZONES[1].Radius) or 35,
-false
+true
 )
-UIRef.RetreatHealthSlider:Set(CONFIG.RETREAT_HEALTH_PERCENT, false)
-UIRef.AutoHealHealthSlider:Set(CONFIG.AUTO_HEAL_HEALTH_PERCENT, false)
-UIRef.SafeEnemyRangeSlider:Set(CONFIG.SAFE_ENEMY_RANGE, false)
+UIRef.RetreatHealthSlider:Set(CONFIG.RETREAT_HEALTH_PERCENT, true)
+UIRef.AutoHealHealthSlider:Set(CONFIG.AUTO_HEAL_HEALTH_PERCENT, true)
+UIRef.SafeEnemyRangeSlider:Set(CONFIG.SAFE_ENEMY_RANGE, true)
 AICUI.RefreshWaypointList()
 AICUI.RefreshFarmZoneList()
 AICUI.RefreshDeadzoneList()
@@ -2557,9 +2561,9 @@ end
 if AICProfile.S.ActiveProfileName
 and table.find(Options, AICProfile.S.ActiveProfileName)
 then
-UIRef.ProfileDropdown:Set(AICProfile.S.ActiveProfileName, false)
+UIRef.ProfileDropdown:Set(AICProfile.S.ActiveProfileName, true)
 else
-UIRef.ProfileDropdown:Set("Default Config", false)
+UIRef.ProfileDropdown:Set("Default Config", true)
 end
 end
 UIRef.ProfileTab = UI:AddTab{ Name = "Profile Settings" }
@@ -2636,16 +2640,16 @@ return
 end
 UIRef.ProfileNameBox:Set(Name)
 UIRef.ReachDistanceBox:Set(tostring(Runtime:GetPlaceConfig().REACH_DISTANCE or 5))
-UIRef.FarmRadiusSlider:Set((Runtime:GetPlaceConfig().FARM_ZONES[1] and Runtime:GetPlaceConfig().FARM_ZONES[1].Radius) or 100, false)
-UIRef.DeadzoneRadiusSlider:Set((Runtime:GetPlaceConfig().DEADZONES[1] and Runtime:GetPlaceConfig().DEADZONES[1].Radius) or 35, false)
-UIRef.RetreatHealthSlider:Set(CONFIG.RETREAT_HEALTH_PERCENT, false)
-UIRef.AutoHealHealthSlider:Set(CONFIG.AUTO_HEAL_HEALTH_PERCENT, false)
-UIRef.SafeEnemyRangeSlider:Set(CONFIG.SAFE_ENEMY_RANGE, false)
+UIRef.FarmRadiusSlider:Set((Runtime:GetPlaceConfig().FARM_ZONES[1] and Runtime:GetPlaceConfig().FARM_ZONES[1].Radius) or 100, true)
+UIRef.DeadzoneRadiusSlider:Set((Runtime:GetPlaceConfig().DEADZONES[1] and Runtime:GetPlaceConfig().DEADZONES[1].Radius) or 35, true)
+UIRef.RetreatHealthSlider:Set(CONFIG.RETREAT_HEALTH_PERCENT, true)
+UIRef.AutoHealHealthSlider:Set(CONFIG.AUTO_HEAL_HEALTH_PERCENT, true)
+UIRef.SafeEnemyRangeSlider:Set(CONFIG.SAFE_ENEMY_RANGE, true)
 AICUI.RefreshWaypointList()
 AICUI.RefreshFarmZoneList()
 AICUI.RefreshDeadzoneList()
 AICUI.RefreshProfileDropdown()
-UIRef.ProfileDropdown:Set(Name, false)
+UIRef.ProfileDropdown:Set(Name, true)
 UIRef.PriorityComponent:SetPriority(table.clone(CONFIG.TARGET_ENTITY_PRIORITY or {}))
 AICUI.updateFeatureButtons()
 AICUI.RefreshTargetDropdown()
@@ -2689,13 +2693,13 @@ UIRef.ImportDataBox:Set("")
 local PlaceConfig = Runtime:GetPlaceConfig()
 UIRef.ProfileNameBox:Set(Result)
 UIRef.ReachDistanceBox:Set(tostring(PlaceConfig.REACH_DISTANCE or 5))
-UIRef.FarmRadiusSlider:Set((PlaceConfig.FARM_ZONES[1] and PlaceConfig.FARM_ZONES[1].Radius) or 100, false)
-UIRef.DeadzoneRadiusSlider:Set((PlaceConfig.DEADZONES[1] and PlaceConfig.DEADZONES[1].Radius) or 35, false)
-UIRef.RetreatHealthSlider:Set(CONFIG.RETREAT_HEALTH_PERCENT, false)
-UIRef.AutoHealHealthSlider:Set(CONFIG.AUTO_HEAL_HEALTH_PERCENT, false)
-UIRef.SafeEnemyRangeSlider:Set(CONFIG.SAFE_ENEMY_RANGE, false)
+UIRef.FarmRadiusSlider:Set((PlaceConfig.FARM_ZONES[1] and PlaceConfig.FARM_ZONES[1].Radius) or 100, true)
+UIRef.DeadzoneRadiusSlider:Set((PlaceConfig.DEADZONES[1] and PlaceConfig.DEADZONES[1].Radius) or 35, true)
+UIRef.RetreatHealthSlider:Set(CONFIG.RETREAT_HEALTH_PERCENT, true)
+UIRef.AutoHealHealthSlider:Set(CONFIG.AUTO_HEAL_HEALTH_PERCENT, true)
+UIRef.SafeEnemyRangeSlider:Set(CONFIG.SAFE_ENEMY_RANGE, true)
 RunInSteps({
-function() AICUI.RefreshProfileDropdown(); UIRef.ProfileDropdown:Set(Result, false) end,
+function() AICUI.RefreshProfileDropdown(); UIRef.ProfileDropdown:Set(Result, true) end,
 function() AICUI.RefreshWaypointList() end,
 function() AICUI.RefreshFarmZoneList() end,
 function() AICUI.RefreshDeadzoneList() end,
@@ -2721,8 +2725,8 @@ local Name = AICProfile.S.ActiveProfileName
 if AICProfile.DeleteProfile(Name) then
 UIRef.ProfileNameBox:Set("")
 UIRef.ReachDistanceBox:Set(tostring(Runtime:GetPlaceConfig().REACH_DISTANCE or 5))
-UIRef.FarmRadiusSlider:Set((Runtime:GetPlaceConfig().FARM_ZONES[1] and Runtime:GetPlaceConfig().FARM_ZONES[1].Radius) or 100, false)
-UIRef.DeadzoneRadiusSlider:Set((Runtime:GetPlaceConfig().DEADZONES[1] and Runtime:GetPlaceConfig().DEADZONES[1].Radius) or 35, false)
+UIRef.FarmRadiusSlider:Set((Runtime:GetPlaceConfig().FARM_ZONES[1] and Runtime:GetPlaceConfig().FARM_ZONES[1].Radius) or 100, true)
+UIRef.DeadzoneRadiusSlider:Set((Runtime:GetPlaceConfig().DEADZONES[1] and Runtime:GetPlaceConfig().DEADZONES[1].Radius) or 35, true)
 AICUI.RefreshWaypointList()
 AICUI.RefreshFarmZoneList()
 AICUI.RefreshDeadzoneList()
@@ -2764,10 +2768,10 @@ if UIRef.ReachDistanceBox then
 UIRef.ReachDistanceBox:Set(tostring(Runtime:GetPlaceConfig().REACH_DISTANCE or 5))
 end
 if UIRef.FarmRadiusSlider then
-UIRef.FarmRadiusSlider:Set((Runtime:GetPlaceConfig().FARM_ZONES[1] and Runtime:GetPlaceConfig().FARM_ZONES[1].Radius) or 100, false)
+UIRef.FarmRadiusSlider:Set((Runtime:GetPlaceConfig().FARM_ZONES[1] and Runtime:GetPlaceConfig().FARM_ZONES[1].Radius) or 100, true)
 end
 if UIRef.DeadzoneRadiusSlider then
-UIRef.DeadzoneRadiusSlider:Set((Runtime:GetPlaceConfig().DEADZONES[1] and Runtime:GetPlaceConfig().DEADZONES[1].Radius) or 35, false)
+UIRef.DeadzoneRadiusSlider:Set((Runtime:GetPlaceConfig().DEADZONES[1] and Runtime:GetPlaceConfig().DEADZONES[1].Radius) or 35, true)
 end
 AICUI.RefreshWaypointList()
 AICUI.RefreshFarmZoneList()
@@ -2782,7 +2786,7 @@ AICDebug.UpdateDebugVisualizer()
 end
 AICUI.RefreshProfileDropdown()
 if AICProfile.S.ActiveProfileName and UIRef.ProfileDropdown then
-UIRef.ProfileDropdown:Set(AICProfile.S.ActiveProfileName, false)
+UIRef.ProfileDropdown:Set(AICProfile.S.ActiveProfileName, true)
 AICUI.SetProfileStatus("AUTO LOADED " .. AICProfile.S.ActiveProfileName)
 end
 end
@@ -5377,7 +5381,7 @@ local function SetCraftAmount(Value)
 local Amount = math.clamp(math.floor(tonumber(Value) or 0), math.min(1, S.CraftMax), S.CraftMax)
 S.CraftAmount = Amount
 if Craft.Slider then
-Craft.Slider:Set(Amount, false)
+Craft.Slider:Set(Amount, true)
 end
 if Craft.AmountBox then
 Craft.AmountBox.Text = tostring(Amount)
@@ -6069,7 +6073,7 @@ if LayoutOrder then
 Dropdown.Row.LayoutOrder = LayoutOrder
 end
 if Previous and table.find(Options, Previous) then
-Dropdown:Set(Previous, false)
+Dropdown:Set(Previous, true)
 end
 return Dropdown
 end
@@ -6990,15 +6994,15 @@ local Index = table.find(WaypointOptions, Value)
 if Index and Current.WAYPOINTS[Index] then
 SelectedPairWaypoint = Index
 if UIRef.PairZonePicker then
-UIRef.PairZonePicker:Set(ZoneOptionLabel(Current.WAYPOINT_ZONES[Index] or 0), false)
+UIRef.PairZonePicker:Set(ZoneOptionLabel(Current.WAYPOINT_ZONES[Index] or 0), true)
 end
 end
 end)
 end
 if UIRef.PairZonePicker and PairPickerSignatures.Zone == ZoneSignature then
 if PlaceConfig.WAYPOINTS[SelectedPairWaypoint] then
-UIRef.PairWaypointPicker:Set(WaypointOptions[SelectedPairWaypoint], false)
-UIRef.PairZonePicker:Set(ZoneOptionLabel(PlaceConfig.WAYPOINT_ZONES[SelectedPairWaypoint] or 0), false)
+UIRef.PairWaypointPicker:Set(WaypointOptions[SelectedPairWaypoint], true)
+UIRef.PairZonePicker:Set(ZoneOptionLabel(PlaceConfig.WAYPOINT_ZONES[SelectedPairWaypoint] or 0), true)
 end
 return
 end
@@ -7024,8 +7028,8 @@ AICUI.RefreshWaypointList()
 AICUI.SetProfileStatus("WAYPOINT #" .. SelectedPairWaypoint .. " -> " .. ZoneOptionLabel(ZoneIndex):upper())
 end)
 if PlaceConfig.WAYPOINTS[SelectedPairWaypoint] then
-UIRef.PairWaypointPicker:Set(WaypointOptions[SelectedPairWaypoint], false)
-UIRef.PairZonePicker:Set(ZoneOptionLabel(PlaceConfig.WAYPOINT_ZONES[SelectedPairWaypoint] or 0), false)
+UIRef.PairWaypointPicker:Set(WaypointOptions[SelectedPairWaypoint], true)
+UIRef.PairZonePicker:Set(ZoneOptionLabel(PlaceConfig.WAYPOINT_ZONES[SelectedPairWaypoint] or 0), true)
 end
 end
 local function SelectedZone()

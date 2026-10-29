@@ -106,7 +106,7 @@ return {
             end
 
             if Previous and table.find(Options, Previous) then
-                Dropdown:Set(Previous, false)
+                Dropdown:Set(Previous, true)
             end
 
             return Dropdown

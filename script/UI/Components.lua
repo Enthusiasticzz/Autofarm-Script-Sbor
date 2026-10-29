@@ -31,7 +31,7 @@ return {
                 and type(Data.Button) == "table"
                 and type(Data.Button.Set) == "function"
             then
-                Data.Button:Set(Value, false)
+                Data.Button:Set(Value, true)
             end
         end
 
@@ -493,20 +493,20 @@ return {
             if UIRef.ExecuteChargeSlider then
                 UIRef.ExecuteChargeSlider:Set(
                     math.clamp(tonumber(CONFIG.EXECUTE_CHARGE_HP_PERCENT) or 0, 0, 90),
-                    false
+                    true
                 )
             end
         
             if UIRef.TargetTypeDropdown then
-                UIRef.TargetTypeDropdown:Set(tostring(CONFIG.TARGET_HP_MODE or "Disabled"), false)
+                UIRef.TargetTypeDropdown:Set(tostring(CONFIG.TARGET_HP_MODE or "Disabled"), true)
             end
         
             if UIRef.BlockDelaySlider then
-                UIRef.BlockDelaySlider:Set(CONFIG.AUTO_BLOCK_DELAY, false)
+                UIRef.BlockDelaySlider:Set(CONFIG.AUTO_BLOCK_DELAY, true)
             end
 
             if UIRef.CloseCombatRangeSlider then
-                UIRef.CloseCombatRangeSlider:Set(CONFIG.CLOSE_COMBAT_RANGE, false)
+                UIRef.CloseCombatRangeSlider:Set(CONFIG.CLOSE_COMBAT_RANGE, true)
             end
 
             --// Every slider made with AddSettingSlider, so a new one does
@@ -515,7 +515,7 @@ return {
                 local Entry = Context.SaveConfig.GetSetting(Key)
 
                 if Entry then
-                    Slider:Set(Context.SaveConfig.NormalizeSetting(Entry, CONFIG[Key]), false)
+                    Slider:Set(Context.SaveConfig.NormalizeSetting(Entry, CONFIG[Key]), true)
                 end
             end
 
@@ -673,14 +673,21 @@ return {
                 if not Index or not PlaceConfig.FARM_ZONES[Index] then return end
         
                 AICProfile.S.SelectedFarmZoneIndex = Index
-                UIRef.FarmRadiusSlider:Set(tonumber(PlaceConfig.FARM_ZONES[Index].Radius) or 100, false)
+                UIRef.FarmRadiusSlider:Set(tonumber(PlaceConfig.FARM_ZONES[Index].Radius) or 100, true)
 
                 if AICUI.RefreshZoneTargets then
                     AICUI.RefreshZoneTargets()
                 end
             end)
         
-            if SelectedOption then UIRef.FarmZonePicker:Set(SelectedOption) end
+            if SelectedOption then
+                UIRef.FarmZonePicker:Set(SelectedOption, true)
+                local Zone = PlaceConfig.FARM_ZONES[AICProfile.S.SelectedFarmZoneIndex]
+                if Zone then
+                    UIRef.FarmRadiusSlider:Set(tonumber(Zone.Radius) or 100, true)
+                    if AICUI.RefreshZoneTargets then AICUI.RefreshZoneTargets() end
+                end
+            end
         end
         function AICUI.RefreshDeadzonePicker()
         local PlaceConfig = Runtime:GetPlaceConfig()
@@ -695,10 +702,16 @@ return {
                 if not Index or not PlaceConfig.DEADZONES[Index] then return end
         
                 AICProfile.S.SelectedDeadzoneIndex = Index
-                UIRef.DeadzoneRadiusSlider:Set(tonumber(PlaceConfig.DEADZONES[Index].Radius) or 35, false)
+                UIRef.DeadzoneRadiusSlider:Set(tonumber(PlaceConfig.DEADZONES[Index].Radius) or 35, true)
             end)
         
-            if SelectedOption then UIRef.DeadzonePicker:Set(SelectedOption) end
+            if SelectedOption then
+                UIRef.DeadzonePicker:Set(SelectedOption, true)
+                local Zone = PlaceConfig.DEADZONES[AICProfile.S.SelectedDeadzoneIndex]
+                if Zone then
+                    UIRef.DeadzoneRadiusSlider:Set(tonumber(Zone.Radius) or 35, true)
+                end
+            end
         end
         
         --// UI stats

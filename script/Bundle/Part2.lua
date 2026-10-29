@@ -2653,7 +2653,7 @@ AICCombat.ResetTargetState()
 AICProfile.SaveActiveProfile()
 end,
 }
-UIRef.TargetTypeDropdown:Set(tostring(CONFIG.TARGET_HP_MODE or "Disabled"), false)
+UIRef.TargetTypeDropdown:Set(tostring(CONFIG.TARGET_HP_MODE or "Disabled"), true)
 do
 local STATUS = {
 { Label = "Auto Farm", Feature = "AutoFarm" },

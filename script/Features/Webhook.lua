@@ -657,7 +657,7 @@ return {
                 CONFIG.DISCORD_FORMAT = FORMAT_CURRENCY
             end
 
-            FormatPicker:Set(CONFIG.DISCORD_FORMAT, false)
+            FormatPicker:Set(CONFIG.DISCORD_FORMAT, true)
 
             Section:AddTextBox{
                 Name = "EC Item Name",

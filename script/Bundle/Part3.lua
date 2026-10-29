@@ -2208,7 +2208,7 @@ end
 end
 function Feature.RefreshBoosterToggles()
 for Name, Toggle in pairs(Toggles) do
-Toggle:Set(IsSelected(Name), false)
+Toggle:Set(IsSelected(Name), true)
 end
 SetStatus()
 end
@@ -4120,24 +4120,24 @@ local Stop = SelectedStop()
 if not Stop then
 return
 end
-if UIRef.BossNameBox then UIRef.BossNameBox:Set(Stop.Label, false) end
-if UIRef.BossWaypointBox then UIRef.BossWaypointBox:Set(tostring(Stop.Waypoint or 0), false) end
-if UIRef.BossRadiusBox then UIRef.BossRadiusBox:Set(tostring(Stop.Radius or 0), false) end
-if UIRef.BossWaitBox then UIRef.BossWaitBox:Set(tostring(Stop.Wait or 0), false) end
+if UIRef.BossNameBox then UIRef.BossNameBox:Set(Stop.Label, true) end
+if UIRef.BossWaypointBox then UIRef.BossWaypointBox:Set(tostring(Stop.Waypoint or 0), true) end
+if UIRef.BossRadiusBox then UIRef.BossRadiusBox:Set(tostring(Stop.Radius or 0), true) end
+if UIRef.BossWaitBox then UIRef.BossWaitBox:Set(tostring(Stop.Wait or 0), true) end
 if UIRef.BossResetAfterKillToggle then
-UIRef.BossResetAfterKillToggle:Set(Stop.ResetAfterKill == true, false)
+UIRef.BossResetAfterKillToggle:Set(Stop.ResetAfterKill == true, true)
 end
 if UIRef.BossDodgeToggle then
-UIRef.BossDodgeToggle:Set(Stop.Dodge ~= false, false)
+UIRef.BossDodgeToggle:Set(Stop.Dodge ~= false, true)
 end
 if UIRef.BossDodgeDistanceBox then
 UIRef.BossDodgeDistanceBox:Set(
 tostring(Stop.DodgeDistance or AICConfig.DEFAULT_BOSS_DODGE_DISTANCE),
-false
+true
 )
 end
 if UIRef.BossPromptToggle then
-UIRef.BossPromptToggle:Set(Stop.Prompt == true, false)
+UIRef.BossPromptToggle:Set(Stop.Prompt == true, true)
 end
 if UIRef.BossPromptLabel then
 UIRef.BossPromptLabel:Set(Stop.PromptPosition
@@ -4151,9 +4151,9 @@ Stop.PromptPosition.Z
 or "PROMPT:  NONE SAVED  (NEAREST TO THE STOP IS USED)"
 )
 end
-if UIRef.BossLoopToggle then UIRef.BossLoopToggle:Set(CONFIG.BOSS_ROUTE_LOOP ~= false, false) end
+if UIRef.BossLoopToggle then UIRef.BossLoopToggle:Set(CONFIG.BOSS_ROUTE_LOOP ~= false, true) end
 if UIRef.BossAlwaysWaitToggle then
-UIRef.BossAlwaysWaitToggle:Set(CONFIG.BOSS_RESET_ALWAYS_WAIT == true, false)
+UIRef.BossAlwaysWaitToggle:Set(CONFIG.BOSS_RESET_ALWAYS_WAIT == true, true)
 end
 AICUI.RefreshBossPathList()
 end
@@ -4188,7 +4188,7 @@ end
 end
 )
 if Selected then
-UIRef.BossPicker:Set(Selected, false)
+UIRef.BossPicker:Set(Selected, true)
 end
 RefreshEditor()
 end

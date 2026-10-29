@@ -50,6 +50,7 @@ $runtime = Module-Source "Core/Runtime.lua" "script/Core/Runtime.lua"
 $saveConfig = Module-Source "Core/SaveConfig.lua" "script/Core/SaveConfig.lua"
 $components = Module-Source "UI/Components.lua" "script/UI/Components.lua"
 $bootstrap = Module-Source "Core/Bootstrap.lua" "script/Core/Bootstrap.lua"
+$profileSettings = Module-Source "Features/ProfileSettings.lua" "script/Features/ProfileSettings.lua"
 $probe = Get-Content (Join-Path $PSScriptRoot "BootProbe.lua") -Raw
 
 # The stub keeps its world in locals (the UI smoke test runs in the same chunk).
@@ -93,6 +94,7 @@ $combined += "`nlocal SaveConfigModule = (function()`n" + $saveConfig + "`nend)(
 $combined += "`nlocal RuntimeModule = (function()`n" + $runtime + "`nend)()`n"
 $combined += "`nlocal ComponentsModule = (function()`n" + $components + "`nend)()`n"
 $combined += "`nlocal BootstrapModule = (function()`n" + $bootstrap + "`nend)()`n"
+$combined += "`nlocal ProfileSettingsModule = (function()`n" + $profileSettings + "`nend)()`n"
 $combined += "`n" + $probe
 
 $outDir = Join-Path $PSScriptRoot "output"

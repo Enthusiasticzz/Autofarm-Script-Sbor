@@ -192,7 +192,7 @@ return {
                     end
 
                     AICProfile.S.SelectedMineZoneIndex = Index
-                    UIRef.MineRadiusSlider:Set(tonumber(Zone.Radius) or DEFAULT_RADIUS, false)
+                    UIRef.MineRadiusSlider:Set(tonumber(Zone.Radius) or DEFAULT_RADIUS, true)
                 end,
             }
 
@@ -203,7 +203,11 @@ return {
             local Selected = Options[AICProfile.S.SelectedMineZoneIndex] or Options[1]
 
             if Selected then
-                UIRef.MineZonePicker:Set(Selected)
+                UIRef.MineZonePicker:Set(Selected, true)
+                local Zone = Zones[AICProfile.S.SelectedMineZoneIndex]
+                if Zone then
+                    UIRef.MineRadiusSlider:Set(tonumber(Zone.Radius) or DEFAULT_RADIUS, true)
+                end
             end
         end
 

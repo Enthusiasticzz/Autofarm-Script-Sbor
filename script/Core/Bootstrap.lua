@@ -311,7 +311,7 @@ return {
             end,
         }
         
-        UIRef.TargetTypeDropdown:Set(tostring(CONFIG.TARGET_HP_MODE or "Disabled"), false)
+        UIRef.TargetTypeDropdown:Set(tostring(CONFIG.TARGET_HP_MODE or "Disabled"), true)
 
         --// Status grid: the icon row in the sidebar, above the divider. Each
         --// icon follows one feature's own toggle and a click flips that

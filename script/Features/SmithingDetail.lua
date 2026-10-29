@@ -347,7 +347,7 @@ return {
             S.CraftAmount = Amount
 
             if Craft.Slider then
-                Craft.Slider:Set(Amount, false)
+                Craft.Slider:Set(Amount, true)
             end
 
             if Craft.AmountBox then

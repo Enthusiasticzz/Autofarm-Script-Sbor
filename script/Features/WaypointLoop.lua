@@ -536,7 +536,7 @@ return {
                         SelectedPairWaypoint = Index
 
                         if UIRef.PairZonePicker then
-                            UIRef.PairZonePicker:Set(ZoneOptionLabel(Current.WAYPOINT_ZONES[Index] or 0), false)
+                            UIRef.PairZonePicker:Set(ZoneOptionLabel(Current.WAYPOINT_ZONES[Index] or 0), true)
                         end
                     end
                 end)
@@ -544,8 +544,8 @@ return {
 
             if UIRef.PairZonePicker and PairPickerSignatures.Zone == ZoneSignature then
                 if PlaceConfig.WAYPOINTS[SelectedPairWaypoint] then
-                    UIRef.PairWaypointPicker:Set(WaypointOptions[SelectedPairWaypoint], false)
-                    UIRef.PairZonePicker:Set(ZoneOptionLabel(PlaceConfig.WAYPOINT_ZONES[SelectedPairWaypoint] or 0), false)
+                    UIRef.PairWaypointPicker:Set(WaypointOptions[SelectedPairWaypoint], true)
+                    UIRef.PairZonePicker:Set(ZoneOptionLabel(PlaceConfig.WAYPOINT_ZONES[SelectedPairWaypoint] or 0), true)
                 end
 
                 return
@@ -583,8 +583,8 @@ return {
             end)
 
             if PlaceConfig.WAYPOINTS[SelectedPairWaypoint] then
-                UIRef.PairWaypointPicker:Set(WaypointOptions[SelectedPairWaypoint], false)
-                UIRef.PairZonePicker:Set(ZoneOptionLabel(PlaceConfig.WAYPOINT_ZONES[SelectedPairWaypoint] or 0), false)
+                UIRef.PairWaypointPicker:Set(WaypointOptions[SelectedPairWaypoint], true)
+                UIRef.PairZonePicker:Set(ZoneOptionLabel(PlaceConfig.WAYPOINT_ZONES[SelectedPairWaypoint] or 0), true)
             end
         end
 

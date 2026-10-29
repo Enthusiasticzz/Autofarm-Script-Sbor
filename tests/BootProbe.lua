@@ -83,8 +83,7 @@ local Ok, Err = xpcall(function()
 end, debug.traceback)
 
 if not Ok then
-    print("RUNTIME START ERROR:\n" .. tostring(Err))
-    return
+    error("RUNTIME START ERROR:\n" .. tostring(Err))
 end
 
 --// Runtime installs its own (mostly empty) module tables, which replace the
@@ -134,8 +133,7 @@ for _, name in ipairs({ "Components", "Bootstrap" }) do
     local Started, Failure = xpcall(Spec.Start, debug.traceback, Context)
 
     if not Started then
-        print(name:upper() .. " START ERROR:\n" .. tostring(Failure))
-        return
+        error(name:upper() .. " START ERROR:\n" .. tostring(Failure))
     end
 
     print(name .. " ok")
@@ -159,8 +157,63 @@ local DataOk, DataErr = xpcall(function()
 end, debug.traceback)
 
 if not DataOk then
-    print("BOOT DATA PATH ERROR:\n" .. tostring(DataErr))
-    return
+    error("BOOT DATA PATH ERROR:\n" .. tostring(DataErr))
 end
+
+-- Profile dropdown redraws must not invoke the selection handler: that handler
+-- loads/reset the profile and refreshes the dropdown again during boot.
+local profileLoads, defaultLoads = 0, 0
+Context.AICProfile.S.ProfileStore = { LastUsed = "Saved", Profiles = { Saved = {} } }
+Context.AICProfile.S.ActiveProfileName = "Saved"
+Context.AICProfile.GetProfileNames = function() return { "Saved" } end
+Context.AICProfile.LoadProfile = function()
+    profileLoads += 1
+    return true
+end
+Context.AICProfile.ApplyDefaultPlaceConfig = function() defaultLoads += 1 end
+local ProfileSettings = ProfileSettingsModule.Start(Context)
+local updateFeatureButtons = Context.AICUI.updateFeatureButtons
+Context.AICUI.RefreshProfileDropdown()
+assert(Context.UIRef.ProfileDropdown:Get() == "Saved", "saved profile not displayed")
+assert(profileLoads == 0 and defaultLoads == 0, "profile redraw invoked selection")
+Context.AICProfile.S.ActiveProfileName = nil
+Context.AICUI.RefreshProfileDropdown()
+assert(Context.UIRef.ProfileDropdown:Get() == "Default Config", "default profile not displayed")
+assert(profileLoads == 0 and defaultLoads == 0, "default redraw reset profile")
+
+-- Finalize restores a saved profile once; subsequent dropdown synchronization
+-- must not load it again or overwrite it with the default configuration.
+Context.AICProfile.S.ActiveProfileName = nil
+Context.AICProfile.LoadProfile = function(name)
+    profileLoads += 1
+    Context.AICProfile.S.ActiveProfileName = name
+    return true
+end
+Context.AICUI.RefreshWaypointList = noop
+Context.AICUI.RefreshFarmZoneList = noop
+Context.AICUI.RefreshDeadzoneList = noop
+Context.AICUI.updatePosition = noop
+Context.AICUI.updateFeatureButtons = noop
+ProfileSettings:Finalize()
+assert(profileLoads == 1 and defaultLoads == 0, "finalize reloaded or reset the saved profile")
+assert(Context.UIRef.ProfileDropdown:Get() == "Saved", "finalize did not display the restored profile")
+
+-- Synchronization of feature toggles/sliders must not fire their callbacks.
+Context.AICUI.updateFeatureButtons = updateFeatureButtons
+local callbacks = 0
+local section = Context.UIRef.TargetSection
+local toggle = section:AddToggle{ Name = "Sync test", Default = false, Callback = function() callbacks += 1 end }
+Context.Feature.AutoFarm.Button = toggle
+Context.AICFeature.S.Enabled = true
+local slider = section:AddSlider{ Name = "Sync slider", Default = 0, Min = 0, Max = 90, Callback = function() callbacks += 1 end }
+Context.UIRef.ExecuteChargeSlider = slider
+Context.CONFIG.EXECUTE_CHARGE_HP_PERCENT = 25
+Context.AICUI.updateFeatureButtons()
+assert(toggle:Get() == true and slider:Get() == 25, "controls did not synchronize")
+assert(callbacks == 0, "synchronization invoked user callbacks")
+toggle:Set(false)
+slider:Set(30)
+assert(callbacks == 2, "user changes stopped invoking callbacks")
+assert(#SmokeEnv.Errors == 0, "stub captured asynchronous handler errors: " .. table.concat(SmokeEnv.Errors, "; "))
 
 print("BOOT PROBE PASSED")

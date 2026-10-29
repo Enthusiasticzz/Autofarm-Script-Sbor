@@ -55,15 +55,15 @@ return {
                     UIRef.ReachDistanceBox:Set(tostring(PlaceConfig.REACH_DISTANCE or 5))
                     UIRef.FarmRadiusSlider:Set(
                         (PlaceConfig.FARM_ZONES[1] and PlaceConfig.FARM_ZONES[1].Radius) or 100,
-                        false
+                        true
                     )
                     UIRef.DeadzoneRadiusSlider:Set(
                         (PlaceConfig.DEADZONES[1] and PlaceConfig.DEADZONES[1].Radius) or 35,
-                        false
+                        true
                     )
-                    UIRef.RetreatHealthSlider:Set(CONFIG.RETREAT_HEALTH_PERCENT, false)
-                    UIRef.AutoHealHealthSlider:Set(CONFIG.AUTO_HEAL_HEALTH_PERCENT, false)
-                    UIRef.SafeEnemyRangeSlider:Set(CONFIG.SAFE_ENEMY_RANGE, false)
+                    UIRef.RetreatHealthSlider:Set(CONFIG.RETREAT_HEALTH_PERCENT, true)
+                    UIRef.AutoHealHealthSlider:Set(CONFIG.AUTO_HEAL_HEALTH_PERCENT, true)
+                    UIRef.SafeEnemyRangeSlider:Set(CONFIG.SAFE_ENEMY_RANGE, true)
 
                     AICUI.RefreshWaypointList()
                     AICUI.RefreshFarmZoneList()
@@ -90,15 +90,15 @@ return {
                     UIRef.ReachDistanceBox:Set(tostring(PlaceConfig.REACH_DISTANCE or 5))
                     UIRef.FarmRadiusSlider:Set(
                         (PlaceConfig.FARM_ZONES[1] and PlaceConfig.FARM_ZONES[1].Radius) or 100,
-                        false
+                        true
                     )
                     UIRef.DeadzoneRadiusSlider:Set(
                         (PlaceConfig.DEADZONES[1] and PlaceConfig.DEADZONES[1].Radius) or 35,
-                        false
+                        true
                     )
-                    UIRef.RetreatHealthSlider:Set(CONFIG.RETREAT_HEALTH_PERCENT, false)
-                    UIRef.AutoHealHealthSlider:Set(CONFIG.AUTO_HEAL_HEALTH_PERCENT, false)
-                    UIRef.SafeEnemyRangeSlider:Set(CONFIG.SAFE_ENEMY_RANGE, false)
+                    UIRef.RetreatHealthSlider:Set(CONFIG.RETREAT_HEALTH_PERCENT, true)
+                    UIRef.AutoHealHealthSlider:Set(CONFIG.AUTO_HEAL_HEALTH_PERCENT, true)
+                    UIRef.SafeEnemyRangeSlider:Set(CONFIG.SAFE_ENEMY_RANGE, true)
 
                     AICUI.RefreshWaypointList()
                     AICUI.RefreshFarmZoneList()
@@ -129,9 +129,9 @@ return {
         if AICProfile.S.ActiveProfileName
             and table.find(Options, AICProfile.S.ActiveProfileName)
         then
-            UIRef.ProfileDropdown:Set(AICProfile.S.ActiveProfileName, false)
+            UIRef.ProfileDropdown:Set(AICProfile.S.ActiveProfileName, true)
         else
-            UIRef.ProfileDropdown:Set("Default Config", false)
+            UIRef.ProfileDropdown:Set("Default Config", true)
         end
     end
         UIRef.ProfileTab = UI:AddTab{ Name = "Profile Settings" }
@@ -241,16 +241,16 @@ UIRef.ProfilesSection:AddButton{ Name = "Create New Profile", Callback = functio
 
     UIRef.ProfileNameBox:Set(Name)
     UIRef.ReachDistanceBox:Set(tostring(Runtime:GetPlaceConfig().REACH_DISTANCE or 5))
-    UIRef.FarmRadiusSlider:Set((Runtime:GetPlaceConfig().FARM_ZONES[1] and Runtime:GetPlaceConfig().FARM_ZONES[1].Radius) or 100, false)
-    UIRef.DeadzoneRadiusSlider:Set((Runtime:GetPlaceConfig().DEADZONES[1] and Runtime:GetPlaceConfig().DEADZONES[1].Radius) or 35, false)
-    UIRef.RetreatHealthSlider:Set(CONFIG.RETREAT_HEALTH_PERCENT, false)
-    UIRef.AutoHealHealthSlider:Set(CONFIG.AUTO_HEAL_HEALTH_PERCENT, false)
-    UIRef.SafeEnemyRangeSlider:Set(CONFIG.SAFE_ENEMY_RANGE, false)
+    UIRef.FarmRadiusSlider:Set((Runtime:GetPlaceConfig().FARM_ZONES[1] and Runtime:GetPlaceConfig().FARM_ZONES[1].Radius) or 100, true)
+    UIRef.DeadzoneRadiusSlider:Set((Runtime:GetPlaceConfig().DEADZONES[1] and Runtime:GetPlaceConfig().DEADZONES[1].Radius) or 35, true)
+    UIRef.RetreatHealthSlider:Set(CONFIG.RETREAT_HEALTH_PERCENT, true)
+    UIRef.AutoHealHealthSlider:Set(CONFIG.AUTO_HEAL_HEALTH_PERCENT, true)
+    UIRef.SafeEnemyRangeSlider:Set(CONFIG.SAFE_ENEMY_RANGE, true)
     AICUI.RefreshWaypointList()
     AICUI.RefreshFarmZoneList()
     AICUI.RefreshDeadzoneList()
     AICUI.RefreshProfileDropdown()
-    UIRef.ProfileDropdown:Set(Name, false)
+    UIRef.ProfileDropdown:Set(Name, true)
     --// A new profile can replace CONFIG.TARGET_ENTITY_PRIORITY.
     --// Sync the Utils priority component before rebuilding the target dropdown,
     --// otherwise it may still hold the previous profile's priority list.
@@ -310,14 +310,14 @@ UIRef.ProfilesSection:AddButton{ Name = "Import Save", Callback = function()
 
     UIRef.ProfileNameBox:Set(Result)
     UIRef.ReachDistanceBox:Set(tostring(PlaceConfig.REACH_DISTANCE or 5))
-    UIRef.FarmRadiusSlider:Set((PlaceConfig.FARM_ZONES[1] and PlaceConfig.FARM_ZONES[1].Radius) or 100, false)
-    UIRef.DeadzoneRadiusSlider:Set((PlaceConfig.DEADZONES[1] and PlaceConfig.DEADZONES[1].Radius) or 35, false)
-    UIRef.RetreatHealthSlider:Set(CONFIG.RETREAT_HEALTH_PERCENT, false)
-    UIRef.AutoHealHealthSlider:Set(CONFIG.AUTO_HEAL_HEALTH_PERCENT, false)
-    UIRef.SafeEnemyRangeSlider:Set(CONFIG.SAFE_ENEMY_RANGE, false)
+    UIRef.FarmRadiusSlider:Set((PlaceConfig.FARM_ZONES[1] and PlaceConfig.FARM_ZONES[1].Radius) or 100, true)
+    UIRef.DeadzoneRadiusSlider:Set((PlaceConfig.DEADZONES[1] and PlaceConfig.DEADZONES[1].Radius) or 35, true)
+    UIRef.RetreatHealthSlider:Set(CONFIG.RETREAT_HEALTH_PERCENT, true)
+    UIRef.AutoHealHealthSlider:Set(CONFIG.AUTO_HEAL_HEALTH_PERCENT, true)
+    UIRef.SafeEnemyRangeSlider:Set(CONFIG.SAFE_ENEMY_RANGE, true)
 
     RunInSteps({
-        function() AICUI.RefreshProfileDropdown(); UIRef.ProfileDropdown:Set(Result, false) end,
+        function() AICUI.RefreshProfileDropdown(); UIRef.ProfileDropdown:Set(Result, true) end,
         function() AICUI.RefreshWaypointList() end,
         function() AICUI.RefreshFarmZoneList() end,
         function() AICUI.RefreshDeadzoneList() end,
@@ -346,8 +346,8 @@ UIRef.ProfilesSection:AddButton{ Name = "Delete Profile", Callback = function()
     if AICProfile.DeleteProfile(Name) then
         UIRef.ProfileNameBox:Set("")
         UIRef.ReachDistanceBox:Set(tostring(Runtime:GetPlaceConfig().REACH_DISTANCE or 5))
-        UIRef.FarmRadiusSlider:Set((Runtime:GetPlaceConfig().FARM_ZONES[1] and Runtime:GetPlaceConfig().FARM_ZONES[1].Radius) or 100, false)
-        UIRef.DeadzoneRadiusSlider:Set((Runtime:GetPlaceConfig().DEADZONES[1] and Runtime:GetPlaceConfig().DEADZONES[1].Radius) or 35, false)
+        UIRef.FarmRadiusSlider:Set((Runtime:GetPlaceConfig().FARM_ZONES[1] and Runtime:GetPlaceConfig().FARM_ZONES[1].Radius) or 100, true)
+        UIRef.DeadzoneRadiusSlider:Set((Runtime:GetPlaceConfig().DEADZONES[1] and Runtime:GetPlaceConfig().DEADZONES[1].Radius) or 35, true)
         AICUI.RefreshWaypointList()
         AICUI.RefreshFarmZoneList()
         AICUI.RefreshDeadzoneList()
@@ -397,10 +397,10 @@ end }
                     UIRef.ReachDistanceBox:Set(tostring(Runtime:GetPlaceConfig().REACH_DISTANCE or 5))
                 end
                 if UIRef.FarmRadiusSlider then
-                    UIRef.FarmRadiusSlider:Set((Runtime:GetPlaceConfig().FARM_ZONES[1] and Runtime:GetPlaceConfig().FARM_ZONES[1].Radius) or 100, false)
+                    UIRef.FarmRadiusSlider:Set((Runtime:GetPlaceConfig().FARM_ZONES[1] and Runtime:GetPlaceConfig().FARM_ZONES[1].Radius) or 100, true)
                 end
                 if UIRef.DeadzoneRadiusSlider then
-                    UIRef.DeadzoneRadiusSlider:Set((Runtime:GetPlaceConfig().DEADZONES[1] and Runtime:GetPlaceConfig().DEADZONES[1].Radius) or 35, false)
+                    UIRef.DeadzoneRadiusSlider:Set((Runtime:GetPlaceConfig().DEADZONES[1] and Runtime:GetPlaceConfig().DEADZONES[1].Radius) or 35, true)
                 end
                 AICUI.RefreshWaypointList()
                 AICUI.RefreshFarmZoneList()
@@ -416,7 +416,7 @@ end }
 
             AICUI.RefreshProfileDropdown()
             if AICProfile.S.ActiveProfileName and UIRef.ProfileDropdown then
-                UIRef.ProfileDropdown:Set(AICProfile.S.ActiveProfileName, false)
+                UIRef.ProfileDropdown:Set(AICProfile.S.ActiveProfileName, true)
                 AICUI.SetProfileStatus("AUTO LOADED " .. AICProfile.S.ActiveProfileName)
             end
         end

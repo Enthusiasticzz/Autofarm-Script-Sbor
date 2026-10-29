@@ -207,7 +207,7 @@ return {
         --// loaded, so the toggles follow the profile's selection.
         function Feature.RefreshBoosterToggles()
             for Name, Toggle in pairs(Toggles) do
-                Toggle:Set(IsSelected(Name), false)
+                Toggle:Set(IsSelected(Name), true)
             end
 
             SetStatus()
