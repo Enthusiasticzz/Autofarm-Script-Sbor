@@ -289,6 +289,10 @@ return {
             { Key = "ESP_THICKNESS", Default = 1.5, Min = 1, Max = 6 },
             { Key = "ESP_AUTO_THICKNESS", Default = true },
             { Key = "ESP_RANGE", Default = 900, Min = 100, Max = 2000 },
+            --// Box look: a closed box or corner brackets, and whether the
+            --// health bar is drawn beside it.
+            { Key = "ESP_BOX_STYLE", Default = "Full", Options = { "Full", "Corners" } },
+            { Key = "ESP_HEALTH_BAR", Default = true },
 
         }
 

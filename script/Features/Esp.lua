@@ -2,10 +2,15 @@
 --
 -- Each enabled kind draws either an outline (Highlight) or a 2D box, never
 -- both, and can add a text label (name, level, EXP, HP, distance).
--- Outlines live in a folder inside one ScreenGui. Boxes and labels are drawn
--- with the executor's Drawing API when it has one, because a Drawing object
--- costs no GUI work per frame; otherwise they fall back to Frames and
--- TextLabels inside that same ScreenGui.
+-- Outlines live in a folder inside one ScreenGui. Boxes, health bars and
+-- labels are drawn with the executor's Drawing API when it has one, because a
+-- Drawing object costs no GUI work per frame; otherwise they fall back to
+-- Frames and TextLabels inside that same ScreenGui.
+--
+-- The box look follows the reference ESPs: a black backing behind a thinner
+-- coloured box, corner brackets instead of a closed box if that style is
+-- picked, a red-to-green health bar on the box's left edge, and text that
+-- grows with proximity.
 --
 -- Players are the models directly in workspace that have a Humanoid. Mobs are
 -- the models in workspace.Mobs. Weapons are the Sword and Sword2 models on a
@@ -28,7 +33,6 @@ return {
         local CONFIG = Context.CONFIG
         local SaveConfig = Context.SaveConfig
         local AICProfile = Context.AICProfile
-        local Window = Context.UI
         local RunService = game:GetService("RunService")
 
         local SCAN_INTERVAL = 0.5
@@ -40,8 +44,8 @@ return {
         --// Bounds re-measurement is spread over scans: doing every due mob in
         --// one frame put a visible hitch in the same frame, every interval.
         local MEASURE_PER_SCAN = 12
-        --// Label text is rewritten this often from the render loop, so HP,
-        --// EXP and the distance read live instead of at the scan's rate.
+        --// Label text and health are refreshed this often from the render
+        --// loop, so they read live instead of at the scan's rate.
         local LABEL_INTERVAL = 0.25
 
         local KINDS = { "Player", "Mob", "Weapon" }
@@ -52,14 +56,29 @@ return {
             Weapon = Color3.fromRGB(255, 200, 60),
         }
 
+        --// The two box looks from the references: a closed box, or eight
+        --// brackets that only draw the corners.
+        local BOX_STYLES = { "Full box", "Corners" }
+        local BOX_STYLE_KEYS = { ["Full box"] = "Full", Corners = "Corners", Full = "Full" }
+        local BOX_STYLE_NAMES = { Full = "Full box", Corners = "Corners" }
+
+        local BLACK = Color3.fromRGB(0, 0, 0)
+        local HEALTH_LOW = Color3.fromRGB(255, 60, 60)
+        local HEALTH_HIGH = Color3.fromRGB(60, 220, 90)
+
         local S = {
             Kinds = {},
-            Entries = {}, -- [Target] = { Kind, Highlight?, Frame?, Stroke?, Label?, BoxLines?, DrawText?, ... }
+            --// [Target] = { Kind, BoxStyle, Highlight?, BoxLines?, BoxShadow?,
+            --//              Frame?, Stroke?, HealthLines?, HealthFrames?,
+            --//              DrawText?, Label?, Anchor?, BoxCF?, Size? }
+            Entries = {},
             StyleToggles = {}, -- [Kind] = { Outline = toggle, Box = toggle }
             Settings = {
                 Thickness = 1.5, -- box thickness at close range
                 AutoThickness = true,
                 Range = 900, -- studs; nothing past this is drawn
+                BoxStyle = "Full",
+                HealthBar = true,
             },
             Timer = 0,
             LabelRefresh = 0,
@@ -163,10 +182,19 @@ return {
         local function Remove(Target, Entry)
             if Entry.Highlight then pcall(function() Entry.Highlight:Destroy() end) end
             if Entry.Frame then pcall(function() Entry.Frame:Destroy() end) end
+            if Entry.ShadowFrame then pcall(function() Entry.ShadowFrame:Destroy() end) end
             if Entry.Label then pcall(function() Entry.Label:Destroy() end) end
-            if Entry.BoxLines then
-                for _, Line in ipairs(Entry.BoxLines) do
-                    pcall(function() Line:Remove() end)
+            for _, Key in ipairs({ "BoxLines", "BoxShadow", "HealthLines" }) do
+                local List = Entry[Key]
+                if List then
+                    for _, Object in ipairs(List) do
+                        pcall(function() Object:Remove() end)
+                    end
+                end
+            end
+            if Entry.HealthFrames then
+                for _, Frame in ipairs(Entry.HealthFrames) do
+                    pcall(function() Frame:Destroy() end)
                 end
             end
             if Entry.DrawText then pcall(function() Entry.DrawText:Remove() end) end
@@ -197,6 +225,8 @@ return {
             S.Settings.Thickness = ReadSetting("ESP_THICKNESS", S.Settings.Thickness)
             S.Settings.AutoThickness = ReadSetting("ESP_AUTO_THICKNESS", S.Settings.AutoThickness) == true
             S.Settings.Range = ReadSetting("ESP_RANGE", S.Settings.Range)
+            S.Settings.HealthBar = ReadSetting("ESP_HEALTH_BAR", S.Settings.HealthBar) == true
+            S.Settings.BoxStyle = BOX_STYLE_KEYS[ReadSetting("ESP_BOX_STYLE", nil) or ""] or "Full"
 
             for _, Kind in ipairs(KINDS) do
                 local C = S.Kinds[Kind]
@@ -219,6 +249,8 @@ return {
                 if Controls.Colors[Kind] then Controls.Colors[Kind]:Set(C.Color, true) end
             end
 
+            if Controls.BoxStyle then Controls.BoxStyle:Set(BOX_STYLE_NAMES[S.Settings.BoxStyle], true) end
+            if Controls.HealthBar then Controls.HealthBar:Set(S.Settings.HealthBar, true) end
             if Controls.Thickness then Controls.Thickness:Set(S.Settings.Thickness, true) end
             if Controls.AutoThickness then Controls.AutoThickness:Set(S.Settings.AutoThickness, true) end
             if Controls.Range then Controls.Range:Set(S.Settings.Range, true) end
@@ -243,10 +275,10 @@ return {
         end
 
         --// One ScreenGui holds the highlights and, when there is no Drawing
-        --// API, every box and label. It goes in a hidden UI container when the
-        --// executor has one, then CoreGui, then PlayerGui. If it is ever lost
-        --// (PlayerGui reset, etc.) it is rebuilt and all entries are redrawn on
-        --// the same scan.
+        --// API, every box, health bar and label. It goes in a hidden UI
+        --// container when the executor has one, then CoreGui, then PlayerGui.
+        --// If it is ever lost (PlayerGui reset, etc.) it is rebuilt and all
+        --// entries are redrawn on the same scan.
         local function GetRoot()
             if Root and Root.Parent and HighlightFolder and HighlightFolder.Parent then
                 return Root
@@ -308,19 +340,26 @@ return {
             end
         end
 
-        local LineSupported, TextSupported = false, false
-        if DrawingApi then
-            LineSupported = pcall(function()
-                local Line = DrawingApi.new("Line")
-                if not Line then error("no Line") end
-                pcall(function() Line:Remove() end)
-            end)
-            TextSupported = pcall(function()
-                local Text = DrawingApi.new("Text")
-                if not Text then error("no Text") end
-                pcall(function() Text:Remove() end)
-            end)
+        --// Some executors expose a Drawing table whose objects accept writes
+        --// but never render (a stub, or an API that needs a different name).
+        --// Creating an object is not enough to trust it: write a property and
+        --// read it back, so a dead API falls through to the GUI instead of
+        --// silently drawing nothing.
+        local function ProbeDrawing(ClassName)
+            if not DrawingApi then return false end
+
+            local OkNew, Object = pcall(DrawingApi.new, ClassName)
+            if not OkNew or not Object then return false end
+
+            local OkWrite = pcall(function() Object.Visible = true end)
+            local OkRead, Back = pcall(function() return Object.Visible end)
+            pcall(function() Object:Remove() end)
+
+            return OkWrite and OkRead and Back == true
         end
+
+        local LineSupported = ProbeDrawing("Line")
+        local TextSupported = ProbeDrawing("Text")
 
         local function NewLine()
             if not LineSupported then return nil end
@@ -334,6 +373,15 @@ return {
             local Ok, Text = pcall(DrawingApi.new, "Text")
             if Ok then return Text end
             return nil
+        end
+
+        --// Drawing objects differ between executors, so each property is set
+        --// on its own. One unsupported property must not skip the rest (a
+        --// Text whose Transparency never got set is an invisible label).
+        local function SetProps(Object, Props)
+            for Key, Value in pairs(Props) do
+                pcall(function() Object[Key] = Value end)
+            end
         end
 
         ----------------------------------------------------------------------
@@ -377,11 +425,8 @@ return {
         --// stored pivot, which does not follow its parts. A cached part has
         --// the position of what is actually on screen.
         local function GetAnchor(Target)
-            --// HumanoidRootPart first: it is the part the rest of this script
-            --// already uses to follow a mob, so the box follows the same thing
-            --// the AI does.
-            local Root = Target:FindFirstChild("HumanoidRootPart")
-            if Root and Root:IsA("BasePart") then return Root end
+            local RootPart = Target:FindFirstChild("HumanoidRootPart")
+            if RootPart and RootPart:IsA("BasePart") then return RootPart end
 
             if Target.PrimaryPart then return Target.PrimaryPart end
 
@@ -414,14 +459,63 @@ return {
             Entry.MeasurePoint = Entry.Anchor and Entry.Anchor.Position or CF.Position
         end
 
-        --// Thicker up close, thinner far away, so a box at 20 studs does not
-        --// turn into one fat line at 400. The slider is the close-up width.
+        ----------------------------------------------------------------------
+        -- Look
+        ----------------------------------------------------------------------
+
+        --// Thicker up close, thinner far away: the reference boxes taper the
+        --// same way (their formula is 1/distance*100). The slider is the
+        --// close-up width, so it stays the ceiling.
         local function ThicknessFor(Distance)
             local Base = S.Settings.Thickness
             if not S.Settings.AutoThickness or Distance == math.huge then
                 return Base
             end
-            return math.clamp(Base * (250 / math.max(Distance, 1)), 1, Base)
+
+            --// math.clamp errors when the minimum is above the maximum, so a
+            --// thickness saved below 1 must not reach it as the upper bound.
+            local Ceiling = math.max(Base, 1)
+            return math.clamp(Base * (250 / math.max(Distance, 1)), 1, Ceiling)
+        end
+
+        --// Corner brackets grow as the target gets closer, like the reference
+        --// corner ESP (clamp(1/distance*750, 2, 300), scaled down to fit a
+        --// box that is already on screen).
+        local function CornerLength(Distance)
+            if Distance == math.huge then return 8 end
+            return math.clamp(600 / math.max(Distance, 1), 8, 40)
+        end
+
+        --// Reference text auto-scale: clamp(1/distance*1000, 2, 30), with the
+        --// range narrowed so a distant label stays readable and a near one
+        --// does not swallow the screen.
+        local function TextSizeFor(Distance)
+            if Distance == math.huge then return 12 end
+            return math.clamp(1000 / math.max(Distance, 1), 6, 16)
+        end
+
+        --// One segment of the box, written as four numbers so the render loop
+        --// allocates nothing per target per frame.
+        local function SegmentAt(Style, Index, X1, Y1, X2, Y2, Arm)
+            if Style == "Corners" then
+                if Index == 1 then return X1, Y1, X1 + Arm, Y1 end
+                if Index == 2 then return X1, Y1, X1, Y1 + Arm end
+                if Index == 3 then return X2, Y1, X2 - Arm, Y1 end
+                if Index == 4 then return X2, Y1, X2, Y1 + Arm end
+                if Index == 5 then return X1, Y2, X1 + Arm, Y2 end
+                if Index == 6 then return X1, Y2, X1, Y2 - Arm end
+                if Index == 7 then return X2, Y2, X2 - Arm, Y2 end
+                return X2, Y2, X2, Y2 - Arm
+            end
+
+            if Index == 1 then return X1, Y1, X2, Y1 end
+            if Index == 2 then return X2, Y1, X2, Y2 end
+            if Index == 3 then return X2, Y2, X1, Y2 end
+            return X1, Y2, X1, Y1
+        end
+
+        local function HealthColor(Fraction)
+            return HEALTH_LOW:Lerp(HEALTH_HIGH, math.clamp(Fraction, 0, 1))
         end
 
         ----------------------------------------------------------------------
@@ -492,19 +586,56 @@ return {
             end
         end
 
-        --// Rewrites every live label from the render loop, so the numbers
-        --// read live without re-projecting or rebuilding anything.
+        --// Rewrites every live label and health fraction from the render
+        --// loop, so the numbers read live without re-projecting anything.
         local function RefreshLabels()
             for Target, Entry in pairs(S.Entries) do
-                if (Entry.DrawText or Entry.Label) and Target.Parent then
-                    SetLabelText(Target, Entry.Kind, Entry)
+                if Target.Parent then
+                    local Humanoid = Entry.Health
+                    if Humanoid and Humanoid.Parent then
+                        local Max = Humanoid.MaxHealth
+                        Entry.HealthFrac = Max > 0 and math.clamp(Humanoid.Health / Max, 0, 1) or 1
+                    end
+
+                    if Entry.DrawText or Entry.Label then
+                        SetLabelText(Target, Entry.Kind, Entry)
+                    end
                 end
             end
         end
 
         ----------------------------------------------------------------------
-        -- Drawing
+        -- Building the pieces
         ----------------------------------------------------------------------
+
+        local function DisposeLines(List)
+            if not List then return end
+            for _, Line in ipairs(List) do
+                pcall(function() Line:Remove() end)
+            end
+        end
+
+        local function MakeLines(Count, Color, Thickness)
+            if not LineSupported then return nil end
+
+            local List = {}
+            for Index = 1, Count do
+                local Line = NewLine()
+                if not Line then
+                    DisposeLines(List)
+                    return nil
+                end
+
+                SetProps(Line, {
+                    Color = Color,
+                    Thickness = Thickness,
+                    Transparency = 1,
+                    Visible = false,
+                })
+                List[Index] = Line
+            end
+            return List
+        end
 
         local function AddOutline(Entry, Target, C, Kind)
             local Highlight = Instance.new("Highlight")
@@ -518,65 +649,105 @@ return {
             Entry.Highlight = Highlight
         end
 
-        local function AddBox(Entry, C, Kind)
-            --// Four Drawing lines, refusing the whole set if one cannot be
-            --// made (an executor with a partial Drawing API falls back to a
-            --// Frame instead of leaving half a box).
-            if LineSupported then
-                local Lines = {}
-                for Index = 1, 4 do
-                    local Line = NewLine()
-                    if not Line then
-                        for _, Created in ipairs(Lines) do
-                            pcall(function() Created:Remove() end)
-                        end
-                        Lines = nil
-                        break
-                    end
+        --// Reference health bar: a black track on the box's left edge with a
+        --// coloured fill that drains downwards as health drops.
+        local function AddHealth(Entry, Target)
+            local Humanoid = Target:FindFirstChildOfClass("Humanoid")
+            if not Humanoid then return end
 
-                    Line.Color = C.Color
-                    Line.Thickness = S.Settings.Thickness
-                    Line.Transparency = 1
-                    Line.Visible = false
-                    Lines[Index] = Line
-                end
+            local Max = Humanoid.MaxHealth
+            Entry.Health = Humanoid
+            Entry.HealthFrac = Max > 0 and math.clamp(Humanoid.Health / Max, 0, 1) or 1
 
-                if Lines then
-                    Entry.BoxLines = Lines
-                    return
-                end
+            local Lines = MakeLines(2, BLACK, 2)
+            if Lines then
+                Entry.HealthLines = Lines
+                return
             end
 
-            local Frame = Instance.new("Frame")
-            Frame.Name = Kind .. "Box"
-            Frame.BackgroundTransparency = 1
-            Frame.BorderSizePixel = 0
-            Frame.Visible = false
-            Frame.ZIndex = 2
+            local Track = Instance.new("Frame")
+            Track.Name = "HealthTrack"
+            Track.BackgroundColor3 = BLACK
+            Track.BorderSizePixel = 0
+            Track.Visible = false
+            Track.ZIndex = 1
+            Track.Parent = Root
 
-            local Stroke = Instance.new("UIStroke")
-            Stroke.Color = C.Color
-            Stroke.Thickness = S.Settings.Thickness
-            Stroke.Parent = Frame
+            local Fill = Instance.new("Frame")
+            Fill.Name = "HealthFill"
+            Fill.BackgroundColor3 = HEALTH_HIGH
+            Fill.BorderSizePixel = 0
+            Fill.Visible = false
+            Fill.ZIndex = 2
+            Fill.Parent = Root
 
-            Frame.Parent = Root
-            Entry.Frame = Frame
-            Entry.Stroke = Stroke
+            Entry.HealthFrames = { Track, Fill }
+        end
+
+        local function AddBox(Entry, Target, C, Kind)
+            local Style = S.Settings.BoxStyle
+            local Count = Style == "Corners" and 8 or 4
+
+            --// The black backing is made first so the coloured box is drawn
+            --// on top of it: that two-layer edge is the reference look.
+            local Shadow = MakeLines(Count, BLACK, S.Settings.Thickness + 2)
+            local Lines = Shadow and MakeLines(Count, C.Color, S.Settings.Thickness)
+
+            if Lines and Shadow then
+                Entry.BoxLines, Entry.BoxShadow, Entry.BoxStyle = Lines, Shadow, Style
+            else
+                DisposeLines(Lines)
+                DisposeLines(Shadow)
+                Entry.BoxStyle = "Full"
+
+                local ShadowFrame = Instance.new("Frame")
+                ShadowFrame.Name = Kind .. "BoxShadow"
+                ShadowFrame.BackgroundTransparency = 1
+                ShadowFrame.BorderSizePixel = 0
+                ShadowFrame.Visible = false
+                ShadowFrame.ZIndex = 1
+                local ShadowStroke = Instance.new("UIStroke")
+                ShadowStroke.Color = BLACK
+                ShadowStroke.Thickness = S.Settings.Thickness + 2
+                ShadowStroke.Parent = ShadowFrame
+                ShadowFrame.Parent = Root
+
+                local Frame = Instance.new("Frame")
+                Frame.Name = Kind .. "Box"
+                Frame.BackgroundTransparency = 1
+                Frame.BorderSizePixel = 0
+                Frame.Visible = false
+                Frame.ZIndex = 2
+                local Stroke = Instance.new("UIStroke")
+                Stroke.Color = C.Color
+                Stroke.Thickness = S.Settings.Thickness
+                Stroke.Parent = Frame
+                Frame.Parent = Root
+
+                Entry.Frame, Entry.Stroke = Frame, Stroke
+                Entry.ShadowFrame, Entry.ShadowStroke = ShadowFrame, ShadowStroke
+            end
+
+            --// The health bar sits against the box, so it is only built when
+            --// a box is.
+            if S.Settings.HealthBar then
+                AddHealth(Entry, Target)
+            end
         end
 
         local function AddLabel(Entry, Target, C, Kind)
             local DrawText = NewText()
             if DrawText then
-                pcall(function()
-                    DrawText.Color = C.Color
-                    DrawText.Size = 13
-                    DrawText.Center = true
-                    DrawText.Transparency = 1
-                    DrawText.Visible = false
-                end)
+                SetProps(DrawText, {
+                    Color = C.Color,
+                    Size = 13,
+                    Center = true,
+                    Transparency = 1,
+                    Visible = false,
+                })
                 --// Outline is not on every executor's Text object.
                 pcall(function() DrawText.Outline = true end)
-                pcall(function() DrawText.OutlineColor = Color3.fromRGB(0, 0, 0) end)
+                pcall(function() DrawText.OutlineColor = BLACK end)
 
                 Entry.DrawText = DrawText
                 SetLabelText(Target, Kind, Entry)
@@ -587,9 +758,10 @@ return {
             Text.Name = Kind .. "Label"
             Text.BackgroundTransparency = 1
             Text.AnchorPoint = Vector2.new(0.5, 1)
-            Text.Size = UDim2.fromOffset(240, 90)
+            Text.Size = UDim2.fromOffset(340, 240)
             Text.TextColor3 = C.Color
-            Text.TextStrokeTransparency = 0.4
+            Text.TextStrokeColor3 = BLACK
+            Text.TextStrokeTransparency = 0
             Text.Font = Enum.Font.GothamBold
             Text.TextSize = 12
             Text.TextYAlignment = Enum.TextYAlignment.Bottom
@@ -620,7 +792,7 @@ return {
                 pcall(AddOutline, Entry, Target, C, Kind)
             end
             if C.Box then
-                pcall(AddBox, Entry, C, Kind)
+                pcall(AddBox, Entry, Target, C, Kind)
             end
             if C.Label then
                 pcall(AddLabel, Entry, Target, C, Kind)
@@ -735,25 +907,26 @@ return {
             Line.To = Vector2.new(X2, Y2)
         end
 
-        --// Boxes and labels follow the camera, so they move on RenderStepped
-        --// rather than on the slower scan (otherwise they trail the target).
+        --// Boxes, health bars and labels follow the camera, so they move on
+        --// RenderStepped rather than on the slower scan (otherwise they trail
+        --// the target).
         local function UpdateDrawings()
             local Camera = workspace.CurrentCamera
-            if not Camera or not Root or not Root.Parent then return end
+            --// Drawing needs no ScreenGui, so a lost Root must not stop the
+            --// box and text layers; the GUI pieces check their own parent.
+            if not Camera then return end
 
             local CameraPosition = Camera.CFrame.Position
             local Viewport = Camera.ViewportSize
             local Range = S.Settings.Range
-            --// The window covers the world and Drawing draws over Roblox UI,
-            --// so nothing is drawn while the menu is open. A minimised window
-            --// is only its title bar, so that does not hide the ESP.
-            local MenuOpen = Window ~= nil and type(Window.IsOpen) == "function" and Window:IsOpen()
 
             for _, Entry in pairs(S.Entries) do
-                local Frame, Label = Entry.Frame, Entry.Label
-                local Lines, DrawText = Entry.BoxLines, Entry.DrawText
+                local Frame, ShadowFrame, Label = Entry.Frame, Entry.ShadowFrame, Entry.Label
+                local DrawText = Entry.DrawText
+                local Lines, Shadow = Entry.BoxLines, Entry.BoxShadow
+                local HealthLines, HealthFrames = Entry.HealthLines, Entry.HealthFrames
 
-                if Frame or Label or Lines or DrawText then
+                if Frame or Label or Lines or DrawText or HealthLines or HealthFrames then
                     local X1, Y1, X2, Y2
                     local Anchor = Entry.Anchor
                     local Distance = math.huge
@@ -770,51 +943,133 @@ return {
 
                     --// Off-screen targets are hidden rather than moved, so a
                     --// busy zone does not pay for drawing it cannot show.
-                    if X1 and (MenuOpen or X2 < 0 or Y2 < 0 or X1 > Viewport.X or Y1 > Viewport.Y) then
+                    if X1 and (X2 < 0 or Y2 < 0 or X1 > Viewport.X or Y1 > Viewport.Y) then
                         X1 = nil
                     end
 
                     local Thickness = ThicknessFor(Distance)
+                    local TextSize = TextSizeFor(Distance)
+                    local Style = Entry.BoxStyle or "Full"
+                    local Count = Style == "Corners" and 8 or 4
+                    local Arm = CornerLength(Distance)
+
+                    --// A far target is only a few pixels tall, so its corner
+                    --// arms must not overrun each other.
+                    if X1 and Style == "Corners" then
+                        Arm = math.min(Arm, (X2 - X1) * 0.5, (Y2 - Y1) * 0.5)
+                    end
 
                     if Lines then
-                        if X1 then
-                            SetLine(Lines[1], X1, Y1, X2, Y1)
-                            SetLine(Lines[2], X2, Y1, X2, Y2)
-                            SetLine(Lines[3], X2, Y2, X1, Y2)
-                            SetLine(Lines[4], X1, Y2, X1, Y1)
-                            for _, Line in ipairs(Lines) do
+                        for Index, Line in ipairs(Lines) do
+                            if X1 and Index <= Count then
+                                local A, B, C, D = SegmentAt(Style, Index, X1, Y1, X2, Y2, Arm)
+                                SetLine(Line, A, B, C, D)
                                 Line.Thickness = Thickness
                                 Line.Visible = true
-                            end
-                        else
-                            for _, Line in ipairs(Lines) do
+                            else
                                 Line.Visible = false
                             end
                         end
-                    elseif Frame and Frame.Parent then
-                        if X1 then
+                    end
+
+                    if Shadow then
+                        for Index, Line in ipairs(Shadow) do
+                            if X1 and Index <= Count then
+                                local A, B, C, D = SegmentAt(Style, Index, X1, Y1, X2, Y2, Arm)
+                                SetLine(Line, A, B, C, D)
+                                Line.Thickness = Thickness + 2
+                                Line.Visible = true
+                            else
+                                Line.Visible = false
+                            end
+                        end
+                    end
+
+                    if Frame then
+                        if X1 and Frame.Parent then
+                            local Width, Height = X2 - X1, Y2 - Y1
+
+                            if ShadowFrame and ShadowFrame.Parent then
+                                ShadowFrame.Position = UDim2.fromOffset(X1, Y1)
+                                ShadowFrame.Size = UDim2.fromOffset(Width, Height)
+                                ShadowFrame.Visible = true
+                                if Entry.ShadowStroke then
+                                    Entry.ShadowStroke.Thickness = Thickness + 2
+                                end
+                            end
+
                             Frame.Position = UDim2.fromOffset(X1, Y1)
-                            Frame.Size = UDim2.fromOffset(X2 - X1, Y2 - Y1)
+                            Frame.Size = UDim2.fromOffset(Width, Height)
                             Frame.Visible = true
                             if Entry.Stroke then Entry.Stroke.Thickness = Thickness end
                         else
                             Frame.Visible = false
+                            if ShadowFrame then ShadowFrame.Visible = false end
+                        end
+                    end
+
+                    --// Health bar: black track, coloured fill that drains
+                    --// downwards, red at empty and green at full.
+                    if HealthLines then
+                        if X1 then
+                            local Fraction = math.clamp(Entry.HealthFrac or 1, 0, 1)
+                            local BarX = X1 - 6
+                            local Height = Y2 - Y1
+                            local Track, Fill = HealthLines[1], HealthLines[2]
+
+                            SetLine(Track, BarX, Y1, BarX, Y2)
+                            SetLine(Fill, BarX, Y2, BarX, Y2 - Height * Fraction)
+
+                            Track.Thickness = 3
+                            Fill.Thickness = 2
+                            Fill.Color = HealthColor(Fraction)
+                            Track.Visible = true
+                            Fill.Visible = true
+                        else
+                            for _, Line in ipairs(HealthLines) do
+                                Line.Visible = false
+                            end
+                        end
+                    end
+
+                    if HealthFrames then
+                        if X1 then
+                            local Fraction = math.clamp(Entry.HealthFrac or 1, 0, 1)
+                            local BarX = X1 - 8
+                            local Height = Y2 - Y1
+                            local Track, Fill = HealthFrames[1], HealthFrames[2]
+
+                            Track.Position = UDim2.fromOffset(BarX, Y1)
+                            Track.Size = UDim2.fromOffset(4, Height)
+                            Track.Visible = true
+
+                            Fill.Position = UDim2.fromOffset(BarX, Y2 - Height * Fraction)
+                            Fill.Size = UDim2.fromOffset(4, math.max(1, Height * Fraction))
+                            Fill.BackgroundColor3 = HealthColor(Fraction)
+                            Fill.Visible = true
+                        else
+                            for _, Item in ipairs(HealthFrames) do
+                                Item.Visible = false
+                            end
                         end
                     end
 
                     if DrawText then
                         if X1 then
-                            --// Center is both axes, so the block sits just
-                            --// above the box: half a line per extra line.
                             local LineCount = Entry.LabelLines or 1
-                            DrawText.Position = Vector2.new((X1 + X2) / 2, Y1 - 8 - LineCount * 7)
+                            DrawText.Size = TextSize
+                            DrawText.Position = Vector2.new(
+                                (X1 + X2) / 2,
+                                Y1 - 4 - LineCount * TextSize * 0.55
+                            )
                             DrawText.Visible = true
                         else
                             DrawText.Visible = false
                         end
-                    elseif Label and Label.Parent then
-                        if X1 then
-                            Label.Position = UDim2.fromOffset((X1 + X2) / 2, Y1 - 4)
+                    elseif Label then
+                        if X1 and Label.Parent then
+                            Label.TextSize = TextSize
+                            Label.Position = UDim2.fromOffset((X1 + X2) / 2, Y1 - 3)
                             Label.Visible = true
                         else
                             Label.Visible = false
@@ -870,7 +1125,8 @@ return {
             Rebuild(Kind)
         end
 
-        --// Colour changes are applied live, with no rebuild.
+        --// Colour changes are applied live, with no rebuild. The black backing
+        --// stays black, and the health fill keeps its own health colour.
         local function Recolor(Kind)
             local Color = S.Kinds[Kind].Color
             for _, Entry in pairs(S.Entries) do
@@ -895,6 +1151,27 @@ return {
         if UIRef.EspTab then
             local SettingsSection = UIRef.EspTab:AddSection{ Title = "ESP Settings" }
 
+            Controls.BoxStyle = SettingsSection:AddDropdown{
+                Name = "Box style",
+                Options = BOX_STYLES,
+                Default = BOX_STYLE_NAMES[S.Settings.BoxStyle],
+                Callback = function(Value)
+                    S.Settings.BoxStyle = BOX_STYLE_KEYS[Value] or "Full"
+                    SaveSetting("ESP_BOX_STYLE", S.Settings.BoxStyle)
+                    Clear()
+                    S.Timer = SCAN_INTERVAL
+                end,
+            }
+            Controls.HealthBar = SettingsSection:AddToggle{
+                Name = "Health bar",
+                Default = S.Settings.HealthBar,
+                Callback = function(Value)
+                    S.Settings.HealthBar = Value == true
+                    SaveSetting("ESP_HEALTH_BAR", S.Settings.HealthBar)
+                    Clear()
+                    S.Timer = SCAN_INTERVAL
+                end,
+            }
             Controls.Thickness = SettingsSection:AddSlider{
                 Name = "Box thickness",
                 Default = S.Settings.Thickness,

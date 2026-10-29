@@ -18,7 +18,6 @@ local AICUI = Context.AICUI
 local CONFIG = Context.CONFIG
 local SaveConfig = Context.SaveConfig
 local AICProfile = Context.AICProfile
-local Window = Context.UI
 local RunService = game:GetService("RunService")
 local SCAN_INTERVAL = 0.5
 local MEASURE_INTERVAL = 2
@@ -31,14 +30,22 @@ Player = Color3.fromRGB(80, 200, 255),
 Mob = Color3.fromRGB(255, 90, 90),
 Weapon = Color3.fromRGB(255, 200, 60),
 }
+local BOX_STYLES = { "Full box", "Corners" }
+local BOX_STYLE_KEYS = { ["Full box"] = "Full", Corners = "Corners", Full = "Full" }
+local BOX_STYLE_NAMES = { Full = "Full box", Corners = "Corners" }
+local BLACK = Color3.fromRGB(0, 0, 0)
+local HEALTH_LOW = Color3.fromRGB(255, 60, 60)
+local HEALTH_HIGH = Color3.fromRGB(60, 220, 90)
 local S = {
 Kinds = {},
-Entries = {}, -- [Target] = { Kind, Highlight?, Frame?, Stroke?, Label?, BoxLines?, DrawText?, ... }
+Entries = {},
 StyleToggles = {}, -- [Kind] = { Outline = toggle, Box = toggle }
 Settings = {
 Thickness = 1.5, -- box thickness at close range
 AutoThickness = true,
 Range = 900, -- studs; nothing past this is drawn
+BoxStyle = "Full",
+HealthBar = true,
 },
 Timer = 0,
 LabelRefresh = 0,
@@ -119,10 +126,19 @@ end
 local function Remove(Target, Entry)
 if Entry.Highlight then pcall(function() Entry.Highlight:Destroy() end) end
 if Entry.Frame then pcall(function() Entry.Frame:Destroy() end) end
+if Entry.ShadowFrame then pcall(function() Entry.ShadowFrame:Destroy() end) end
 if Entry.Label then pcall(function() Entry.Label:Destroy() end) end
-if Entry.BoxLines then
-for _, Line in ipairs(Entry.BoxLines) do
-pcall(function() Line:Remove() end)
+for _, Key in ipairs({ "BoxLines", "BoxShadow", "HealthLines" }) do
+local List = Entry[Key]
+if List then
+for _, Object in ipairs(List) do
+pcall(function() Object:Remove() end)
+end
+end
+end
+if Entry.HealthFrames then
+for _, Frame in ipairs(Entry.HealthFrames) do
+pcall(function() Frame:Destroy() end)
 end
 end
 if Entry.DrawText then pcall(function() Entry.DrawText:Remove() end) end
@@ -143,6 +159,8 @@ end
 S.Settings.Thickness = ReadSetting("ESP_THICKNESS", S.Settings.Thickness)
 S.Settings.AutoThickness = ReadSetting("ESP_AUTO_THICKNESS", S.Settings.AutoThickness) == true
 S.Settings.Range = ReadSetting("ESP_RANGE", S.Settings.Range)
+S.Settings.HealthBar = ReadSetting("ESP_HEALTH_BAR", S.Settings.HealthBar) == true
+S.Settings.BoxStyle = BOX_STYLE_KEYS[ReadSetting("ESP_BOX_STYLE", nil) or ""] or "Full"
 for _, Kind in ipairs(KINDS) do
 local C = S.Kinds[Kind]
 local Style = ReadSetting(STYLE_KEYS[Kind], "Outline")
@@ -160,6 +178,8 @@ if Controls.Kinds[Kind] then Controls.Kinds[Kind]:Set(C.Enabled, true) end
 if Controls.Text[Kind] then Controls.Text[Kind]:Set(C.Label, true) end
 if Controls.Colors[Kind] then Controls.Colors[Kind]:Set(C.Color, true) end
 end
+if Controls.BoxStyle then Controls.BoxStyle:Set(BOX_STYLE_NAMES[S.Settings.BoxStyle], true) end
+if Controls.HealthBar then Controls.HealthBar:Set(S.Settings.HealthBar, true) end
 if Controls.Thickness then Controls.Thickness:Set(S.Settings.Thickness, true) end
 if Controls.AutoThickness then Controls.AutoThickness:Set(S.Settings.AutoThickness, true) end
 if Controls.Range then Controls.Range:Set(S.Settings.Range, true) end
@@ -219,19 +239,17 @@ DrawingApi = Api
 end
 end
 end
-local LineSupported, TextSupported = false, false
-if DrawingApi then
-LineSupported = pcall(function()
-local Line = DrawingApi.new("Line")
-if not Line then error("no Line") end
-pcall(function() Line:Remove() end)
-end)
-TextSupported = pcall(function()
-local Text = DrawingApi.new("Text")
-if not Text then error("no Text") end
-pcall(function() Text:Remove() end)
-end)
+local function ProbeDrawing(ClassName)
+if not DrawingApi then return false end
+local OkNew, Object = pcall(DrawingApi.new, ClassName)
+if not OkNew or not Object then return false end
+local OkWrite = pcall(function() Object.Visible = true end)
+local OkRead, Back = pcall(function() return Object.Visible end)
+pcall(function() Object:Remove() end)
+return OkWrite and OkRead and Back == true
 end
+local LineSupported = ProbeDrawing("Line")
+local TextSupported = ProbeDrawing("Text")
 local function NewLine()
 if not LineSupported then return nil end
 local Ok, Line = pcall(DrawingApi.new, "Line")
@@ -243,6 +261,11 @@ if not TextSupported then return nil end
 local Ok, Text = pcall(DrawingApi.new, "Text")
 if Ok then return Text end
 return nil
+end
+local function SetProps(Object, Props)
+for Key, Value in pairs(Props) do
+pcall(function() Object[Key] = Value end)
+end
 end
 local CORNERS = {}
 for _, X in ipairs({ -0.5, 0.5 }) do
@@ -270,8 +293,8 @@ if InFront == 0 then return nil end
 return MinX, MinY, MaxX, MaxY
 end
 local function GetAnchor(Target)
-local Root = Target:FindFirstChild("HumanoidRootPart")
-if Root and Root:IsA("BasePart") then return Root end
+local RootPart = Target:FindFirstChild("HumanoidRootPart")
+if RootPart and RootPart:IsA("BasePart") then return RootPart end
 if Target.PrimaryPart then return Target.PrimaryPart end
 for _, Name in ipairs({ "Torso", "UpperTorso", "Head" }) do
 local Candidate = Target:FindFirstChild(Name)
@@ -297,7 +320,35 @@ local Base = S.Settings.Thickness
 if not S.Settings.AutoThickness or Distance == math.huge then
 return Base
 end
-return math.clamp(Base * (250 / math.max(Distance, 1)), 1, Base)
+local Ceiling = math.max(Base, 1)
+return math.clamp(Base * (250 / math.max(Distance, 1)), 1, Ceiling)
+end
+local function CornerLength(Distance)
+if Distance == math.huge then return 8 end
+return math.clamp(600 / math.max(Distance, 1), 8, 40)
+end
+local function TextSizeFor(Distance)
+if Distance == math.huge then return 12 end
+return math.clamp(1000 / math.max(Distance, 1), 6, 16)
+end
+local function SegmentAt(Style, Index, X1, Y1, X2, Y2, Arm)
+if Style == "Corners" then
+if Index == 1 then return X1, Y1, X1 + Arm, Y1 end
+if Index == 2 then return X1, Y1, X1, Y1 + Arm end
+if Index == 3 then return X2, Y1, X2 - Arm, Y1 end
+if Index == 4 then return X2, Y1, X2, Y1 + Arm end
+if Index == 5 then return X1, Y2, X1 + Arm, Y2 end
+if Index == 6 then return X1, Y2, X1, Y2 - Arm end
+if Index == 7 then return X2, Y2, X2 - Arm, Y2 end
+return X2, Y2, X2, Y2 - Arm
+end
+if Index == 1 then return X1, Y1, X2, Y1 end
+if Index == 2 then return X2, Y1, X2, Y2 end
+if Index == 3 then return X2, Y2, X1, Y2 end
+return X1, Y2, X1, Y1
+end
+local function HealthColor(Fraction)
+return HEALTH_LOW:Lerp(HEALTH_HIGH, math.clamp(Fraction, 0, 1))
 end
 local function LabelText(Target, Kind, Entry)
 local Lines = {}
@@ -354,10 +405,42 @@ end
 end
 local function RefreshLabels()
 for Target, Entry in pairs(S.Entries) do
-if (Entry.DrawText or Entry.Label) and Target.Parent then
+if Target.Parent then
+local Humanoid = Entry.Health
+if Humanoid and Humanoid.Parent then
+local Max = Humanoid.MaxHealth
+Entry.HealthFrac = Max > 0 and math.clamp(Humanoid.Health / Max, 0, 1) or 1
+end
+if Entry.DrawText or Entry.Label then
 SetLabelText(Target, Entry.Kind, Entry)
 end
 end
+end
+end
+local function DisposeLines(List)
+if not List then return end
+for _, Line in ipairs(List) do
+pcall(function() Line:Remove() end)
+end
+end
+local function MakeLines(Count, Color, Thickness)
+if not LineSupported then return nil end
+local List = {}
+for Index = 1, Count do
+local Line = NewLine()
+if not Line then
+DisposeLines(List)
+return nil
+end
+SetProps(Line, {
+Color = Color,
+Thickness = Thickness,
+Transparency = 1,
+Visible = false,
+})
+List[Index] = Line
+end
+return List
 end
 local function AddOutline(Entry, Target, C, Kind)
 local Highlight = Instance.new("Highlight")
@@ -370,29 +453,55 @@ Highlight.Adornee = Target
 Highlight.Parent = HighlightFolder
 Entry.Highlight = Highlight
 end
-local function AddBox(Entry, C, Kind)
-if LineSupported then
-local Lines = {}
-for Index = 1, 4 do
-local Line = NewLine()
-if not Line then
-for _, Created in ipairs(Lines) do
-pcall(function() Created:Remove() end)
-end
-Lines = nil
-break
-end
-Line.Color = C.Color
-Line.Thickness = S.Settings.Thickness
-Line.Transparency = 1
-Line.Visible = false
-Lines[Index] = Line
-end
+local function AddHealth(Entry, Target)
+local Humanoid = Target:FindFirstChildOfClass("Humanoid")
+if not Humanoid then return end
+local Max = Humanoid.MaxHealth
+Entry.Health = Humanoid
+Entry.HealthFrac = Max > 0 and math.clamp(Humanoid.Health / Max, 0, 1) or 1
+local Lines = MakeLines(2, BLACK, 2)
 if Lines then
-Entry.BoxLines = Lines
+Entry.HealthLines = Lines
 return
 end
+local Track = Instance.new("Frame")
+Track.Name = "HealthTrack"
+Track.BackgroundColor3 = BLACK
+Track.BorderSizePixel = 0
+Track.Visible = false
+Track.ZIndex = 1
+Track.Parent = Root
+local Fill = Instance.new("Frame")
+Fill.Name = "HealthFill"
+Fill.BackgroundColor3 = HEALTH_HIGH
+Fill.BorderSizePixel = 0
+Fill.Visible = false
+Fill.ZIndex = 2
+Fill.Parent = Root
+Entry.HealthFrames = { Track, Fill }
 end
+local function AddBox(Entry, Target, C, Kind)
+local Style = S.Settings.BoxStyle
+local Count = Style == "Corners" and 8 or 4
+local Shadow = MakeLines(Count, BLACK, S.Settings.Thickness + 2)
+local Lines = Shadow and MakeLines(Count, C.Color, S.Settings.Thickness)
+if Lines and Shadow then
+Entry.BoxLines, Entry.BoxShadow, Entry.BoxStyle = Lines, Shadow, Style
+else
+DisposeLines(Lines)
+DisposeLines(Shadow)
+Entry.BoxStyle = "Full"
+local ShadowFrame = Instance.new("Frame")
+ShadowFrame.Name = Kind .. "BoxShadow"
+ShadowFrame.BackgroundTransparency = 1
+ShadowFrame.BorderSizePixel = 0
+ShadowFrame.Visible = false
+ShadowFrame.ZIndex = 1
+local ShadowStroke = Instance.new("UIStroke")
+ShadowStroke.Color = BLACK
+ShadowStroke.Thickness = S.Settings.Thickness + 2
+ShadowStroke.Parent = ShadowFrame
+ShadowFrame.Parent = Root
 local Frame = Instance.new("Frame")
 Frame.Name = Kind .. "Box"
 Frame.BackgroundTransparency = 1
@@ -404,21 +513,25 @@ Stroke.Color = C.Color
 Stroke.Thickness = S.Settings.Thickness
 Stroke.Parent = Frame
 Frame.Parent = Root
-Entry.Frame = Frame
-Entry.Stroke = Stroke
+Entry.Frame, Entry.Stroke = Frame, Stroke
+Entry.ShadowFrame, Entry.ShadowStroke = ShadowFrame, ShadowStroke
+end
+if S.Settings.HealthBar then
+AddHealth(Entry, Target)
+end
 end
 local function AddLabel(Entry, Target, C, Kind)
 local DrawText = NewText()
 if DrawText then
-pcall(function()
-DrawText.Color = C.Color
-DrawText.Size = 13
-DrawText.Center = true
-DrawText.Transparency = 1
-DrawText.Visible = false
-end)
+SetProps(DrawText, {
+Color = C.Color,
+Size = 13,
+Center = true,
+Transparency = 1,
+Visible = false,
+})
 pcall(function() DrawText.Outline = true end)
-pcall(function() DrawText.OutlineColor = Color3.fromRGB(0, 0, 0) end)
+pcall(function() DrawText.OutlineColor = BLACK end)
 Entry.DrawText = DrawText
 SetLabelText(Target, Kind, Entry)
 return
@@ -427,9 +540,10 @@ local Text = Instance.new("TextLabel")
 Text.Name = Kind .. "Label"
 Text.BackgroundTransparency = 1
 Text.AnchorPoint = Vector2.new(0.5, 1)
-Text.Size = UDim2.fromOffset(240, 90)
+Text.Size = UDim2.fromOffset(340, 240)
 Text.TextColor3 = C.Color
-Text.TextStrokeTransparency = 0.4
+Text.TextStrokeColor3 = BLACK
+Text.TextStrokeTransparency = 0
 Text.Font = Enum.Font.GothamBold
 Text.TextSize = 12
 Text.TextYAlignment = Enum.TextYAlignment.Bottom
@@ -453,7 +567,7 @@ if C.Outline then
 pcall(AddOutline, Entry, Target, C, Kind)
 end
 if C.Box then
-pcall(AddBox, Entry, C, Kind)
+pcall(AddBox, Entry, Target, C, Kind)
 end
 if C.Label then
 pcall(AddLabel, Entry, Target, C, Kind)
@@ -545,15 +659,16 @@ Line.To = Vector2.new(X2, Y2)
 end
 local function UpdateDrawings()
 local Camera = workspace.CurrentCamera
-if not Camera or not Root or not Root.Parent then return end
+if not Camera then return end
 local CameraPosition = Camera.CFrame.Position
 local Viewport = Camera.ViewportSize
 local Range = S.Settings.Range
-local MenuOpen = Window ~= nil and type(Window.IsOpen) == "function" and Window:IsOpen()
 for _, Entry in pairs(S.Entries) do
-local Frame, Label = Entry.Frame, Entry.Label
-local Lines, DrawText = Entry.BoxLines, Entry.DrawText
-if Frame or Label or Lines or DrawText then
+local Frame, ShadowFrame, Label = Entry.Frame, Entry.ShadowFrame, Entry.Label
+local DrawText = Entry.DrawText
+local Lines, Shadow = Entry.BoxLines, Entry.BoxShadow
+local HealthLines, HealthFrames = Entry.HealthLines, Entry.HealthFrames
+if Frame or Label or Lines or DrawText or HealthLines or HealthFrames then
 local X1, Y1, X2, Y2
 local Anchor = Entry.Anchor
 local Distance = math.huge
@@ -564,46 +679,115 @@ local BoxCF = Entry.BoxCF + (Anchor.Position - Entry.MeasurePoint)
 X1, Y1, X2, Y2 = Project(BoxCF, Entry.Size, Camera)
 end
 end
-if X1 and (MenuOpen or X2 < 0 or Y2 < 0 or X1 > Viewport.X or Y1 > Viewport.Y) then
+if X1 and (X2 < 0 or Y2 < 0 or X1 > Viewport.X or Y1 > Viewport.Y) then
 X1 = nil
 end
 local Thickness = ThicknessFor(Distance)
+local TextSize = TextSizeFor(Distance)
+local Style = Entry.BoxStyle or "Full"
+local Count = Style == "Corners" and 8 or 4
+local Arm = CornerLength(Distance)
+if X1 and Style == "Corners" then
+Arm = math.min(Arm, (X2 - X1) * 0.5, (Y2 - Y1) * 0.5)
+end
 if Lines then
-if X1 then
-SetLine(Lines[1], X1, Y1, X2, Y1)
-SetLine(Lines[2], X2, Y1, X2, Y2)
-SetLine(Lines[3], X2, Y2, X1, Y2)
-SetLine(Lines[4], X1, Y2, X1, Y1)
-for _, Line in ipairs(Lines) do
+for Index, Line in ipairs(Lines) do
+if X1 and Index <= Count then
+local A, B, C, D = SegmentAt(Style, Index, X1, Y1, X2, Y2, Arm)
+SetLine(Line, A, B, C, D)
 Line.Thickness = Thickness
 Line.Visible = true
-end
 else
-for _, Line in ipairs(Lines) do
 Line.Visible = false
 end
 end
-elseif Frame and Frame.Parent then
-if X1 then
+end
+if Shadow then
+for Index, Line in ipairs(Shadow) do
+if X1 and Index <= Count then
+local A, B, C, D = SegmentAt(Style, Index, X1, Y1, X2, Y2, Arm)
+SetLine(Line, A, B, C, D)
+Line.Thickness = Thickness + 2
+Line.Visible = true
+else
+Line.Visible = false
+end
+end
+end
+if Frame then
+if X1 and Frame.Parent then
+local Width, Height = X2 - X1, Y2 - Y1
+if ShadowFrame and ShadowFrame.Parent then
+ShadowFrame.Position = UDim2.fromOffset(X1, Y1)
+ShadowFrame.Size = UDim2.fromOffset(Width, Height)
+ShadowFrame.Visible = true
+if Entry.ShadowStroke then
+Entry.ShadowStroke.Thickness = Thickness + 2
+end
+end
 Frame.Position = UDim2.fromOffset(X1, Y1)
-Frame.Size = UDim2.fromOffset(X2 - X1, Y2 - Y1)
+Frame.Size = UDim2.fromOffset(Width, Height)
 Frame.Visible = true
 if Entry.Stroke then Entry.Stroke.Thickness = Thickness end
 else
 Frame.Visible = false
+if ShadowFrame then ShadowFrame.Visible = false end
+end
+end
+if HealthLines then
+if X1 then
+local Fraction = math.clamp(Entry.HealthFrac or 1, 0, 1)
+local BarX = X1 - 6
+local Height = Y2 - Y1
+local Track, Fill = HealthLines[1], HealthLines[2]
+SetLine(Track, BarX, Y1, BarX, Y2)
+SetLine(Fill, BarX, Y2, BarX, Y2 - Height * Fraction)
+Track.Thickness = 3
+Fill.Thickness = 2
+Fill.Color = HealthColor(Fraction)
+Track.Visible = true
+Fill.Visible = true
+else
+for _, Line in ipairs(HealthLines) do
+Line.Visible = false
+end
+end
+end
+if HealthFrames then
+if X1 then
+local Fraction = math.clamp(Entry.HealthFrac or 1, 0, 1)
+local BarX = X1 - 8
+local Height = Y2 - Y1
+local Track, Fill = HealthFrames[1], HealthFrames[2]
+Track.Position = UDim2.fromOffset(BarX, Y1)
+Track.Size = UDim2.fromOffset(4, Height)
+Track.Visible = true
+Fill.Position = UDim2.fromOffset(BarX, Y2 - Height * Fraction)
+Fill.Size = UDim2.fromOffset(4, math.max(1, Height * Fraction))
+Fill.BackgroundColor3 = HealthColor(Fraction)
+Fill.Visible = true
+else
+for _, Item in ipairs(HealthFrames) do
+Item.Visible = false
+end
 end
 end
 if DrawText then
 if X1 then
 local LineCount = Entry.LabelLines or 1
-DrawText.Position = Vector2.new((X1 + X2) / 2, Y1 - 8 - LineCount * 7)
+DrawText.Size = TextSize
+DrawText.Position = Vector2.new(
+(X1 + X2) / 2,
+Y1 - 4 - LineCount * TextSize * 0.55
+)
 DrawText.Visible = true
 else
 DrawText.Visible = false
 end
-elseif Label and Label.Parent then
-if X1 then
-Label.Position = UDim2.fromOffset((X1 + X2) / 2, Y1 - 4)
+elseif Label then
+if X1 and Label.Parent then
+Label.TextSize = TextSize
+Label.Position = UDim2.fromOffset((X1 + X2) / 2, Y1 - 3)
 Label.Visible = true
 else
 Label.Visible = false
@@ -665,6 +849,27 @@ end
 end
 if UIRef.EspTab then
 local SettingsSection = UIRef.EspTab:AddSection{ Title = "ESP Settings" }
+Controls.BoxStyle = SettingsSection:AddDropdown{
+Name = "Box style",
+Options = BOX_STYLES,
+Default = BOX_STYLE_NAMES[S.Settings.BoxStyle],
+Callback = function(Value)
+S.Settings.BoxStyle = BOX_STYLE_KEYS[Value] or "Full"
+SaveSetting("ESP_BOX_STYLE", S.Settings.BoxStyle)
+Clear()
+S.Timer = SCAN_INTERVAL
+end,
+}
+Controls.HealthBar = SettingsSection:AddToggle{
+Name = "Health bar",
+Default = S.Settings.HealthBar,
+Callback = function(Value)
+S.Settings.HealthBar = Value == true
+SaveSetting("ESP_HEALTH_BAR", S.Settings.HealthBar)
+Clear()
+S.Timer = SCAN_INTERVAL
+end,
+}
 Controls.Thickness = SettingsSection:AddSlider{
 Name = "Box thickness",
 Default = S.Settings.Thickness,
@@ -6926,236 +7131,6 @@ Context.Lifetime.OnEnd(function()
 Context.Lifetime.Disconnect(S.Connections)
 end)
 return Recipes
-end,
-}
-]======],
-	["Features/TeleportNavigate.lua"] = [======[
-return {
-Name = "TeleportNavigate",
-Dependencies = {"Runtime", "Components"},
-Start = function(Context)
-local Services = Context.Services
-local Replicated = Services.Replicated
-local Runtime = Context.Runtime
-local UIRef = Context.UIRef
-local NotifyAction = Context.NotifyAction
-local REMOTE_NAME = "TeleportEvent"
-local DOORS_FOLDER = "Interactions"
-local WAYPOINTS_FOLDER = "Waypoints"
-local DOOR_NAME = "Door"
-local DOOR_POINTS = {"T1", "T2"}
-local REFRESH_DEBOUNCE = 0.5
-local NO_DOORS = "No doors found"
-local DEFAULT_WAYPOINT = "#0  Default"
-local INTERACT_MUTE = 10
-local Module = {
-Name = "TeleportNavigate",
-S = {
-DoorPoints = {},
-WaypointNumbers = {},
-DoorDropdown = nil,
-WaypointDropdown = nil,
-FolderConnections = {},
-RefreshScheduled = false,
-},
-}
-local S = Module.S
-local function GetRemote()
-local Remote = Replicated:FindFirstChild(REMOTE_NAME, true)
-return Remote and Remote:IsA("RemoteEvent") and Remote or nil
-end
-local function FireTeleport(Value, What)
-local Remote = GetRemote()
-if not Remote then
-NotifyAction("TELEPORT", REMOTE_NAME .. " was not found in this place", 5)
-return false
-end
-local Success, Error = pcall(function()
-Remote:FireServer(Value)
-end)
-if not Success then
-NotifyAction("TELEPORT", "Teleport request failed: " .. tostring(Error), 5)
-return false
-end
-NotifyAction("TELEPORT", "Teleporting to " .. What)
-if Runtime and Runtime.MuteInteract then
-Runtime:MuteInteract(INTERACT_MUTE)
-end
-return true
-end
-local function RebuildDropdown(Section, Old, Name, Options)
-if Old and Old.Options and table.concat(Old.Options, "\n") == table.concat(Options, "\n") then
-return Old
-end
-local LayoutOrder = Old and Old.Row and Old.Row.LayoutOrder
-local Previous = Old and Old:Get()
-if Old then
-Old:Remove()
-end
-local Dropdown = Section:AddDropdown{ Name = Name, Options = Options, Callback = function() end }
-if LayoutOrder then
-Dropdown.Row.LayoutOrder = LayoutOrder
-end
-if Previous and table.find(Options, Previous) then
-Dropdown:Set(Previous, true)
-end
-return Dropdown
-end
-local function GetDoorPlace(Door)
-local Place = Door:FindFirstChild("Place")
-return Place and Place:IsA("ValueBase") and tostring(Place.Value) or nil
-end
-local function ReadDoorOptions()
-table.clear(S.DoorPoints)
-local Folder = workspace:FindFirstChild(DOORS_FOLDER)
-local Options = {}
-for _, Door in ipairs(Folder and Folder:GetChildren() or {}) do
-local Place = Door:IsA("Model") and Door.Name == DOOR_NAME and GetDoorPlace(Door)
-if Place then
-for _, PointName in ipairs(DOOR_POINTS) do
-local Point = Door:FindFirstChild(PointName)
-if Point and Point:IsA("BasePart") then
-local Label = Place .. "  " .. PointName
-local Suffix = 2
-while S.DoorPoints[Label] do
-Label = string.format("%s  %s (%d)", Place, PointName, Suffix)
-Suffix += 1
-end
-S.DoorPoints[Label] = Point
-table.insert(Options, Label)
-end
-end
-end
-end
-table.sort(Options, function(A, B)
-return string.lower(A) < string.lower(B)
-end)
-if #Options == 0 then
-Options = {NO_DOORS}
-end
-return Options
-end
-local function RefreshDoors()
-S.DoorDropdown = RebuildDropdown(UIRef.DoorTeleportSection, S.DoorDropdown, "Door", ReadDoorOptions())
-end
-local function TeleportToDoor()
-local Label = S.DoorDropdown and S.DoorDropdown:Get()
-local Point = Label and S.DoorPoints[Label]
-if not Point or not Point.Parent then
-NotifyAction("TELEPORT", "Pick a door first (press Refresh Doors if the list is old)", 4)
-return
-end
-FireTeleport(Point.Position, Label)
-end
-local function ReadWaypointOptions()
-table.clear(S.WaypointNumbers)
-local Folder = workspace:FindFirstChild(WAYPOINTS_FOLDER)
-local Numbers = {}
-for _, Waypoint in ipairs(Folder and Folder:GetChildren() or {}) do
-local Number = tonumber(Waypoint.Name)
-if Number and Number % 1 == 0 and Number ~= 0 and not table.find(Numbers, Number) then
-table.insert(Numbers, Number)
-end
-end
-table.sort(Numbers)
-local Options = {DEFAULT_WAYPOINT}
-S.WaypointNumbers[DEFAULT_WAYPOINT] = 0
-for _, Number in ipairs(Numbers) do
-local Label = "#" .. tostring(Number)
-S.WaypointNumbers[Label] = Number
-table.insert(Options, Label)
-end
-return Options
-end
-local function RefreshWaypoints()
-S.WaypointDropdown = RebuildDropdown(UIRef.WaypointTeleportSection, S.WaypointDropdown, "Waypoint", ReadWaypointOptions())
-end
-local function TeleportToWaypoint(Number)
-FireTeleport(Number, "waypoint #" .. tostring(Number))
-end
-local function ParseWaypointNumber(Text)
-local Number = tonumber((tostring(Text or ""):gsub("[%s#]", "")))
-if not Number or Number % 1 ~= 0 or Number < 0 then
-return nil
-end
-return Number
-end
-local function ScheduleRefresh()
-if S.RefreshScheduled then
-return
-end
-S.RefreshScheduled = true
-task.delay(REFRESH_DEBOUNCE, function()
-S.RefreshScheduled = false
-if not Context.Lifetime.Alive then
-return
-end
-if (S.DoorDropdown and S.DoorDropdown.Open)
-or (S.WaypointDropdown and S.WaypointDropdown.Open)
-then
-ScheduleRefresh()
-return
-end
-RefreshDoors()
-RefreshWaypoints()
-end)
-end
-local function BindFolders(Refresh)
-Context.Lifetime.Disconnect(S.FolderConnections)
-for _, FolderName in ipairs({DOORS_FOLDER, WAYPOINTS_FOLDER}) do
-local Folder = workspace:FindFirstChild(FolderName)
-if Folder then
-table.insert(S.FolderConnections, Folder.ChildAdded:Connect(ScheduleRefresh))
-table.insert(S.FolderConnections, Folder.ChildRemoved:Connect(ScheduleRefresh))
-end
-end
-if Refresh then
-ScheduleRefresh()
-end
-end
-local function OnWorkspaceChild(Child)
-if Child.Name == DOORS_FOLDER or Child.Name == WAYPOINTS_FOLDER then
-task.defer(BindFolders, true)
-end
-end
-local DoorSection = UIRef.DoorTeleportSection
-local WaypointSection = UIRef.WaypointTeleportSection
-S.DoorDropdown = DoorSection:AddDropdown{ Name = "Door", Options = ReadDoorOptions(), Callback = function() end }
-DoorSection:AddButton{ Name = "Teleport To Door", Callback = TeleportToDoor }
-DoorSection:AddButton{ Name = "Refresh Doors", Callback = RefreshDoors }
-S.WaypointDropdown = WaypointSection:AddDropdown{ Name = "Waypoint", Options = ReadWaypointOptions(), Callback = function() end }
-WaypointSection:AddButton{
-Name = "Teleport To Waypoint",
-Callback = function()
-local Label = S.WaypointDropdown and S.WaypointDropdown:Get()
-local Number = Label and S.WaypointNumbers[Label]
-if Number == nil then
-NotifyAction("TELEPORT", "Pick a waypoint first", 4)
-return
-end
-TeleportToWaypoint(Number)
-end,
-}
-WaypointSection:AddButton{ Name = "Refresh Waypoints", Callback = RefreshWaypoints }
-UIRef.WaypointNumberBox = WaypointSection:AddTextBox{ Name = "Waypoint Number", Default = "", Callback = function() end }
-WaypointSection:AddButton{
-Name = "Teleport To Number",
-Callback = function()
-local Number = ParseWaypointNumber(UIRef.WaypointNumberBox:Get())
-if not Number then
-NotifyAction("TELEPORT", "Enter a waypoint number (0 or more)", 4)
-return
-end
-TeleportToWaypoint(Number)
-end,
-}
-Context.Connect(workspace.ChildAdded, OnWorkspaceChild)
-Context.Connect(workspace.ChildRemoved, OnWorkspaceChild)
-Context.Lifetime.OnEnd(function()
-Context.Lifetime.Disconnect(S.FolderConnections)
-end)
-BindFolders(false)
-return Module
 end,
 }
 ]======],
