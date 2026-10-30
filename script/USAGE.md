@@ -913,30 +913,30 @@ added in front for a longer run: `2 Hours, 15 Minutes, 42 Seconds`.
 
 ### Settings tab
 
-Opened from the **Menu** button at the bottom of the sidebar. It holds the window's own appearance and behaviour — theme colours, palette, font, text scale, size and animation — plus notifications, the menu key and the custom cursor. The font, theme colours and text scale are saved in `AutoFarmProfiles/Global.json` and are **shared by every profile and PlaceId**, so they are not part of a profile export. Window size, menu scale and animation speed apply for the current session.
+Opened from the **Menu** button at the bottom of the sidebar. It holds the window's own appearance and behaviour — theme colours, palette, font, text scale, size — plus notifications, the menu key and the custom cursor.
+
+**Everything on this tab is saved** in `AutoFarmProfiles/Global.json` and is **shared by every profile and PlaceId**, so none of it is part of a profile export. A change is written back the moment the control settles: closing the script and executing it again brings the window up with the key, colours, size and cursor you left it with.
 
 **Appearance**
 
-- **Colour rows** (Accent colour, Background, Panel, Element, Border, Text, Muted text, Hovered border, Danger, Warning) — click the swatch to open the colour picker (drag on the square for saturation/value, the strip for hue; the hex code is shown under it). Colours identical to the built-in theme are not saved.
-- **Menu palette** (dropdown) — Default, Midnight, Rose, Forest or Light. Picking one replaces every colour above at once.
-- **Reset defaults** (button) — restores the default colours and palette, font, text scale, window size, menu scale and animation speed, and clears the saved copies.
+- **Colour rows** (Accent colour, Background, Panel, Element, Border, Text, Muted text, Hovered border, Danger, Warning) — click the swatch to open the colour picker (drag on the square for saturation/value, the strip for hue; the hex code is shown under it). Colours identical to the built-in theme are not stored.
+- **Menu palette** (dropdown) — Default, Navy, Midnight, Rose, Forest or Light. Picking one replaces every colour above at once, and those colours are saved with it; single colours changed afterwards are saved on top.
+- **Restore defaults** (button) — back to the built-in theme, the Default palette, the built-in font, 100% text, the starting window size and normal animation speed. The saved copies are rewritten, not cleared.
 
 **Interface**
 
 - **Text scale** (slider, 80%–220%) — resizes text across the whole window and floating windows. Each text remembers its base size, so scaling back and forth does not drift.
-- **Font** (dropdown) — one entry per font family, listed by family name. Picking one retargets the whole UI at once, keeping each label's bold/regular weight, and is saved immediately.
-- **Window width / Window height** (sliders, 700–1400 px / 360–900 px) — resize the main window.
-- **Menu scale** (slider, 50%–150%) — scales the whole window up or down.
-- **Animation speed** (slider, 25%–300%) — speeds up or slows down tab changes, hovers and notification slides.
+- **Font** (dropdown) — one entry per font family, listed by family name. Picking one retargets the whole UI at once, keeping each label's bold/regular weight.
+- **Window width / Window height** (sliders, 500–1400 px / 260–900 px) — resize the main window. The window opens at the saved size the next time the script runs.
 
 **Notifications and tabs**
 
 - **Display notifications** (toggle) — off, status notices are suppressed.
-- **Notification position** (dropdown) — Top/Bottom, left/centre/right.
-- **Tab animation** (dropdown) — Fade, Slide or None.
+- **Notification position** (dropdown) — Top left, Top center, Top right, Bottom left, Bottom right.
+- **Animation of tab change** (dropdown) — Fade, Slide or None.
 - **Watermark** (toggle) — the small title/FPS/ping strip.
 - **Keybind list** (toggle) — the keybind panel.
-- **Menu key** (keybind) — click it, then press the key that opens the window (default **Insert**; **Escape** cancels).
+- **Menu key** (keybind) — click it, then press the key that opens the window (default **Insert**; **Escape** cancels). It is not repeated in the keybind panel.
 
 **Cursor**
 
@@ -944,8 +944,11 @@ Opened from the **Menu** button at the bottom of the sidebar. It holds the windo
 - **Cursor style** (dropdown) — Arrow, Dot, Cross or Circle.
 - **Cursor size** (slider, 50%–300%).
 - **Cursor effects** (toggle) — the click ripple.
-- **Custom cursor colour** (colour row with a checkbox) — the checkbox turns the custom colour on.
-- **Unlock mouse** (toggle) — frees the mouse while the window is open (saved back when it closes).
+- **Custom cursor colour** (colour row with a tick) — the tick turns the custom colour on; the colour and the tick are saved together.
+
+**Configuration**
+
+- **Config**, **Config name**, **Save**, **Load**, **Autoload** — the window library's own JSON presets, kept in a folder beside the script's data and separate from the profiles. **Load** applies one by hand; nothing applies one on a later run, so the tab always opens on the saved settings above rather than on a preset.
 
 ## Troubleshooting
 

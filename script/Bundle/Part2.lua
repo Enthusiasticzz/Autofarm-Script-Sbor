@@ -2605,6 +2605,46 @@ AICUI.RefreshTargetDropdown()
 end,
 }
 UIRef.TargetRefreshButton.Row.LayoutOrder = 60
+if UI.ApplyUISettings then
+local function CopyToConfig(State)
+CONFIG.UI_MENU_KEY = State.MenuKey
+CONFIG.UI_PALETTE = State.Palette
+CONFIG.UI_WINDOW_WIDTH = State.WindowWidth
+CONFIG.UI_WINDOW_HEIGHT = State.WindowHeight
+CONFIG.UI_TAB_ANIMATION = State.TabAnimation
+CONFIG.UI_NOTIFICATIONS = State.Notifications
+CONFIG.UI_NOTIFICATION_POSITION = State.NotificationPosition
+CONFIG.UI_WATERMARK = State.Watermark
+CONFIG.UI_KEYBIND_LIST = State.KeybindList
+CONFIG.UI_CURSOR = State.Cursor
+end
+UI:ApplyUISettings{
+MenuKey = CONFIG.UI_MENU_KEY,
+Palette = CONFIG.UI_PALETTE,
+WindowWidth = CONFIG.UI_WINDOW_WIDTH,
+WindowHeight = CONFIG.UI_WINDOW_HEIGHT,
+TabAnimation = CONFIG.UI_TAB_ANIMATION,
+Notifications = CONFIG.UI_NOTIFICATIONS,
+NotificationPosition = CONFIG.UI_NOTIFICATION_POSITION,
+Watermark = CONFIG.UI_WATERMARK,
+KeybindList = CONFIG.UI_KEYBIND_LIST,
+Cursor = type(CONFIG.UI_CURSOR) == "table" and CONFIG.UI_CURSOR or nil,
+}
+local SaveQueued = false
+UI.OnSettingsChanged = function(State)
+CopyToConfig(State or UI:GetUISettings())
+if SaveQueued then
+return
+end
+SaveQueued = true
+task.delay(0.5, function()
+SaveQueued = false
+if Context.Lifetime and Context.Lifetime.Alive then
+AICProfile.WriteGlobalStore()
+end
+end)
+end
+end
 if UI.SetFont then
 if CONFIG.UI_FONT ~= "" and not UI:SetFont(CONFIG.UI_FONT) then
 CONFIG.UI_FONT = ""
@@ -4844,6 +4884,40 @@ end
 end
 end
 return Theme
+end },
+{ Key = "UI_MENU_KEY", Default = "Insert", Normalize = function(Value)
+local Name = type(Value) == "string" and Value:gsub("^%s*(.-)%s*$", "%1") or ""
+local Ok, Code = pcall(function() return Enum.KeyCode[Name] end)
+return Ok and Code and Name or "Insert"
+end },
+{ Key = "UI_PALETTE", Default = "Default", Options = { "Default", "Navy", "Midnight", "Rose", "Forest", "Light" } },
+{ Key = "UI_WINDOW_WIDTH", Default = 760, Min = 500, Max = 1400 },
+{ Key = "UI_WINDOW_HEIGHT", Default = 500, Min = 260, Max = 900 },
+{ Key = "UI_TAB_ANIMATION", Default = "Fade", Options = { "Fade", "Slide", "None" } },
+{ Key = "UI_NOTIFICATIONS", Default = true },
+{ Key = "UI_NOTIFICATION_POSITION", Default = "Bottom right", Options = { "Top left", "Top center", "Top right", "Bottom left", "Bottom right" } },
+{ Key = "UI_WATERMARK", Default = false },
+{ Key = "UI_KEYBIND_LIST", Default = false },
+{ Key = "UI_CURSOR", Default = { Mode = "Menu open", Style = "Arrow", Size = 100, Effects = true, CustomEnabled = false, Color = "46A0FF" }, Normalize = function(Value)
+local Defaults = { Mode = "Menu open", Style = "Arrow", Size = 100, Effects = true, CustomEnabled = false, Color = "46A0FF" }
+local Source = type(Value) == "table" and Value or {}
+local Color = type(Source.Color) == "string"
+and string.upper((string.gsub(Source.Color, "#", "")))
+or ""
+local function Switch(Key)
+if type(Source[Key]) == "boolean" then
+return Source[Key]
+end
+return Defaults[Key]
+end
+return {
+Mode = table.find({ "Menu open", "Always", "Never" }, Source.Mode) and Source.Mode or Defaults.Mode,
+Style = table.find({ "Arrow", "Dot", "Cross", "Circle" }, Source.Style) and Source.Style or Defaults.Style,
+Size = math.clamp(math.floor(tonumber(Source.Size) or Defaults.Size), 50, 300),
+Effects = Switch("Effects"),
+CustomEnabled = Switch("CustomEnabled"),
+Color = string.match(Color, "^%x%x%x%x%x%x$") and Color or Defaults.Color,
+}
 end },
 { Key = "BLOCK_WHITELIST", Default = {}, Normalize = NormalizeIdList },
 { Key = "DISCORD_ENABLED", Default = true },

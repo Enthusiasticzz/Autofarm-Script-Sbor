@@ -587,6 +587,88 @@ Check("settings: cursor style dropdown", function()
     Expect(win.Cursor.Style == "Cross", "cursor style " .. tostring(win.Cursor.Style))
 end)
 
+Check("settings: every saved option reports a change", function()
+    --// The project writes these to its global file from this one hook, so
+    --// each setter has to hand it the new state.
+    local seen, calls = nil, 0
+    win.OnSettingsChanged = function(state)
+        seen = state
+        calls += 1
+    end
+
+    win:SetMenuKey(Enum.KeyCode.J)
+    Expect(calls == 1, "menu key did not report a change")
+    Expect(seen.MenuKey == "J", "saved menu key " .. tostring(seen and seen.MenuKey))
+
+    win:SetCursor{ Mode = "Always", Size = 140 }
+    Expect(seen.Cursor.Mode == "Always" and seen.Cursor.Size == 140, "cursor not in the saved state")
+
+    win:SetWindowSize(900, 620)
+    Expect(seen.WindowWidth == 900 and seen.WindowHeight == 620, "window size not in the saved state")
+
+    win:SetNotificationsEnabled(false)
+    Expect(seen.Notifications == false, "notifications not in the saved state")
+    win:SetNotificationsEnabled(true)
+
+    win:SetNotificationPosition("Top center")
+    Expect(seen.NotificationPosition == "Top center", "notification position not in the saved state")
+    win:SetNotificationPosition("Bottom right")
+
+    win:SetTabAnimation("Slide")
+    Expect(seen.TabAnimation == "Slide", "tab animation not in the saved state")
+
+    win:SetWatermark(true)
+    Expect(seen.Watermark == true, "watermark not in the saved state")
+    win:SetWatermark(false)
+
+    win:SetKeybindList(true)
+    Expect(seen.KeybindList == true, "keybind list not in the saved state")
+    win:SetKeybindList(false)
+
+    win.OnSettingsChanged = nil
+end)
+
+Check("settings: a palette saves its colours", function()
+    local themed = 0
+    win.OnThemeChanged = function() themed += 1 end
+    win:SetPalette("Forest")
+    Expect(win.Theme.Window == Library.Palettes.Forest.Window, "palette did not reach the theme")
+    Expect(themed == 1, "a palette change did not report the new theme")
+    win.OnThemeChanged = nil
+    win:SetPalette("Default")
+end)
+
+Check("settings: saved values are applied before the tab is built", function()
+    win:ApplyUISettings{
+        MenuKey = "K",
+        Palette = "Forest",
+        WindowWidth = 820,
+        WindowHeight = 540,
+        TabAnimation = "None",
+        Notifications = false,
+        NotificationPosition = "Top left",
+        Watermark = true,
+        KeybindList = true,
+        Cursor = { Mode = "Never", Style = "Circle", Size = 70, Effects = false, CustomEnabled = true, Color = "FF8800" },
+    }
+
+    Expect(win.MenuKey == Enum.KeyCode.K, "menu key not applied")
+    Expect(win.Palette == "Forest", "palette not applied")
+    Expect(win.Root.Size.X.Offset == 820 and win.Root.Size.Y.Offset == 540, "window size not applied")
+    Expect(win.Sidebar.Size.Y.Offset == 540, "the sidebar did not follow the height")
+    Expect(win.TabAnimation == "None", "tab animation not applied")
+    Expect(win.Notifications.Enabled == false and win.Notifications.Position == "Top left", "notifications not applied")
+    Expect(win.Watermark.Visible == true and win.KeybindFrame.Visible == true, "watermark / keybind list not applied")
+    Expect(win.Cursor.Mode == "Never" and win.Cursor.Style == "Circle" and win.Cursor.Size == 70, "cursor not applied")
+    Expect(win.Cursor.Effects == false and win.Cursor.CustomEnabled == true, "cursor switches not applied")
+    Expect(win.Cursor.Color == Color3.fromHex("FF8800"), "cursor colour not applied")
+
+    local state = win:GetUISettings()
+    Expect(state.MenuKey == "K" and state.WindowWidth == 820, "the state does not round trip")
+    Expect(state.Cursor.Color == "FF8800", "the cursor colour does not round trip: " .. tostring(state.Cursor.Color))
+    Expect(state.Palette == "Forest", "the palette does not round trip")
+end)
+
 Check("settings: restore defaults", function()
     win:SetTextScale(1.4)
     win.AnimSpeed = 2

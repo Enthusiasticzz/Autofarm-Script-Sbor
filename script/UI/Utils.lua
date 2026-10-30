@@ -500,27 +500,183 @@ end
 ------------------------------------------------------------------ public settings API
 function Library:SetAccent(c) self.Theme.Accent = c; self:QueueRefresh() end
 function Library:SetHover(c) self.Theme.Hover = c; self:QueueRefresh() end
+--// A palette is a whole set of theme colours, so it goes through SetTheme:
+--// that is what saves them with the rest of the theme and repaints.
 function Library:SetPalette(name)
 	local p = Library.Palettes[name]; if not p then return end
 	self.Palette = name
-	for k, v in pairs(p) do self.Theme[k] = v end
-	self:QueueRefresh()
+	self:SetTheme(p)
+	self:_settingsChanged()
 end
 function Library:SetScale(v)
 	self.BaseScale = v
 	if self._open then self.Scale.Scale = v end
 end
-function Library:SetMenuKey(k) if k then self.MenuKey = k end end
-function Library:SetAnimSpeed(v) self.AnimSpeed = math.max(v, .1) end
-function Library:SetTabAnimation(name) self.TabAnimation = name end
-function Library:SetNotificationsEnabled(b) self.Notifications.Enabled = b and true or false end
-function Library:SetWatermark(b) self.Watermark.Visible = b and true or false end
-function Library:SetKeybindList(b) self.KeybindFrame.Visible = b and true or false end
+function Library:SetMenuKey(k)
+	if not k then return end
+	self.MenuKey = k
+	self:_settingsChanged()
+end
+function Library:SetAnimSpeed(v)
+	self.AnimSpeed = math.max(v, .1)
+	self:_settingsChanged()
+end
+function Library:SetTabAnimation(name)
+	self.TabAnimation = name
+	self:_settingsChanged()
+end
+function Library:SetNotificationsEnabled(b)
+	self.Notifications.Enabled = b and true or false
+	self:_settingsChanged()
+end
+function Library:SetWatermark(b)
+	self.Watermark.Visible = b and true or false
+	self:_settingsChanged()
+end
+function Library:SetKeybindList(b)
+	self.KeybindFrame.Visible = b and true or false
+	self:_settingsChanged()
+end
 function Library:SetCursor(opts)
 	for k, v in pairs(opts or {}) do self.Cursor[k] = v end
 	self:_styleCursor()
+	self:_settingsChanged()
 end
 function Library:SetSettingsTab(tab) self.SettingsTab = tab end
+
+--// Every option in the Settings tab that is not the theme, the font or the
+--// text scale (each of those has its own hook), as one table the project
+--// keeps in its global file.
+function Library:GetUISettings()
+	local Cursor = self.Cursor or {}
+
+	return {
+		MenuKey = self.MenuKey and self.MenuKey.Name or "Insert",
+		Palette = self.Palette or "Default",
+		WindowWidth = ROOT_W,
+		WindowHeight = ROOT_H,
+		TabAnimation = self.TabAnimation or "Fade",
+		Notifications = not (self.Notifications and self.Notifications.Enabled == false),
+		NotificationPosition = type(self.Notifications and self.Notifications.Position) == "string"
+			and self.Notifications.Position or "Bottom right",
+		Watermark = self.Watermark ~= nil and self.Watermark.Visible == true,
+		KeybindList = self.KeybindFrame ~= nil and self.KeybindFrame.Visible == true,
+		Cursor = {
+			Mode = Cursor.Mode or "Menu open",
+			Style = Cursor.Style or "Arrow",
+			Size = tonumber(Cursor.Size) or 100,
+			Effects = Cursor.Effects ~= false,
+			CustomEnabled = Cursor.CustomEnabled == true,
+			Color = typeof(Cursor.Color) == "Color3" and Cursor.Color:ToHex() or "46A0FF",
+		},
+	}
+end
+
+--// Applies a table in the shape of GetUISettings() before the Settings tab is
+--// built, so every control opens on the value the last run was saved with.
+--// Entries that are missing or wrong keep what the window already has, which
+--// is how a save from an older version still loads.
+function Library:ApplyUISettings(Settings)
+	if type(Settings) ~= "table" then
+		return
+	end
+
+	--// The window starts on the saved size, and nothing here is a new choice
+	--// by the user, so the change hook stays quiet while this runs.
+	self._applyingSettings = true
+
+	local Palette = Settings.Palette
+
+	if type(Palette) == "string" and Library.Palettes[Palette] then
+		self.Palette = Palette
+
+		for Key, Color in pairs(Library.Palettes[Palette]) do
+			self.Theme[Key] = Color
+		end
+	end
+
+	local MenuKey = type(Settings.MenuKey) == "string" and Settings.MenuKey or ""
+
+	if MenuKey ~= "" then
+		--// Indexing Enum with a name it does not have throws in the client.
+		local Ok, Code = pcall(function() return Enum.KeyCode[MenuKey] end)
+
+		if Ok and Code then
+			self.MenuKey = Code
+		end
+	end
+
+	if tonumber(Settings.WindowWidth) or tonumber(Settings.WindowHeight) then
+		self:SetWindowSize(tonumber(Settings.WindowWidth), tonumber(Settings.WindowHeight))
+	end
+
+	if table.find({ "Fade", "Slide", "None" }, Settings.TabAnimation) then
+		self.TabAnimation = Settings.TabAnimation
+	end
+
+	if type(Settings.Notifications) == "boolean" then
+		self.Notifications.Enabled = Settings.Notifications
+	end
+
+	if type(Settings.NotificationPosition) == "string" then
+		self:SetNotificationPosition(Settings.NotificationPosition)
+	end
+
+	if type(Settings.Watermark) == "boolean" and self.Watermark then
+		self.Watermark.Visible = Settings.Watermark
+	end
+
+	if type(Settings.KeybindList) == "boolean" and self.KeybindFrame then
+		self.KeybindFrame.Visible = Settings.KeybindList
+	end
+
+	local Cursor = type(Settings.Cursor) == "table" and Settings.Cursor or nil
+
+	if Cursor then
+		if type(Cursor.Mode) == "string" then
+			self.Cursor.Mode = Cursor.Mode
+		end
+
+		if type(Cursor.Style) == "string" then
+			self.Cursor.Style = Cursor.Style
+		end
+
+		if tonumber(Cursor.Size) then
+			self.Cursor.Size = math.clamp(tonumber(Cursor.Size), 50, 300)
+		end
+
+		if type(Cursor.Effects) == "boolean" then
+			self.Cursor.Effects = Cursor.Effects
+		end
+
+		if type(Cursor.CustomEnabled) == "boolean" then
+			self.Cursor.CustomEnabled = Cursor.CustomEnabled
+		end
+
+		if type(Cursor.Color) == "string" then
+			local Ok, Color = pcall(Color3.fromHex, Cursor.Color)
+
+			if Ok and typeof(Color) == "Color3" then
+				self.Cursor.Color = Color
+			end
+		end
+
+		self:_styleCursor()
+	end
+
+	self._applyingSettings = false
+end
+
+--// One hook for every option above: the project writes the whole state to
+--// its global file. The state is read back rather than passed in, so a
+--// setter that only touches part of it cannot leave a stale value behind.
+function Library:_settingsChanged()
+	if self._applyingSettings or not self.OnSettingsChanged then
+		return
+	end
+
+	task.spawn(self.OnSettingsChanged, self:GetUISettings())
+end
 
 function Library:SetStatusPerRow(n) self.StatusPerRow = math.max(1, math.floor(n or 4)); self:_layoutStatus() end
 
@@ -1904,6 +2060,7 @@ function Library:_buildNotifHolder()
 end
 function Library:SetNotificationPosition(p)
 	self.Notifications.Position = p
+	self:_settingsChanged()
 	local h, L = self.NotifHolder, self.NotifLayout
 	local right, center = p:find("right") ~= nil, p:find("center") ~= nil
 	local bottom = p:find("Bottom") ~= nil
@@ -2683,12 +2840,17 @@ function Library:SetTextScale(scale)
 	return scale
 end
 function Library:SetWindowSize(w, h)
-	if not w then return end
+	if w == nil and h == nil then return end
 	w = math.clamp(tonumber(w) or ROOT_W, 500, 2000)
-	h = h and math.clamp(tonumber(h) or ROOT_H, 260, 1200) or ROOT_H
+	h = math.clamp(tonumber(h) or ROOT_H, 260, 1200)
 	ROOT_W, ROOT_H = w, h
 	if self.Root then self.Root.Size = UDim2.fromOffset(w, h) end
+	--// The sidebar was built to the starting height, so it has to follow:
+	--// otherwise its divider and status icons hang above the bottom of a
+	--// taller window.
+	if self.Sidebar then self.Sidebar.Size = UDim2.new(0, SIDEBAR, 0, h) end
 	if self.Content then self.Content.Size = UDim2.new(1, -SIDEBAR, 1, -HEADER) end
+	self:_settingsChanged()
 end
 function Library:_GetFontChoices()
 	local names, byFamily = {}, {}
@@ -2728,8 +2890,11 @@ function Library:_BuildSettingsTab()
 	--// by its own build time callback; now that widgets do not call back while
 	--// they are built, it has to read the current scale itself.
 	local defaultTextScale = math.round(((self.TextScale or self._DefaultTextScale or 1) * 100))
-	local defaultWidth = self._DefaultWindowSize and self._DefaultWindowSize.X or ROOT_W
-	local defaultHeight = self._DefaultWindowSize and self._DefaultWindowSize.Y or ROOT_H
+	--// Where the window is now, not where it started: a saved size is applied
+	--// before this tab is built, and its sliders have to open on it. Restore
+	--// defaults goes back to _DefaultWindowSize instead.
+	local defaultWidth = ROOT_W
+	local defaultHeight = ROOT_H
 
 	--// Appearance
 	local appearance = tab:AddSection{ Full = true, Title = "Appearance" }
@@ -2772,7 +2937,7 @@ function Library:_BuildSettingsTab()
 
 	--// Interface
 	local interface = tab:AddSection{ Full = true, Title = "Interface" }
-	interface:AddSlider{
+	local textScaleSlider = interface:AddSlider{
 		Name = "Text scale",
 		Min = 80,
 		Max = 220,
@@ -2795,7 +2960,7 @@ function Library:_BuildSettingsTab()
 			end
 		end,
 	}
-	interface:AddSlider{
+	local widthSlider = interface:AddSlider{
 		Name = "Window width",
 		Min = 500,
 		Max = 1400,
@@ -2804,7 +2969,7 @@ function Library:_BuildSettingsTab()
 		Flag = "WindowWidth",
 		Callback = function(value) self:SetWindowSize(value, nil) end,
 	}
-	interface:AddSlider{
+	local heightSlider = interface:AddSlider{
 		Name = "Window height",
 		Min = 260,
 		Max = 900,
@@ -2821,9 +2986,20 @@ function Library:_BuildSettingsTab()
 				SubText = rgb(122,122,140), Hover = rgb(72,76,92), Danger = rgb(255,92,92), Warning = rgb(255,190,92) })
 			self:SetPalette("Default")
 			self:SetTextScale(1)
-			self:SetWindowSize(ROOT_W, ROOT_H)
+			--// The size and the font the window was built with: ROOT_W/ROOT_H
+			--// already hold the current size, so passing them back here did
+			--// nothing at all, and the font kept whichever one was picked.
+			self:SetWindowSize(self._DefaultWindowSize.X, self._DefaultWindowSize.Y)
 			self:SetAnimSpeed(1)
-			if self._FontDropdown then self._FontDropdown:Set(defaultFont, true) end
+
+			local builtinFont = fontChoices.Names[1]
+
+			self:SetFont(builtinFont)
+			if self._FontDropdown then self._FontDropdown:Set(builtinFont, true) end
+			textScaleSlider:Set(100, true)
+			widthSlider:Set(self._DefaultWindowSize.X, true)
+			heightSlider:Set(self._DefaultWindowSize.Y, true)
+
 			self:Notify{ Title = "Appearance", Text = "Default configuration restored.", Duration = 2 }
 		end,
 	}
@@ -2905,6 +3081,9 @@ function Library:_BuildSettingsTab()
 		Name = "Custom cursor colour",
 		Toggle = true,
 		Default = self.Cursor and self.Cursor.Color or rgb(70,160,255),
+		--// The tick is part of the saved cursor too, so a run that had it on
+		--// opens with it on.
+		DefaultEnabled = self.Cursor and self.Cursor.CustomEnabled == true or false,
 		Flag = "CursorColor",
 		Callback = function(color, enabled) self:SetCursor{ Color = color, CustomEnabled = enabled } end,
 	}

@@ -29,7 +29,9 @@ local Context = {
     SaveConfig = SaveConfig,
     UI = UI,
     UIRef = {},
-    Lifetime = { OnEnd = noop },
+    --// Alive is what the modules' loops and the settings save check, so the
+    --// probe carries it like Init's Lifetime does.
+    Lifetime = { OnEnd = noop, Alive = true },
     Modules = {},
     CONFIG = {
         UI_FONT = "",
@@ -121,6 +123,20 @@ Config.UI_TEXT_SCALE = Config.UI_TEXT_SCALE or 1
 Config.TARGET_ENTITY_PRIORITY = Config.TARGET_ENTITY_PRIORITY or {}
 Config.TARGET_HP_MODE = Config.TARGET_HP_MODE or "Disabled"
 
+--// Saved Settings-tab values, as the global store hands them over: Bootstrap
+--// has to put them on the window before the tab is built, and a change made
+--// later has to reach the store again.
+Config.UI_MENU_KEY = "K"
+Config.UI_PALETTE = "Navy"
+Config.UI_WINDOW_WIDTH = 900
+Config.UI_WINDOW_HEIGHT = 600
+Config.UI_TAB_ANIMATION = "Slide"
+Config.UI_NOTIFICATIONS = false
+Config.UI_NOTIFICATION_POSITION = "Top left"
+Config.UI_WATERMARK = true
+Config.UI_KEYBIND_LIST = true
+Config.UI_CURSOR = { Mode = "Always", Style = "Dot", Size = 150, Effects = false, CustomEnabled = true, Color = "FF8800" }
+
 Context.Feature.ResetStats = Context.Feature.ResetStats or { Enabled = false }
 Context.Feature.AutoFarm = Context.Feature.AutoFarm or { Enabled = true }
 
@@ -138,6 +154,25 @@ for _, name in ipairs({ "Components", "Bootstrap" }) do
 
     print(name .. " ok")
 end
+
+--// Every saved option reached the window, not just the ones with a hook of
+--// their own (the font, theme and text scale above).
+assert(UI.MenuKey == Enum.KeyCode.K, "saved menu key not applied")
+assert(UI.Palette == "Navy", "saved palette not applied")
+assert(UI.Root.Size.X.Offset == 900 and UI.Root.Size.Y.Offset == 600, "saved window size not applied")
+assert(UI.TabAnimation == "Slide", "saved tab animation not applied")
+assert(UI.Notifications.Enabled == false and UI.Notifications.Position == "Top left", "saved notifications not applied")
+assert(UI.Watermark.Visible == true and UI.KeybindFrame.Visible == true, "saved watermark / keybind list not applied")
+assert(UI.Cursor.Mode == "Always" and UI.Cursor.Style == "Dot" and UI.Cursor.Size == 150, "saved cursor not applied")
+assert(UI.Cursor.Effects == false and UI.Cursor.CustomEnabled == true, "saved cursor switches not applied")
+
+local storeWrites = 0
+Context.AICProfile.WriteGlobalStore = function() storeWrites += 1 end
+UI:SetMenuKey(Enum.KeyCode.J)
+SmokeEnv.FlushDelayed(600)
+assert(Config.UI_MENU_KEY == "J", "a settings change did not reach CONFIG")
+assert(storeWrites == 1, "a settings change did not write the global store: " .. storeWrites)
+UI:SetMenuKey(Enum.KeyCode.K)
 
 --// The paths Bootstrap only runs when there is saved state or a live server:
 --// a filled priority list and target pickers with entries.

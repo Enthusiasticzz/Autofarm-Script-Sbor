@@ -244,6 +244,63 @@ return {
 
         UIRef.TargetRefreshButton.Row.LayoutOrder = 60
 
+        --// The rest of the Settings tab -- menu key, cursor, window size and
+        --// the notification / tab switches -- is kept in the global file with
+        --// the font and theme below. Applied before the tab is built (it is
+        --// built at the end of the boot), so every control opens on its
+        --// saved value instead of the built-in one.
+        if UI.ApplyUISettings then
+            local function CopyToConfig(State)
+                CONFIG.UI_MENU_KEY = State.MenuKey
+                CONFIG.UI_PALETTE = State.Palette
+                CONFIG.UI_WINDOW_WIDTH = State.WindowWidth
+                CONFIG.UI_WINDOW_HEIGHT = State.WindowHeight
+                CONFIG.UI_TAB_ANIMATION = State.TabAnimation
+                CONFIG.UI_NOTIFICATIONS = State.Notifications
+                CONFIG.UI_NOTIFICATION_POSITION = State.NotificationPosition
+                CONFIG.UI_WATERMARK = State.Watermark
+                CONFIG.UI_KEYBIND_LIST = State.KeybindList
+                CONFIG.UI_CURSOR = State.Cursor
+            end
+
+            UI:ApplyUISettings{
+                MenuKey = CONFIG.UI_MENU_KEY,
+                Palette = CONFIG.UI_PALETTE,
+                WindowWidth = CONFIG.UI_WINDOW_WIDTH,
+                WindowHeight = CONFIG.UI_WINDOW_HEIGHT,
+                TabAnimation = CONFIG.UI_TAB_ANIMATION,
+                Notifications = CONFIG.UI_NOTIFICATIONS,
+                NotificationPosition = CONFIG.UI_NOTIFICATION_POSITION,
+                Watermark = CONFIG.UI_WATERMARK,
+                KeybindList = CONFIG.UI_KEYBIND_LIST,
+                Cursor = type(CONFIG.UI_CURSOR) == "table" and CONFIG.UI_CURSOR or nil,
+            }
+
+            --// Dragging a slider or a colour fires this on every step, and the
+            --// store is one whole file, so the write waits for the drag to
+            --// settle. Every value is taken from the window, not from the one
+            --// that changed, because the save replaces them all anyway.
+            local SaveQueued = false
+
+            UI.OnSettingsChanged = function(State)
+                CopyToConfig(State or UI:GetUISettings())
+
+                if SaveQueued then
+                    return
+                end
+
+                SaveQueued = true
+
+                task.delay(0.5, function()
+                    SaveQueued = false
+
+                    if Context.Lifetime and Context.Lifetime.Alive then
+                        AICProfile.WriteGlobalStore()
+                    end
+                end)
+            end
+        end
+
         --// UI font, picked in Configuration and kept in the global file.
         if UI.SetFont then
             if CONFIG.UI_FONT ~= "" and not UI:SetFont(CONFIG.UI_FONT) then

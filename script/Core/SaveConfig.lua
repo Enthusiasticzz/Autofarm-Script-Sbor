@@ -338,6 +338,55 @@ return {
                 return Theme
             end },
 
+            --// The rest of the Settings tab: the window's own options, in the
+            --// shape Utils keeps them. Shared by every profile and PlaceId,
+            --// like the font, the theme and the text scale above.
+            --// The key that opens and closes the menu, by Enum.KeyCode name.
+            { Key = "UI_MENU_KEY", Default = "Insert", Normalize = function(Value)
+                local Name = type(Value) == "string" and Value:gsub("^%s*(.-)%s*$", "%1") or ""
+                --// Indexing Enum with a name it does not have throws.
+                local Ok, Code = pcall(function() return Enum.KeyCode[Name] end)
+
+                return Ok and Code and Name or "Insert"
+            end },
+            --// The palette picked in Appearance; its colours land in UI_THEME.
+            { Key = "UI_PALETTE", Default = "Default", Options = { "Default", "Navy", "Midnight", "Rose", "Forest", "Light" } },
+            { Key = "UI_WINDOW_WIDTH", Default = 760, Min = 500, Max = 1400 },
+            { Key = "UI_WINDOW_HEIGHT", Default = 500, Min = 260, Max = 900 },
+            { Key = "UI_TAB_ANIMATION", Default = "Fade", Options = { "Fade", "Slide", "None" } },
+            { Key = "UI_NOTIFICATIONS", Default = true },
+            { Key = "UI_NOTIFICATION_POSITION", Default = "Bottom right", Options = { "Top left", "Top center", "Top right", "Bottom left", "Bottom right" } },
+            { Key = "UI_WATERMARK", Default = false },
+            { Key = "UI_KEYBIND_LIST", Default = false },
+            --// The menu cursor: when it shows, how it is drawn, its size, the
+            --// click ripple, and the colour behind its own tick.
+            { Key = "UI_CURSOR", Default = { Mode = "Menu open", Style = "Arrow", Size = 100, Effects = true, CustomEnabled = false, Color = "46A0FF" }, Normalize = function(Value)
+                local Defaults = { Mode = "Menu open", Style = "Arrow", Size = 100, Effects = true, CustomEnabled = false, Color = "46A0FF" }
+                local Source = type(Value) == "table" and Value or {}
+                local Color = type(Source.Color) == "string"
+                    and string.upper((string.gsub(Source.Color, "#", "")))
+                    or ""
+
+                --// A switch that is false is a real answer: `x and false or
+                --// default` would quietly turn it back on.
+                local function Switch(Key)
+                    if type(Source[Key]) == "boolean" then
+                        return Source[Key]
+                    end
+
+                    return Defaults[Key]
+                end
+
+                return {
+                    Mode = table.find({ "Menu open", "Always", "Never" }, Source.Mode) and Source.Mode or Defaults.Mode,
+                    Style = table.find({ "Arrow", "Dot", "Cross", "Circle" }, Source.Style) and Source.Style or Defaults.Style,
+                    Size = math.clamp(math.floor(tonumber(Source.Size) or Defaults.Size), 50, 300),
+                    Effects = Switch("Effects"),
+                    CustomEnabled = Switch("CustomEnabled"),
+                    Color = string.match(Color, "^%x%x%x%x%x%x$") and Color or Defaults.Color,
+                }
+            end },
+
             --// UserIds allowed to share the server. Auto Block ignores these.
             --// Shared by every profile and PlaceId.
             { Key = "BLOCK_WHITELIST", Default = {}, Normalize = NormalizeIdList },
