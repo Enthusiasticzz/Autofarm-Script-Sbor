@@ -117,6 +117,12 @@ return {
         --// while, so the stop looked like it was waiting for the character
         --// to heal before it would reset.
         local TARGET_KEEP_TIME = 4
+        --// The game's mark that the player damaged a mob, in
+        --// ReplicatedStorage.PlayerDamageTags, is named <PlayerName> + this.
+        local DAMAGE_TAG_SUFFIX = "MobDamaged"
+        --// A tag that never clears must not freeze the route: past this many
+        --// seconds the hold starts anyway.
+        local TAG_WAIT_MAX = 10
         --// A reset whose character never comes back gives up after this.
         local RESPAWN_TIMEOUT = 20
         --// EXP kept after a reset: ten percent of the level's own EXP bar for
@@ -277,6 +283,13 @@ return {
                 --// within TARGET_KEEP_TIME is still the stop's boss.
                 TargetSeenAt = nil,
                 KillAt = nil,
+                --// When the hold on this stop's kill may start counting. Set
+                --// when the game has taken its MobDamaged tag down, which is
+                --// the moment the kill is settled; nil while that tag is up.
+                HoldFrom = nil,
+                --// First frame the tag was found still up, so a tag that never
+                --// clears gives up after TAG_WAIT_MAX instead of freezing.
+                TagWaitAt = nil,
                 --// The walk speed the hold borrowed to run from a mob, so it can
                 --// be put back when the hold ends.
                 FleeFromSpeed = nil,
@@ -539,6 +552,54 @@ return {
             local Loss = Progress - Bar * Keep
 
             return Loss, Bar, Loss / Bar, Level
+        end
+
+        --// The game's own record of the kill, under ReplicatedStorage: while a
+        --// mob the player damaged is still being settled, PlayerDamageTags
+        --// holds a child named <PlayerName>MobDamaged. The game adds one per
+        --// hit and they all keep that same name, so the folder routinely holds
+        --// several children called exactly "HuffMobDamaged" at once. This
+        --// returns the first it finds; the caller keeps waiting while ANY of
+        --// them is still up and starts the hold only when none is left. That
+        --// is a better clock than the scan, which can stop finding the body a
+        --// moment before the last hit is awarded.
+        local function GetDamageTag()
+            if not Player or not Player.Name then
+                return nil
+            end
+
+            local Folder = Replicated and Replicated:FindFirstChild("PlayerDamageTags")
+
+            if not Folder then
+                return nil
+            end
+
+            local Prefix = Player.Name .. DAMAGE_TAG_SUFFIX
+            local Length = #Prefix
+
+            for _, Child in ipairs(Folder:GetChildren()) do
+                if string.sub(Child.Name, 1, Length) == Prefix then
+                    --// Every one of them is `HuffMobDamaged`; a numbered name
+                    --// is only tolerated in case a build ever starts
+                    --// numbering them. Nothing else counts as ours.
+                    local Rest = string.sub(Child.Name, Length + 1)
+
+                    if Rest == "" or string.match(Rest, "^%d+$") then
+                        return Child
+                    end
+                end
+            end
+
+            return nil
+        end
+
+        --// The two halves of the kill clock: KillAt is when the boss was seen
+        --// down, HoldFrom when this stop's pause may start counting. Both are
+        --// dropped together when a fight or a stop begins.
+        local function ClearKillClock()
+            S.KillAt = nil
+            S.HoldFrom = nil
+            S.TagWaitAt = nil
         end
 
         --// Seconds held at the corpse before the reset: the stop's own
@@ -1005,7 +1066,7 @@ return {
             S.SeenTarget = false
             S.LastTarget = nil
             S.TargetSeenAt = nil
-            S.KillAt = nil
+            ClearKillClock()
             S.WaitUntil = nil
             S.SpotWaitUntil = nil
             S.WalkStart = nil
@@ -1043,7 +1104,7 @@ return {
             S.FoughtThisVisit = false
             S.LastTarget = nil
             S.TargetSeenAt = nil
-            S.KillAt = nil
+            ClearKillClock()
             S.Teleported = false
             S.PathIndex = 1
             S.Path = Stop.Path and table.clone(Stop.Path) or {}
@@ -1084,7 +1145,7 @@ return {
             S.SeenTarget = false
             S.LastTarget = nil
             S.TargetSeenAt = nil
-            S.KillAt = nil
+            ClearKillClock()
             S.FightStart = nil
             S.WalkStart = nil
             S.WaitUntil = nil
@@ -2108,6 +2169,9 @@ return {
             S.FoughtThisVisit = true
             S.LastTarget = nil
             S.TargetSeenAt = nil
+            --// This kill gets its own clock: the tag wait and the pause run
+            --// from here, not from the kill that ended in the death.
+            ClearKillClock()
             S.KillAt = Now
             SetStatus(string.format(
                 "STOP %d/%d  BOSS DOWN WHILE AWAY",
@@ -2341,7 +2405,7 @@ return {
                     S.SeenTarget = false
                     S.LastTarget = nil
                     S.TargetSeenAt = nil
-                    S.KillAt = nil
+                    ClearKillClock()
                     ScanAt = 0
                     ScanDone = false
                     Humanoid:Move(Vector3.zero)
@@ -2407,7 +2471,7 @@ return {
                 S.SeenTarget = true
                 S.FoughtThisVisit = true
                 S.LastTarget = Target
-                S.KillAt = nil
+                ClearKillClock()
 
                 --// The scan watching it is the clock the keep above runs on.
                 if Scanned then
@@ -2463,7 +2527,32 @@ return {
                 --// path uses to see whether a second mob of the stop is still
                 --// standing up.
                 local Grace = Hold > 0 and KILL_GRACE or FREE_RESET_GRACE
-                local Left = math.max(Grace, Hold) - (Now - S.KillAt)
+
+                --// The pause starts when the game has finished with the kill,
+                --// not when the scan stopped finding the boss: the tag the game
+                --// keeps in PlayerDamageTags comes down once the kill is settled,
+                --// so counting from the scan could reset before the last hit was
+                --// awarded. A stop that only walks on is not spending the kill,
+                --// so it is not held for the tag.
+                if not S.HoldFrom then
+                    if Stop.ResetAfterKill and GetDamageTag() then
+                        S.TagWaitAt = S.TagWaitAt or Now
+
+                        if Now - S.TagWaitAt < TAG_WAIT_MAX then
+                            SetStatus(string.format(
+                                "STOP %d/%d  WAITING  DAMAGE TAG",
+                                S.Index,
+                                #GetStops()
+                            ))
+                            return
+                        end
+                    end
+
+                    S.HoldFrom = Now
+                    S.TagWaitAt = nil
+                end
+
+                local Left = math.max(Grace, Hold) - (Now - S.HoldFrom)
 
                 if Left > 0.05 then
                     if Hold > 0 then
@@ -2670,7 +2759,7 @@ return {
             S.SeenTarget = false
             S.LastTarget = nil
             S.TargetSeenAt = nil
-            S.KillAt = nil
+            ClearKillClock()
             S.WaitUntil = nil
             S.SpotWaitUntil = nil
             S.WalkStart = nil

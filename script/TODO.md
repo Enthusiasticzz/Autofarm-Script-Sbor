@@ -1442,3 +1442,15 @@ were added.
 > - Docs: `USAGE.md` *Settings tab* rewritten to the controls that exist, with the ranges, and now says the tab is saved in `Global.json` rather than session-only.
 > - Checks: `luau-compile` clean on `UI/Utils.lua`, `Core/SaveConfig.lua`, `Core/Bootstrap.lua`; `tests/run-ui-smoke.ps1` passes (three new checks: every setter reports a change, a palette saves its colours, saved values are applied) with 0 captured handler errors; `tests/run-boot-probe.ps1` passes with the saved values seeded into `CONFIG` and an assertion that a settings change reaches `CONFIG` and writes the store; every new `SaveConfig` entry exercised against a throwaway harness (defaults, clamps, junk input, deep-copied defaults). Not clicked in game.
 > - Still open on this tab: **Config / Save / Load / Autoload** in *Configuration* remain the library's own preset files — `LoadConfigs()` and `Autoload()` are never called by the project, so nothing applies a preset on a later run. Left as-is; the settings above are the save.
+
+### [x] Boss Route: count the reset wait from the game's damage tag, not the boss's death
+
+> **Asked:** instead of waiting **Reset (s)** from the moment the boss died, wait until the game's `ReplicatedStorage.PlayerDamageTags.<PlayerName>MobDamaged` objects are all gone, then wait the seconds — that moment is the accurate one. There can be several of them at once; only "none left" counts.
+> **Changed (v3.82):**
+> - `GetDamageTag` reads `PlayerDamageTags` and returns the first child named `<Player.Name>MobDamaged` — the game adds one per hit and they keep that same name, so the folder holds several identical ones at once. The hold waits while **any** of them is still there and starts only when **none** is; a numbered `…MobDamaged1` would still count, and another player's `<TheirName>MobDamaged` never does.
+> - The kill clock is now two values: `S.KillAt` (boss seen down, still what `BossKillPending` and the dead-body path use) and the new `S.HoldFrom` (when the pause may start counting). The hold and its countdown read `S.HoldFrom`, so the row's **Reset (s)** is waited from the tag clearing, not from the scan losing the body.
+> - While a tag is still up the status reads `STOP n/m  WAITING  DAMAGE TAG`, and the wait gives up after `TAG_WAIT_MAX` (10 s) so a tag that never clears cannot freeze the route.
+> - A stop with **Reset After Kill** off is not held for the tag: it is not spending the kill, so it walks on as before.
+> - `ClearKillClock()` drops `KillAt`, `HoldFrom` and `TagWaitAt` together and replaces the six separate `S.KillAt = nil` sites (stop route, begin stop, advance, fight found, walk-back resume, profile reset). `CheckReturnKill` clears the clock before stamping its own kill, so a boss that died while you were dead starts a fresh tag wait instead of inheriting the old clock.
+> - Docs: `USAGE.md` *What a stop does* (the new paragraph, and `WAITING  DAMAGE TAG` in the status list).
+> - Checks: `luau-compile` clean on `Features/BossNavigator.lua`; bundle rebuilt, `tests/run-bundle-check.ps1` 0 compile failures. Not run against the game: the tag's real lifetime and the 10 s cap are untested here.

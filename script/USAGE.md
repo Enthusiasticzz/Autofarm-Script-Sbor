@@ -427,8 +427,9 @@ teleport) to a boss, fight it, and reset back to spawn before the next one.
   Farm on or off; while it is on it owns movement and combat, and the safety
   checks above it (party hold, retreat, Auto Block, server age) still run first.
 - **STATUS:  …** — what the route is doing: `STOP 2/4  PATH 3/8`,
-  `STOP 2/4  WALKING`, `… FIGHT`, `… CLEARING  7s  LOSE 95 EXP`,
-  `… CLEARING  7s  LOSE 95 EXP  RUNNING`, `… BOSS DOWN`,
+  `STOP 2/4  WALKING`, `… FIGHT`, `… WAITING  DAMAGE TAG`,
+  `… CLEARING  7s  LOSE 95 EXP`, `… CLEARING  7s  LOSE 95 EXP  RUNNING`,
+  `… BOSS DOWN`,
   `… TELEPORT WP3`, `… TELEPORT <prompt>`, `… RESET PENDING`, `… RESET RETRY 1`,
   `ROUTE FINISHED`, `OFF`.
 - **Always Wait After Kill** (off by default) — sits just under the status
@@ -602,7 +603,8 @@ the route started on the stop are still walked.
    - **Inside the kept part it resets at once** — one scan tick after the kill,
      `RESET NOW` — because the game takes nothing there. With **Always Wait
      After Kill** on, that same reset waits the stop's **Reset (s)** instead
-     (the bar check is skipped, it just always waits).
+     (the bar check is skipped, it just always waits). Either way the reset is
+     never fired before the game has taken its damage tag down; see below.
    - **EXP it cannot place** (the stats are not readable yet, or a number that
      fits no bar) counts as a loss and is waited out.
 
@@ -611,6 +613,19 @@ the route started on the stop are still walked.
    0.8% of 141,909 and every reset below level 900 came back free. A
    **running total** in `PlayerStats.EXP` is read too — a value between this
    level's floor and its reach is progress in this level's bar.
+
+   **The pause is counted from the game letting go of the kill**, not from the
+   moment the scan stops finding the boss. While a mob the player has damaged
+   is still being settled, the game keeps a child under
+   `ReplicatedStorage.PlayerDamageTags` named after the player —
+   `YourNameMobDamaged`, so `LordInsratMobDamaged` for `LordInsrat` — and takes
+   it down once the kill is awarded. It adds one for every hit and they all
+   keep that same name, so several can be sitting there at once; the hold waits
+   while **any** of them is left and starts counting only when **none** is
+   (`WAITING  DAMAGE TAG`), so a reset cannot fire a moment before the last
+   hit's EXP lands. A tag that never clears gives up after 10 s rather than
+   freezing the route, and a stop with **Reset After Kill** off is not held for
+   it at all — it is not spending the kill, so it walks on as before.
 
    The pause is the row's **Reset (s)** exactly, with nothing added — **10 s**
    for a stop that has not set one, **4 s** for a stop set to 4 — and

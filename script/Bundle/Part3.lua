@@ -3714,6 +3714,8 @@ local SCAN_INTERVAL = 0.2
 local NO_TARGET_TIMEOUT = 5
 local KILL_GRACE = 2
 local TARGET_KEEP_TIME = 4
+local DAMAGE_TAG_SUFFIX = "MobDamaged"
+local TAG_WAIT_MAX = 10
 local RESPAWN_TIMEOUT = 20
 local DEFAULT_RESET_HOLD = 10
 local FREE_RESET_GRACE = 0.2
@@ -3773,6 +3775,8 @@ ReturnMissAt = nil,
 LastTarget = nil,
 TargetSeenAt = nil,
 KillAt = nil,
+HoldFrom = nil,
+TagWaitAt = nil,
 FleeFromSpeed = nil,
 RecoveredAt = nil,
 InteractAt = nil,
@@ -3911,6 +3915,31 @@ end
 local Keep = GetKeepPercent(Level) / 100
 local Loss = Progress - Bar * Keep
 return Loss, Bar, Loss / Bar, Level
+end
+local function GetDamageTag()
+if not Player or not Player.Name then
+return nil
+end
+local Folder = Replicated and Replicated:FindFirstChild("PlayerDamageTags")
+if not Folder then
+return nil
+end
+local Prefix = Player.Name .. DAMAGE_TAG_SUFFIX
+local Length = #Prefix
+for _, Child in ipairs(Folder:GetChildren()) do
+if string.sub(Child.Name, 1, Length) == Prefix then
+local Rest = string.sub(Child.Name, Length + 1)
+if Rest == "" or string.match(Rest, "^%d+$") then
+return Child
+end
+end
+end
+return nil
+end
+local function ClearKillClock()
+S.KillAt = nil
+S.HoldFrom = nil
+S.TagWaitAt = nil
 end
 local function GetResetHold(Stop)
 local Wait = tonumber(Stop and Stop.ResetWait)
@@ -4240,7 +4269,7 @@ S.ReturnMissAt = nil
 S.SeenTarget = false
 S.LastTarget = nil
 S.TargetSeenAt = nil
-S.KillAt = nil
+ClearKillClock()
 S.WaitUntil = nil
 S.SpotWaitUntil = nil
 S.WalkStart = nil
@@ -4273,7 +4302,7 @@ S.SeenTarget = false
 S.FoughtThisVisit = false
 S.LastTarget = nil
 S.TargetSeenAt = nil
-S.KillAt = nil
+ClearKillClock()
 S.Teleported = false
 S.PathIndex = 1
 S.Path = Stop.Path and table.clone(Stop.Path) or {}
@@ -4311,7 +4340,7 @@ local Stops = GetStops()
 S.SeenTarget = false
 S.LastTarget = nil
 S.TargetSeenAt = nil
-S.KillAt = nil
+ClearKillClock()
 S.FightStart = nil
 S.WalkStart = nil
 S.WaitUntil = nil
@@ -4956,6 +4985,7 @@ S.SeenTarget = true
 S.FoughtThisVisit = true
 S.LastTarget = nil
 S.TargetSeenAt = nil
+ClearKillClock()
 S.KillAt = Now
 SetStatus(string.format(
 "STOP %d/%d  BOSS DOWN WHILE AWAY",
@@ -5108,7 +5138,7 @@ S.FightStart = Now
 S.SeenTarget = false
 S.LastTarget = nil
 S.TargetSeenAt = nil
-S.KillAt = nil
+ClearKillClock()
 ScanAt = 0
 ScanDone = false
 Humanoid:Move(Vector3.zero)
@@ -5152,7 +5182,7 @@ if Target then
 S.SeenTarget = true
 S.FoughtThisVisit = true
 S.LastTarget = Target
-S.KillAt = nil
+ClearKillClock()
 if Scanned then
 S.TargetSeenAt = Now
 end
@@ -5179,7 +5209,22 @@ end
 S.KillAt = S.KillAt or Now
 local Hold = Stop.ResetAfterKill and GetResetHold(Stop) or 0
 local Grace = Hold > 0 and KILL_GRACE or FREE_RESET_GRACE
-local Left = math.max(Grace, Hold) - (Now - S.KillAt)
+if not S.HoldFrom then
+if Stop.ResetAfterKill and GetDamageTag() then
+S.TagWaitAt = S.TagWaitAt or Now
+if Now - S.TagWaitAt < TAG_WAIT_MAX then
+SetStatus(string.format(
+"STOP %d/%d  WAITING  DAMAGE TAG",
+S.Index,
+#GetStops()
+))
+return
+end
+end
+S.HoldFrom = Now
+S.TagWaitAt = nil
+end
+local Left = math.max(Grace, Hold) - (Now - S.HoldFrom)
 if Left > 0.05 then
 if Hold > 0 then
 local Loss = GetResetCost()
@@ -5313,7 +5358,7 @@ S.Phase = "Idle"
 S.SeenTarget = false
 S.LastTarget = nil
 S.TargetSeenAt = nil
-S.KillAt = nil
+ClearKillClock()
 S.WaitUntil = nil
 S.SpotWaitUntil = nil
 S.WalkStart = nil
