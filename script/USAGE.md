@@ -806,14 +806,15 @@ Warps the character to the doors and waypoints the game exposes, for travelling 
 
 ### Quest tab
 
-Takes a quest end to end: walks to a quest giver, accepts the quest through its dialog, then fights what the game's own tracker asks for. Nothing has to be typed in — the tracker is read live.
+Takes quests end to end, one after another: fires a quest giver's prompt, accepts the quest through its dialog, fights what the game's own tracker asks for, and moves on to the next giver the moment one finishes. Nothing has to be typed in — the tracker is read live.
 
 **Auto Quest** section
 
-- **QUEST  //  ...** (readout) — the loop's current step: going to a giver (with the distance left), asking for the quest, accepting it, or fighting a mob (with the objective and count).
+- **QUEST  //  ...** (readout) — the loop's current step: asking a giver for the quest, walking over to one (with the distance left), accepting it, fighting a mob (with the objective and count), or handing over to the next quest.
 - **Quest Giver** (dropdown) — every giver found in `workspace.Interactions` whose name starts with `QuestGiver`. They all share that name, so each entry is its **ID** child (`Quest 12`), and one is picked automatically on the first fill. The list refreshes every 3 s as the folder streams in and out, and the choice survives a refresh.
 - **Auto Quest** (toggle, saved in the profile) — starts the loop. Switching it on pauses **Auto Farm** and **Boss Route**, since only one loop may move the character, and the loop picks up again by itself after a death.
 - **Refresh Quests** (button) — rebuilds the giver list now.
+- **Trigger From Anywhere** (toggle, default on) — fires the selected giver's prompt from wherever the character stands, so it never has to be walked to. If ten presses bring up no dialog, that giver's prompt is range limited after all and the character walks over and asks again from there. Turning it off always walks first.
 - **Teleport If Stuck** (toggle, default on) — travelling that gets no closer for `STUCK_WINDOW` (8 s) warps the character to the giver's prompt instead of walking into a wall forever.
 - **Teleport To Quest** (button) — warps to the selected giver's prompt immediately.
 - **Try TriggerQuest Remote** (toggle, default off) — also fires `workspace.QuestItems.TriggerQuest` every third attempt when the giver's prompt opens no dialog. Its arguments are a guess (the giver's ID), which is why it is off by default.
@@ -823,6 +824,8 @@ How it works: the fight is the farm's fight without its Enemy Priority gate. The
 The retreat is the farm's as well: below **Retreat At HP%** (Farming tab) the character flees with `AICCombat.RetreatFromGoblins`, allowed out of the profile's farm zones because a quest is almost always outside them (`AICCombatUtils.S.DodgeOffRoute`, the same flag the waypoint route uses), and it goes back in only once health is past the retreat share plus ten — 70 at the least. An enemy skill still makes it dodge, and potions are drunk on the way out. Only the health retreat is guaranteed here: the skill scan reads the Enemy Priority list, so a quest mob off that list is not watched for skills.
 
 A death does not send it back to a quest giver when a quest is already accepted. The tracker lives in the PlayerGui, which Roblox resets on respawn, so the rows are missing for a moment; the loop waits up to 12 s for them to come back and resumes the fight, and only walks to a giver when they do not.
+
+Finishing a quest does not leave it standing on the mob it just killed. The moment the last objective is counted off the character stops moving and the loop hands over to the next quest: two seconds later it selects the giver after the current one in the dropdown (the same one again when it is the only giver) and asks for that quest, and the new quest is accepted and fought without touching the tab. A tracker that keeps showing the finished rows is waited out rather than completed twice — the readout says `QUEST COMPLETE — WAITING FOR THE TRACKER` until the game clears them.
 
 Each giver's prompt (`ProxBase.ProximityAttach.ProximityPrompt`) is fired with `fireproximityprompt` when the executor has it, otherwise with `InputHoldBegin`/`InputHoldEnd`, and the game's own Interact binding is pressed as well — the same press Auto Farm uses for doors. The dialog at `PlayerGui.QuestUI_Root.Dialogue` is clicked through with `GuiClick`: the visible button named Accept (or Continue / Next / OK) is pressed every 0.35 s, up to 20 times, because the game's dialogs are several pages. The quest is read from `QuestUI_Root.Tracker.Content.Objectives`: every `ObjectiveRow*` whose `Task` has text, with `Count` (`0/10`) split into done and total.
 

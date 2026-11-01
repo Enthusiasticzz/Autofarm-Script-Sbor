@@ -80,6 +80,9 @@ return {
         --// The tracker is given this long to show rows after the dialog ends
         --// before the loop reports that nothing was accepted.
         local QUEST_READ_GRACE = 4
+        --// Pause between finishing a quest and asking for the next one, so the
+        --// game can clear the finished rows from the tracker first.
+        local QUEST_ADVANCE_DELAY = 2
         --// A quest already on the tracker is given this long to reappear after
         --// a respawn before the loop gives up on it and walks to a giver.
         local QUEST_RESUME_WAIT = 12
@@ -176,6 +179,13 @@ return {
                 ShownOption = nil,
                 LastReadout = nil,
                 TeleportIfStuck = true,
+                --// The giver's prompt is fired from wherever the character is;
+                --// walking over is only the fallback when no dialog comes up.
+                TriggerAnywhere = true,
+                --// When the next quest is asked for, and the rows of the quest
+                --// that was just finished (so they are not completed twice).
+                AdvanceAt = nil,
+                DoneKey = nil,
                 --// Off unless asked for: the arguments of the TriggerQuest
                 --// remote are a guess, and the prompt is the documented way.
                 UseTriggerRemote = false,
@@ -534,6 +544,34 @@ return {
             end
 
             return S.Rows
+        end
+
+        --// Rows that are not counted off yet. A tracker still listing a quest
+        --// that is already done is not an unfinished quest.
+        local function CountPending(Rows)
+            local Pending = 0
+
+            for _, Row in ipairs(Rows) do
+                if not Row.Done then
+                    Pending += 1
+                end
+            end
+
+            return Pending
+        end
+
+        --// What the tracker showed of the quest that was just finished, so a
+        --// finished quest still on the list is not completed a second time.
+        local function RowsKey(Rows)
+            local Parts = {}
+
+            for _, Row in ipairs(Rows) do
+                table.insert(Parts, Row.Task .. "|" .. tostring(Row.Current) .. "/" .. tostring(Row.Total))
+            end
+
+            table.sort(Parts)
+
+            return table.concat(Parts, ";")
         end
 
         ------------------------------------------------------------------------
@@ -1242,12 +1280,75 @@ return {
             end
         end
 
+        --// The last objective is counted off, or the tracker cleared after a
+        --// quest that finished: hand the loop over to the next giver instead
+        --// of standing on the mob that was just killed.
+        local function CompleteQuest(Now)
+            S.HadQuest = false
+            S.ResumeUntil = 0
+            S.DoneKey = RowsKey(Module.GetObjectives())
+            S.Phase = PHASE_IDLE
+            S.AdvanceAt = Now + QUEST_ADVANCE_DELAY
+            SetStatus("QUEST COMPLETE", STATUS_COLOR.Work)
+            StandStill()
+        end
+
+        --// The giver after the selected one, so a finished quest is followed by
+        --// the next one rather than the same one over and over. One giver in
+        --// the list means asking that one again, which is what a single-giver
+        --// board wants anyway.
+        local function AdvanceGiver(Now)
+            local Labels = {}
+
+            for _, Label in ipairs(S.Options) do
+                if S.Givers[Label] then
+                    table.insert(Labels, Label)
+                end
+            end
+
+            if #Labels == 0 then
+                SetStatus("QUEST COMPLETE — NO OTHER GIVER", STATUS_COLOR.Wait)
+                return
+            end
+
+            local NextIndex = 1
+
+            for Index, Label in ipairs(Labels) do
+                if Label == S.SelectedKey then
+                    NextIndex = (Index % #Labels) + 1
+                    break
+                end
+            end
+
+            S.HadQuest = false
+            S.ResumeUntil = 0
+            SelectEntry(S.Givers[Labels[NextIndex]], true)
+
+            S.Phase = PHASE_START
+            SetStatus("NEXT QUEST  ·  " .. Labels[NextIndex], STATUS_COLOR.Work)
+        end
+
         local function BeginQuest(Now)
             local Rows = Module.GetObjectives(true)
 
-            if #Rows > 0 then
+            if CountPending(Rows) > 0 then
                 S.Phase = PHASE_KILL
                 S.KillSince = Now
+
+                return
+            end
+
+            --// Rows that are all done are a quest finished while the loop was
+            --// not looking. A giver is not asked for it a second time.
+            if #Rows > 0 then
+                if RowsKey(Rows) ~= S.DoneKey then
+                    CompleteQuest(Now)
+                else
+                    S.Phase = PHASE_IDLE
+                    S.AdvanceAt = Now + QUEST_ADVANCE_DELAY
+                    SetStatus("QUEST COMPLETE — WAITING FOR THE TRACKER", STATUS_COLOR.Wait)
+                    StandStill()
+                end
 
                 return
             end
@@ -1273,11 +1374,23 @@ return {
                 return
             end
 
+            S.PromptTries = 0
+            S.AcceptTries = 0
+            S.NextPromptAt = 0
+
+            --// Trigger From Anywhere: the prompt is fired from where the
+            --// character stands, so the giver does not have to be walked to.
+            --// StepPrompt falls back to the walk if no dialog answers.
+            if S.TriggerAnywhere and (Giver.Prompt or FindPrompt(Giver.Instance)) then
+                S.Phase = PHASE_PROMPT
+                SetStatus("ASKING " .. Giver.Label, STATUS_COLOR.Work)
+
+                return
+            end
+
             S.Phase = PHASE_TRAVEL
             S.StuckAt = Now
             S.StuckFrom = nil
-            S.PromptTries = 0
-            S.AcceptTries = 0
 
             SetStatus("GOING TO " .. Giver.Label, STATUS_COLOR.Work)
         end
@@ -1400,6 +1513,19 @@ return {
                 end
 
                 if S.PromptTries >= PROMPT_TRIES then
+                    --// Asked from far away and nothing answered: this giver's
+                    --// prompt is range limited after all, so walk over and
+                    --// ask again from there.
+                    if S.TriggerAnywhere then
+                        S.Phase = PHASE_TRAVEL
+                        S.StuckAt = Now
+                        S.StuckFrom = nil
+                        S.PromptTries = 0
+                        SetStatus("GOING TO " .. Giver.Label, STATUS_COLOR.Work)
+
+                        return
+                    end
+
                     S.Phase = PHASE_IDLE
                     NotifyAction("QUEST", "No dialog came up from " .. Giver.Label, 5)
                     SetStatus("NO DIALOG — CHECK THE GIVER", STATUS_COLOR.Stop)
@@ -1409,7 +1535,12 @@ return {
             end
 
             --// Keep close, in case the character drifted out of the prompt's
-            --// range while the dialog was being asked for.
+            --// range while the dialog was being asked for. Not when asking
+            --// from anywhere: staying put is the point of that toggle.
+            if S.TriggerAnywhere then
+                return
+            end
+
             local Position = GetGiverPosition(Giver)
 
             if Position then
@@ -1606,33 +1737,25 @@ return {
             end
 
             local Rows = Module.GetObjectives()
-            local Pending, AllDone = 0, #Rows > 0
-
-            for _, Row in ipairs(Rows) do
-                if not Row.Done then
-                    Pending += 1
-                    AllDone = false
-                end
-            end
+            local Pending = CountPending(Rows)
 
             if #Rows == 0 then
                 if Now - S.KillSince < QUEST_READ_GRACE then
+                    --// The last objective was just read as met. Stopping here
+                    --// matters: the MoveTo issued while chasing would keep
+                    --// walking to that mob and park the character in front of
+                    --// it until the grace expires.
                     SetStatus("READING THE QUEST", STATUS_COLOR.Wait)
-                else
-                    S.HadQuest = false
-                    S.Phase = PHASE_IDLE
-                    SetStatus("QUEST COMPLETE", STATUS_COLOR.Work)
                     StandStill()
+                else
+                    CompleteQuest(Now)
                 end
 
                 return
             end
 
-            if AllDone then
-                S.HadQuest = false
-                S.Phase = PHASE_IDLE
-                SetStatus("QUEST COMPLETE", STATUS_COLOR.Work)
-                StandStill()
+            if Pending == 0 then
+                CompleteQuest(Now)
 
                 return
             end
@@ -1884,9 +2007,12 @@ return {
                 if Entry then
                     S.SelectedKey = Value
                     S.SelectedInstance = Entry.Instance
-                    --// A pick of its own overrides a quest left on the tracker.
+                    --// A pick of its own overrides a quest left on the tracker
+                    --// and any hand-off waiting on the previous quest.
                     S.HadQuest = false
                     S.ResumeUntil = 0
+                    S.AdvanceAt = nil
+                    S.DoneKey = nil
 
                     --// Picking another quest starts it without a re-toggle.
                     if S.Phase == PHASE_IDLE or S.Phase == PHASE_RESUME then
@@ -1918,12 +2044,30 @@ return {
                 S.Phase = PHASE_START
                 S.PromptTries = 0
                 S.AcceptTries = 0
+                S.AdvanceAt = nil
+                S.DoneKey = nil
             else
                 S.Phase = PHASE_IDLE
+                S.AdvanceAt = nil
                 StandStill()
                 SetStatus("OFF", STATUS_COLOR.Idle)
             end
         end, Section)
+
+        Section:AddToggle{
+            Name = "Trigger From Anywhere",
+            Default = true,
+            Callback = function(Value)
+                S.TriggerAnywhere = Value
+
+                --// Re-asked from the new way, not left mid-walk.
+                if S.Phase == PHASE_TRAVEL or S.Phase == PHASE_PROMPT then
+                    S.Phase = PHASE_START
+                    S.PromptTries = 0
+                    StandStill()
+                end
+            end,
+        }
 
         Section:AddToggle{
             Name = "Teleport If Stuck",
@@ -1993,6 +2137,8 @@ return {
                 S.Phase = PHASE_START
                 S.PromptTries = 0
                 S.AcceptTries = 0
+                S.AdvanceAt = nil
+                S.DoneKey = nil
             elseif not Enabled and S.WasEnabled then
                 S.Phase = PHASE_IDLE
                 SetStatus("OFF", STATUS_COLOR.Idle)
@@ -2057,13 +2203,24 @@ return {
                 --// the readout honest while it waits.
                 local Rows = Module.GetObjectives()
 
-                if #Rows > 0 then
+                if CountPending(Rows) > 0 then
                     S.Phase = PHASE_KILL
                     S.KillSince = Now
                 elseif FindAcceptButton() then
                     S.Phase = PHASE_ACCEPT
                     S.AcceptTries = 0
                     S.NextAcceptAt = 0
+                elseif S.AdvanceAt and Now >= S.AdvanceAt then
+                    --// The quest is finished: go and get the next one. A
+                    --// tracker still showing the finished rows holds the
+                    --// hand-off until the game clears them.
+                    if #Rows > 0 and RowsKey(Rows) == S.DoneKey then
+                        SetStatus("QUEST COMPLETE — WAITING FOR THE TRACKER", STATUS_COLOR.Wait)
+                        StandStill()
+                    else
+                        S.AdvanceAt = nil
+                        AdvanceGiver(Now)
+                    end
                 end
             end
         end
