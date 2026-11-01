@@ -414,6 +414,26 @@ return {
             if not MobRoot or not MobHumanoid or MobHumanoid.Health <= 0 then
                 return
             end
+
+            --// Standing on the target (a hop onto it, or its body walking under
+            --// the character): every swing from up there comes down on air over
+            --// its head, whatever the attack range says. Step off the body
+            --// instead of swinging; the caller's walk puts the character back
+            --// alongside it.
+            if AICCombatUtils.IsStandingOnTarget(MobRoot) then
+                local StepOff = AICCombatUtils.GetStepOffPosition(
+                    MobRoot,
+                    (tonumber(CONFIG.TARGET_BODY_CLEARANCE) or 3.5) + 4
+                )
+
+                if StepOff and Humanoid then
+                    Humanoid.AutoRotate = false
+                    Humanoid:MoveTo(StepOff)
+                    AICCombat.FaceGoblin(TargetMob)
+                end
+
+                return
+            end
         
             local Distance = AICCombat.GetCombatDistance(TargetMob, MobRoot.Position - RootPart.Position)
 

@@ -3184,6 +3184,18 @@ local MobHumanoid = TargetMob:FindFirstChildOfClass("Humanoid")
 if not MobRoot or not MobHumanoid or MobHumanoid.Health <= 0 then
 return
 end
+if AICCombatUtils.IsStandingOnTarget(MobRoot) then
+local StepOff = AICCombatUtils.GetStepOffPosition(
+MobRoot,
+(tonumber(CONFIG.TARGET_BODY_CLEARANCE) or 3.5) + 4
+)
+if StepOff and Humanoid then
+Humanoid.AutoRotate = false
+Humanoid:MoveTo(StepOff)
+AICCombat.FaceGoblin(TargetMob)
+end
+return
+end
 local Distance = AICCombat.GetCombatDistance(TargetMob, MobRoot.Position - RootPart.Position)
 local EnemySkill = AICCombat.IsEnemyUsingSkill(TargetMob)
 local PlayerHP = AICCombat.GetCombatHealthPercent()
@@ -3638,6 +3650,51 @@ return false
 end
 return AICCombatUtils.DoJumpIfObstacle(TargetPosition)
 end
+function AICCombatUtils.IsPressedAgainstBody(TargetRoot)
+local _, _, RootPart = Runtime:GetCharacter()
+if not TargetRoot or not RootPart then
+return false
+end
+local Clearance = math.max(tonumber(CONFIG.TARGET_BODY_CLEARANCE) or 3.5, 3) + 1.5
+return AICCombatUtils.GetHorizontalDistance(RootPart.Position, TargetRoot.Position) <= Clearance
+end
+function AICCombatUtils.IsStandingOnTarget(TargetRoot)
+local Character, Humanoid, RootPart = Runtime:GetCharacter()
+if not TargetRoot or not RootPart or not Humanoid then
+return false
+end
+if Humanoid.FloorMaterial == Enum.Material.Air then
+return false
+end
+local HalfHeight = RootPart.Size.Y * 0.5
+local Params = RaycastParams.new()
+Params.FilterType = Enum.RaycastFilterType.Exclude
+Params.FilterDescendantsInstances = { Character }
+local Hit = workspace:Raycast(
+RootPart.Position - Vector3.new(0, HalfHeight, 0) + Vector3.new(0, 0.5, 0),
+Vector3.new(0, -2.5, 0),
+Params
+)
+if not Hit or Hit.Instance == Character or not TargetRoot.Parent then
+return false
+end
+return Hit.Instance:IsDescendantOf(TargetRoot.Parent)
+end
+function AICCombatUtils.GetStepOffPosition(TargetRoot, Distance)
+local _, _, RootPart = Runtime:GetCharacter()
+if not TargetRoot or not RootPart then
+return nil
+end
+local Offset = RootPart.Position - TargetRoot.Position
+local Away = Vector3.new(Offset.X, 0, Offset.Z)
+if Away.Magnitude <= 0.01 then
+Away = AICCombatUtils.GetFlatLook(RootPart)
+end
+if Away == Vector3.zero then
+return nil
+end
+return RootPart.Position + Away.Unit * (tonumber(Distance) or 8)
+end
 function AICCombatUtils.IsPositionInsideZone(Position, Zone)
 if not Position or not Zone or not Zone.Center then
 return false
@@ -3921,6 +3978,7 @@ Part = Part.Parent
 end
 return false
 end
+local WALKABLE_NORMAL = 0.7
 function AICCombatUtils.IsJumpableObstacleAhead(TargetPosition)
 local Character, Humanoid, RootPart = Runtime:GetCharacter()
 if not RootPart or not TargetPosition then
@@ -3961,6 +4019,9 @@ end
 if IsCharacterHit(HighHit) then
 HighHit = nil
 end
+if LowHit and LowHit.Normal.Y >= WALKABLE_NORMAL then
+LowHit = nil
+end
 if LowHit and not HighHit then
 return true
 end
@@ -3977,7 +4038,23 @@ if not Down or IsCharacterHit(Down) then
 return false
 end
 local StepUp = Down.Position.Y - Feet.Y
-return StepUp >= (tonumber(CONFIG.JUMP_STEP_HEIGHT) or 1.2)
+local StepHeight = tonumber(CONFIG.JUMP_STEP_HEIGHT) or 1.2
+if StepUp < StepHeight then
+return false
+end
+local ProbeDistance = tonumber(CONFIG.JUMP_PROBE_DISTANCE) or 4.5
+local HalfHit = workspace:Raycast(
+Origin + Flat.Unit * (ProbeDistance * 0.5) + Vector3.new(0, HalfHeight, 0),
+Vector3.new(0, -(HalfHeight * 2 + 6), 0),
+Params
+)
+if HalfHit and not IsCharacterHit(HalfHit) then
+local HalfRise = HalfHit.Position.Y - Feet.Y
+if HalfRise >= StepHeight * 0.5 and HalfRise <= StepUp * 0.75 then
+return false
+end
+end
+return true
 end
 local HOLE_PROBE_DISTANCE = 6
 local HOLE_SAMPLE_STEP = 1
@@ -4067,10 +4144,12 @@ local Character, Humanoid, RootPart = Runtime:GetCharacter()
 if not RootPart or not Humanoid or Humanoid.MoveDirection.Magnitude < ROUTE_HOLE_MIN_MOVE then
 return false
 end
-local Direction = AICCombatUtils.GetFlatLook(RootPart)
-if Direction == Vector3.zero then
+local Move = Humanoid.MoveDirection
+local Direction = Vector3.new(Move.X, 0, Move.Z)
+if Direction.Magnitude < ROUTE_HOLE_MIN_MOVE then
 return false
 end
+Direction = Direction.Unit
 local Params = RaycastParams.new()
 Params.FilterType = Enum.RaycastFilterType.Exclude
 local Filter = { Character }
@@ -4094,11 +4173,17 @@ end
 local ProbeDistance = tonumber(CONFIG.ROUTE_HOLE_PROBE_DISTANCE) or 2
 local SampleStep = math.max(tonumber(CONFIG.ROUTE_HOLE_SAMPLE_STEP) or 0.5, 0.1)
 local MinDepth = tonumber(CONFIG.ROUTE_HOLE_MIN_DEPTH) or 1
+local PreviousY = FeetY
 for Distance = SampleStep, ProbeDistance, SampleStep do
 local GroundY = GetGroundHeight(RootPart.Position + Direction * Distance, Params)
-if not GroundY or FeetY - GroundY >= MinDepth then
+if not GroundY then
 return true
 end
+local Drop = FeetY - GroundY
+if Drop >= MinDepth and (PreviousY - GroundY) >= MinDepth then
+return true
+end
+PreviousY = GroundY
 end
 return false
 end

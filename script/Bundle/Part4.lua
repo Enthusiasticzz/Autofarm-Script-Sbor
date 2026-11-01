@@ -1166,13 +1166,24 @@ then
 Humanoid:Move(Vector3.zero)
 return
 end
+if AICCombatUtils.IsStandingOnTarget(TargetRoot) then
+local StepOff = AICCombatUtils.GetStepOffPosition(TargetRoot, FIGHT_STANDOFF + 2)
+if StepOff then
+Humanoid.AutoRotate = false
+Humanoid:MoveTo(StepOff)
+AICCombat.FaceCombatTarget(Target)
+return
+end
+end
 local Offset = TargetRoot.Position - RootPart.Position
 local Distance = AICCombat.GetCombatDistance(Target, Offset)
 if Distance > FIGHT_STANDOFF then
 local Flat = Vector3.new(Offset.X, 0, Offset.Z)
 local Direction = Flat.Magnitude > 0.01 and Flat.Unit or Vector3.xAxis
 local Destination = TargetRoot.Position - Direction * math.max(FIGHT_STANDOFF - 1, 2)
+if not AICCombatUtils.IsPressedAgainstBody(TargetRoot) then
 AICCombatUtils.DoJumpIfObstacle(Destination)
+end
 Humanoid:MoveTo(Destination)
 else
 Humanoid:Move(Vector3.zero)

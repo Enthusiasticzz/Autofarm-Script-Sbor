@@ -243,6 +243,83 @@ return {
 
             return AICCombatUtils.DoJumpIfObstacle(TargetPosition)
         end
+
+        --// Pressed up against the target's own body. Nothing hops this close
+        --// to a body it is swinging at: the jump carries it onto the head of
+        --// the mob (or of the boss someone else is fighting), where every
+        --// swing after it comes down on air.
+        function AICCombatUtils.IsPressedAgainstBody(TargetRoot)
+            local _, _, RootPart = Runtime:GetCharacter()
+
+            if not TargetRoot or not RootPart then
+                return false
+            end
+
+            local Clearance = math.max(tonumber(CONFIG.TARGET_BODY_CLEARANCE) or 3.5, 3) + 1.5
+
+            return AICCombatUtils.GetHorizontalDistance(RootPart.Position, TargetRoot.Position) <= Clearance
+        end
+
+        --// Standing on the target's body. Read from what is under the feet
+        --// rather than from heights: a boss on a mound above the character
+        --// must not read as "on top of it", and this is only true when the
+        --// thing holding the character up is the target itself.
+        function AICCombatUtils.IsStandingOnTarget(TargetRoot)
+            local Character, Humanoid, RootPart = Runtime:GetCharacter()
+
+            if not TargetRoot or not RootPart or not Humanoid then
+                return false
+            end
+
+            --// Mid-air over the body is a jump in progress, not standing on
+            --// it: the walk below would fight the fall.
+            if Humanoid.FloorMaterial == Enum.Material.Air then
+                return false
+            end
+
+            local HalfHeight = RootPart.Size.Y * 0.5
+            local Params = RaycastParams.new()
+            Params.FilterType = Enum.RaycastFilterType.Exclude
+            Params.FilterDescendantsInstances = { Character }
+
+            local Hit = workspace:Raycast(
+                RootPart.Position - Vector3.new(0, HalfHeight, 0) + Vector3.new(0, 0.5, 0),
+                Vector3.new(0, -2.5, 0),
+                Params
+            )
+
+            --// A model swap between the call and the ray leaves no parent to
+            --// ask about, and that is not a body being stood on.
+            if not Hit or Hit.Instance == Character or not TargetRoot.Parent then
+                return false
+            end
+
+            return Hit.Instance:IsDescendantOf(TargetRoot.Parent)
+        end
+
+        --// A step out from the target's body, away from it on the ground
+        --// plane. Used to drop off a body the character ended up standing on:
+        --// walking off it is the only way back beside it.
+        function AICCombatUtils.GetStepOffPosition(TargetRoot, Distance)
+            local _, _, RootPart = Runtime:GetCharacter()
+
+            if not TargetRoot or not RootPart then
+                return nil
+            end
+
+            local Offset = RootPart.Position - TargetRoot.Position
+            local Away = Vector3.new(Offset.X, 0, Offset.Z)
+
+            if Away.Magnitude <= 0.01 then
+                Away = AICCombatUtils.GetFlatLook(RootPart)
+            end
+
+            if Away == Vector3.zero then
+                return nil
+            end
+
+            return RootPart.Position + Away.Unit * (tonumber(Distance) or 8)
+        end
         
         ------------------------------------------------------------------------
         --// AICWorld  ::  zones, water, ground, line of sight, path clearance
@@ -657,6 +734,11 @@ return {
             return false
         end
 
+        --// A surface facing this far up (cosine of the angle from straight
+        --// up; 0.7 is about 45 degrees) is ground a character can walk up, not
+        --// a face to jump over.
+        local WALKABLE_NORMAL = 0.7
+
         function AICCombatUtils.IsJumpableObstacleAhead(TargetPosition)
             local Character, Humanoid, RootPart = Runtime:GetCharacter()
             if not RootPart or not TargetPosition then
@@ -710,6 +792,15 @@ return {
                 HighHit = nil
             end
 
+            --// Ground climbing away from the feet is a ramp, not an obstacle.
+            --// A level probe runs into a slope as soon as it rises past the
+            --// low ray's height, so every uphill step of a route read as
+            --// "jump this" and the character hopped all the way up the hill.
+            --// A wall's face points sideways; a ramp's points at the sky.
+            if LowHit and LowHit.Normal.Y >= WALKABLE_NORMAL then
+                LowHit = nil
+            end
+
             if LowHit and not HighHit then
                 return true
             end
@@ -734,8 +825,31 @@ return {
             end
 
             local StepUp = Down.Position.Y - Feet.Y
-        
-            return StepUp >= (tonumber(CONFIG.JUMP_STEP_HEIGHT) or 1.2)
+            local StepHeight = tonumber(CONFIG.JUMP_STEP_HEIGHT) or 1.2
+
+            if StepUp < StepHeight then
+                return false
+            end
+
+            --// A rise spread evenly over the whole probe is a ramp, which the
+            --// character walks up on its own. Only a rise that starts late is
+            --// a step worth hopping: sampling halfway separates the two.
+            local ProbeDistance = tonumber(CONFIG.JUMP_PROBE_DISTANCE) or 4.5
+            local HalfHit = workspace:Raycast(
+                Origin + Flat.Unit * (ProbeDistance * 0.5) + Vector3.new(0, HalfHeight, 0),
+                Vector3.new(0, -(HalfHeight * 2 + 6), 0),
+                Params
+            )
+
+            if HalfHit and not IsCharacterHit(HalfHit) then
+                local HalfRise = HalfHit.Position.Y - Feet.Y
+
+                if HalfRise >= StepHeight * 0.5 and HalfRise <= StepUp * 0.75 then
+                    return false
+                end
+            end
+
+            return true
         end
 
         --// Hole Check
@@ -866,11 +980,17 @@ return {
                 return false
             end
 
-            local Direction = AICCombatUtils.GetFlatLook(RootPart)
+            --// The walk's own direction, not the body's facing: the chest
+            --// turns while the feet step, and probing where it points
+            --// measured gaps the character was not walking into.
+            local Move = Humanoid.MoveDirection
+            local Direction = Vector3.new(Move.X, 0, Move.Z)
 
-            if Direction == Vector3.zero then
+            if Direction.Magnitude < ROUTE_HOLE_MIN_MOVE then
                 return false
             end
+
+            Direction = Direction.Unit
 
             local Params = RaycastParams.new()
             Params.FilterType = Enum.RaycastFilterType.Exclude
@@ -898,13 +1018,28 @@ return {
             local ProbeDistance = tonumber(CONFIG.ROUTE_HOLE_PROBE_DISTANCE) or 2
             local SampleStep = math.max(tonumber(CONFIG.ROUTE_HOLE_SAMPLE_STEP) or 0.5, 0.1)
             local MinDepth = tonumber(CONFIG.ROUTE_HOLE_MIN_DEPTH) or 1
+            local PreviousY = FeetY
 
             for Distance = SampleStep, ProbeDistance, SampleStep do
                 local GroundY = GetGroundHeight(RootPart.Position + Direction * Distance, Params)
 
-                if not GroundY or FeetY - GroundY >= MinDepth then
+                --// No ground under the next step at all is a gap, whatever
+                --// the numbers say.
+                if not GroundY then
                     return true
                 end
+
+                --// A ledge: the ground fell away between two samples by the
+                --// depth of a hole. A ramp down loses a little at each
+                --// sample and is walked, not jumped - hopping down every hill
+                --// on the route was the other half of the random jumping.
+                local Drop = FeetY - GroundY
+
+                if Drop >= MinDepth and (PreviousY - GroundY) >= MinDepth then
+                    return true
+                end
+
+                PreviousY = GroundY
             end
 
             return false

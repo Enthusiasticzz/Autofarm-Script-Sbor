@@ -20,6 +20,7 @@ local AICCombatUtils = Context.AICCombatUtils
 local AICCombat = Context.AICCombat
 local Module = Context.AICCombat
 local BODY_DETOUR_MARGIN = 2
+local STEP_OFF_DISTANCE = 8
 local PATH_TO_MOB_HOLD = 2
 local PATH_COMPUTE_TIMEOUT = 3
 local CLOSE_COMBAT_STEPS = { 2, 1, 0 }
@@ -1025,7 +1026,9 @@ local function MoveStraight(Humanoid, Goblin, Destination)
 Humanoid.AutoRotate = false
 Humanoid:MoveTo(Destination)
 AICCombat.FaceGoblin(Goblin)
+if not AICCombatUtils.IsPressedAgainstBody(Goblin:FindFirstChild("HumanoidRootPart")) then
 AICCombatUtils.DoCombatJumpIfObstacle(Destination)
+end
 end
 local function TrackChaseProgress(Destination)
 local Character, Humanoid, RootPart = Runtime:GetCharacter()
@@ -1050,6 +1053,22 @@ AICCombat.S.ChaseUnstickUntil = now + (tonumber(CONFIG.CHASE_UNSTICK_TIME) or 0.
 AICCombat.ResetTargetPath()
 return true
 end
+local function StepOffBody(Humanoid, Goblin, GoblinRoot)
+if not AICCombatUtils.IsStandingOnTarget(GoblinRoot) then
+return false
+end
+local StepOff = AICCombatUtils.GetStepOffPosition(GoblinRoot, STEP_OFF_DISTANCE)
+if not StepOff then
+return false
+end
+AICCombatUtils.ResetStuckTracker()
+AICCombat.ResetTargetPath()
+Humanoid.AutoRotate = false
+Humanoid:MoveTo(StepOff)
+AICCombat.FaceGoblin(Goblin)
+AICCombat.S.ChaseMoveStep = "STEP OFF BODY"
+return true
+end
 function AICCombat.ChaseMoveTo(Goblin, Destination)
 local Character, Humanoid, RootPart = Runtime:GetCharacter()
 if not Humanoid or not RootPart or not Goblin or not Destination then
@@ -1062,6 +1081,9 @@ AICCombat.S.ChaseMob = Goblin
 end
 TrackChaseProgress(Destination)
 local GoblinRoot = Goblin:FindFirstChild("HumanoidRootPart")
+if GoblinRoot and StepOffBody(Humanoid, Goblin, GoblinRoot) then
+return true
+end
 if GoblinRoot
 and AICCombatUtils.GetHorizontalDistance(RootPart.Position, GoblinRoot.Position)
 <= CONFIG.GOBLIN_REACH_DISTANCE

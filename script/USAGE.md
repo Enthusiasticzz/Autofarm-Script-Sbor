@@ -185,6 +185,7 @@ How the character fights once Auto Farm has a target. Auto Block has its own sec
 
 - **Safe Combat** (on) — fights from outside enemy weapon reach, backing off and circling. Off, it fights up close at the distance in **Close Combat Range**.
 - **Jump While Fighting** (off) — jumps over something actually in the way while chasing a target. Off, the character keeps its feet on the ground for the whole fight: a crowd of mobs pressed against it used to read as low terrain, which hopped it at the fight on every frame. The waypoint route (route holes and ticked waypoints), Waypoint Loop, patrol, mining and smithing make their own jumps and are not affected.
+- Whatever the toggle says, nothing hops while it is right against the body it is fighting (within about 5 studs of the target's root): a jump there lands the character on the mob's head, and from up there every swing goes over it. If it does end up on a body it is fighting, it takes a step off to the side before fighting on. A slope is walked rather than hopped, too — only a real obstruction is jumped.
 - **Auto Skill** (on) — uses the weapon skill on the target when it is off cooldown.
 
 Auto Mining, Auto Smithing, Leave On Danger Group and Join Alerts also exist as toggles, but on
@@ -294,7 +295,7 @@ place as well as per profile.
 - **Waypoint Reach Distance** — how close counts as reaching a waypoint (default 5 studs). Higher values cut corners; too high can skip a waypoint entirely.
 - **Hole Check Distance** (2, 0.5–6) — how far ahead the route looks for a gap to jump, in studs.
 - **Hole Check Step** (0.5, 0.25–2) — spacing between those ground checks; smaller catches narrow gaps.
-- **Hole Min Depth** (1, 0.5–10) — a drop at least this deep counts as a hole worth jumping.
+- **Hole Min Depth** (1, 0.5–10) — a drop at least this deep counts as a hole worth jumping. The ground has to fall away by that much between two checks (a ledge) or be missing entirely (a gap): a route walking *down* a hill loses a little at a time and is walked, not hopped. The probe looks where the character is walking, not where the body happens to face.
 - **Pair Waypoint** / **Paired Farm Zone** — pair one waypoint with one farm zone. The pair is what waypoint **Waypoint Loop** follows, and it also tells the loop which zone to fight in after the route.
 - **Waypoint Loop** (off) — turns the route into a loop over the paired zones only: it farms the zone paired with the waypoint it reached, and walks between paired zones when a zone has nothing to fight. Needs at least one waypoint paired with a farm zone, otherwise it has nothing to loop over.
 
@@ -1105,7 +1106,29 @@ the route still clears a parkour gap with the toggle off.
 - A mob or a player in the probe's way is no longer read as terrain at all, whatever
 folder the game keeps its mobs in, so a crowd is walked through instead of hopped
 over.
-- Turning it on restores the old behaviour, hops included.
+- Turning it on restores the old behaviour, hops included, except right beside the
+target: nothing hops within about 5 studs of the body it is fighting, so it cannot
+land on the head of a boss (its own, or one another player is fighting) and then
+swing at air. If it is already standing on a body, it steps off first.
+
+### It jumps while running the waypoint route
+
+Nothing in a route is random: every jump comes from a probe, and both probes were
+reading ordinary terrain as something to hop.
+
+- The obstruction probe runs a level ray at knee height. On an uphill slope that ray
+runs into the ground itself, which read as a low ledge on every frame of the climb.
+Ground that faces up is now walked; only a real obstacle (a fence, a rock, a face
+that points sideways) is jumped.
+- The hole probe (Hole Check Distance / Step / Min Depth) counted a drop of `Hole Min
+Depth` anywhere in the next two studs as a gap, so walking *down* a hill or over a
+kerb hopped the character. The ground now has to fall away by that much between two
+checks — a ledge — or be missing altogether. A ramp down is walked.
+- The hole probe follows `Humanoid.MoveDirection`, the way the character is actually
+walking, instead of the body's facing, so a turn in place cannot look at a gap the
+character is not heading into.
+- **Jump** ticks on the route and a route gap in front of a real drop still jump: this
+only removes the hops at terrain that was never in the way.
 
 ### Mining and crafting
 

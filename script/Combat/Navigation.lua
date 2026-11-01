@@ -21,6 +21,9 @@ return {
         --// Going round the target's body, the walk keeps this much more than
         --// TARGET_BODY_CLEARANCE from it.
         local BODY_DETOUR_MARGIN = 2
+        --// How far the character steps out sideways when it ends up standing
+        --// on the body of the mob it is fighting.
+        local STEP_OFF_DISTANCE = 8
         --// After the path to the Safe Combat spot fails, paths go to the mob
         --// itself for this long rather than switching back and forth.
         local PATH_TO_MOB_HOLD = 2
@@ -1479,7 +1482,13 @@ return {
             Humanoid.AutoRotate = false
             Humanoid:MoveTo(Destination)
             AICCombat.FaceGoblin(Goblin)
-            AICCombatUtils.DoCombatJumpIfObstacle(Destination)
+
+            --// Right against the body it is swinging at, a hop lands the
+            --// character on the head of the mob (or of the boss another
+            --// player is fighting) and the swings then go over it.
+            if not AICCombatUtils.IsPressedAgainstBody(Goblin:FindFirstChild("HumanoidRootPart")) then
+                AICCombatUtils.DoCombatJumpIfObstacle(Destination)
+            end
         end
 
         --// Sidesteps are only worth repeating while they lead somewhere. Once
@@ -1516,6 +1525,29 @@ return {
             return true
         end
 
+        --// Standing on the target's body: a step out sideways, then the walk
+        --// back in brings the character to its side and the swings land again.
+        --// True when this frame's move was the step off.
+        local function StepOffBody(Humanoid, Goblin, GoblinRoot)
+            if not AICCombatUtils.IsStandingOnTarget(GoblinRoot) then
+                return false
+            end
+
+            local StepOff = AICCombatUtils.GetStepOffPosition(GoblinRoot, STEP_OFF_DISTANCE)
+
+            if not StepOff then
+                return false
+            end
+
+            AICCombatUtils.ResetStuckTracker()
+            AICCombat.ResetTargetPath()
+            Humanoid.AutoRotate = false
+            Humanoid:MoveTo(StepOff)
+            AICCombat.FaceGoblin(Goblin)
+            AICCombat.S.ChaseMoveStep = "STEP OFF BODY"
+            return true
+        end
+
         function AICCombat.ChaseMoveTo(Goblin, Destination)
             local Character, Humanoid, RootPart = Runtime:GetCharacter()
             if not Humanoid or not RootPart or not Goblin or not Destination then
@@ -1531,11 +1563,18 @@ return {
 
             TrackChaseProgress(Destination)
 
+            --// On top of the target (a hop onto it, or the body walking under
+            --// the character): get off before fighting on, or every swing is
+            --// at air above its head.
+            local GoblinRoot = Goblin:FindFirstChild("HumanoidRootPart")
+
+            if GoblinRoot and StepOffBody(Humanoid, Goblin, GoblinRoot) then
+                return true
+            end
+
             --// Pressed up against the target in melee is not a corner. The
             --// body blocks the walk, which the stuck tracker would otherwise
             --// read as a stall and start pathing and sidestepping mid-fight.
-            local GoblinRoot = Goblin:FindFirstChild("HumanoidRootPart")
-
             if GoblinRoot
                 and AICCombatUtils.GetHorizontalDistance(RootPart.Position, GoblinRoot.Position)
                     <= CONFIG.GOBLIN_REACH_DISTANCE

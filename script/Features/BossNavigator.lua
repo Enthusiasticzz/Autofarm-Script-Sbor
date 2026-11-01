@@ -1938,6 +1938,21 @@ return {
                 return
             end
 
+            --// Standing on the boss (a jump onto it, or its body walking under
+            --// the character): every swing from up there is at air over its
+            --// head. Step off the body first; the walk back in puts the
+            --// character alongside it at the standoff again.
+            if AICCombatUtils.IsStandingOnTarget(TargetRoot) then
+                local StepOff = AICCombatUtils.GetStepOffPosition(TargetRoot, FIGHT_STANDOFF + 2)
+
+                if StepOff then
+                    Humanoid.AutoRotate = false
+                    Humanoid:MoveTo(StepOff)
+                    AICCombat.FaceCombatTarget(Target)
+                    return
+                end
+            end
+
             local Offset = TargetRoot.Position - RootPart.Position
             local Distance = AICCombat.GetCombatDistance(Target, Offset)
 
@@ -1947,7 +1962,12 @@ return {
                 --// Stop just short of the body, not inside it.
                 local Destination = TargetRoot.Position - Direction * math.max(FIGHT_STANDOFF - 1, 2)
 
-                AICCombatUtils.DoJumpIfObstacle(Destination)
+                --// Not right against the body: a hop there lands on the boss,
+                --// and the fight carries on from its head.
+                if not AICCombatUtils.IsPressedAgainstBody(TargetRoot) then
+                    AICCombatUtils.DoJumpIfObstacle(Destination)
+                end
+
                 Humanoid:MoveTo(Destination)
             else
                 Humanoid:Move(Vector3.zero)
