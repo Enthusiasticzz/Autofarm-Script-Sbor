@@ -106,7 +106,7 @@ return {
         UIRef.PartyTab = UI:AddTab{ Name = "Party", Description = "Follow the leader between servers" }
         UIRef.ServerTab = UI:AddTab{ Name = "Server", Description = "Rejoin, hop, job IDs and the player log" }
         UIRef.TeleportTab = UI:AddTab{ Name = "Teleport", Description = "Doors and waypoints, by name or by number" }
-        UIRef.QuestTab = UI:AddTab{ Name = "Quest", Description = "Assign a quest and track what it asks for" }
+        UIRef.QuestTab = UI:AddTab{ Name = "Quest", Description = "Walk to a quest giver, accept its quest and fight what it asks for" }
         UIRef.DebugTab = UI:AddTab{ Name = "Debug", Description = "Draw zones, waypoints and targets in the world" }
         UIRef.UtilityTab = UI:AddTab{ Name = "Utility", Description = "Webhook reports and profiles" }
         UIRef.UtilitySection = UIRef.UtilityTab:AddSection{ Title = "Utilities" }
@@ -132,8 +132,14 @@ return {
         UIRef.ServerLogSection = UIRef.ServerTab:AddSection{ Title = "Player Log" }
         UIRef.DoorTeleportSection = UIRef.TeleportTab:AddSection{ Title = "Door Teleport" }
         UIRef.WaypointTeleportSection = UIRef.TeleportTab:AddSection{ Title = "Waypoint Teleport" }
-        UIRef.QuestSection = UIRef.QuestTab:AddSection{ Title = "Assign Quest" }
+        --// AutoQuest drives the giver list and the loop from here; the
+        --// tracker section reads the game's own quest UI, the helper section
+        --// draws what the tracker asks for, and the last one is the manual
+        --// QuestEvent assigner for a quest whose giver cannot be reached.
+        UIRef.QuestSection = UIRef.QuestTab:AddSection{ Title = "Auto Quest" }
+        UIRef.QuestTrackerSection = UIRef.QuestTab:AddSection{ Title = "Quest Tracker" }
         UIRef.QuestHelperSection = UIRef.QuestTab:AddSection{ Title = "Quest Helper" }
+        UIRef.QuestAssignSection = UIRef.QuestTab:AddSection{ Title = "Assign By ID" }
         
         --// Notifications are throttled: at most one every GAP seconds. A loop
         --// that reports one thing per recipe used to churn the cards (and the

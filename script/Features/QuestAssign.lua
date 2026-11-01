@@ -1,6 +1,8 @@
--- QuestAssign owns the Quest tab: a quest ID typed in is sent to the game's
--- own QuestEvent remote as ("AssignQuest", ID), the same call the quest
--- givers make, so any quest can be taken from anywhere.
+-- QuestAssign is the Quest tab's manual fallback: a quest ID typed in is
+-- sent to the game's own QuestEvent remote as ("AssignQuest", ID), the same
+-- call the quest givers make, so a quest can be taken from anywhere even when
+-- its giver cannot be walked to. AutoQuest (the tab's main section) does not
+-- need it; its own dialog walk is what accepts a quest normally.
 return {
     Name = "QuestAssign",
     Dependencies = {"Runtime", "Components"},
@@ -48,7 +50,7 @@ return {
             return true
         end
 
-        local Section = UIRef.QuestSection
+        local Section = UIRef.QuestAssignSection
 
         UIRef.QuestIdBox = Section:AddTextBox{
             Name = "Quest ID",

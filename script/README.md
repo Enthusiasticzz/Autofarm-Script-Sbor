@@ -56,8 +56,11 @@ The feature modules, roughly grouped:
   SmithingBrowser, SmithingDetail).
 - **Support** — AutoHeal, AutoRefill (Refill Booster), SafeBoosterReset,
   ResetStats, AntiAFK, FpsBoost, AutoStartGame, DebugVisualizer.
-- **Servers & players** — PartySystem, ServerHop, ServerUI, FollowerGuard,
-  QuestHelper/QuestAssign.
+- **Servers & players** — PartySystem, ServerHop, ServerUI, FollowerGuard.
+- **Quests** — AutoQuest (walks to the giver picked in the Quest tab, accepts
+  the quest through its dialog and fights what the game's tracker asks for),
+  QuestHelper (marks that giver, those mobs and the quest items), QuestAssign
+  (the manual `QuestEvent` assigner, kept as the fallback).
 - **Browsers & UI data** — MobBrowser, AssetBrowser, MobDictionary, AssetDictionary.
   The Asset Explorer's **Dump Database** button writes every item, recipe and
   mob it can read to `AutoFarmProfiles/DatabaseDump.json` (DatabaseDump).

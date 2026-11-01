@@ -806,15 +806,36 @@ Warps the character to the doors and waypoints the game exposes, for travelling 
 
 ### Quest tab
 
-Taking a quest by ID, and finding its objectives in the world.
+Takes a quest end to end: walks to a quest giver, accepts the quest through its dialog, then fights what the game's own tracker asks for. Nothing has to be typed in — the tracker is read live.
 
-- **Quest ID** (textbox) + **Assign Quest** (button) — asks the game for that quest through its remote. If the remote is not in the place, a notice says so instead of failing quietly.
-- **Quest ESP** (toggle, default off) — highlights the QuestItems folder.
-- **Show All Quest Items** (toggle, default off) — tags every item in the folder rather than only the names typed below.
-- **Quest Targets** (textbox) — the item names to find, comma separated; case, spaces and symbols are ignored when matching.
-- **Rescan Quest Targets** (button) — searches the folder again and reports how many targets were tagged.
-- **Copy Quest Info** (button) — copies what the game shows for your quest, writing a dump file as well when file storage is available, so targets can be set from it later.
-- Limits: `MAX_HIGHLIGHTS` (20) highlights and `MAX_TAGS` (200) labels at once, distances refreshed every `UPDATE_INTERVAL` (0.25 s), labels hidden past `LABEL_MAX_DISTANCE` (5000 studs), and items that stream in later are tagged as they arrive.
+**Auto Quest** section
+
+- **QUEST  //  ...** (readout) — the loop's current step: going to a giver (with the distance left), asking for the quest, accepting it, or fighting a mob (with the objective and count).
+- **Quest Giver** (dropdown) — every giver found in `workspace.Interactions` whose name starts with `QuestGiver`. They all share that name, so each entry is its **ID** child (`Quest 12`), and one is picked automatically on the first fill. The list refreshes every 3 s as the folder streams in and out, and the choice survives a refresh.
+- **Auto Quest** (toggle, saved in the profile) — starts the loop. Switching it on pauses **Auto Farm** and **Boss Route**, since only one loop may move the character, and the loop picks up again by itself after a death.
+- **Refresh Quests** (button) — rebuilds the giver list now.
+- **Teleport If Stuck** (toggle, default on) — travelling that gets no closer for `STUCK_WINDOW` (8 s) warps the character to the giver's prompt instead of walking into a wall forever.
+- **Teleport To Quest** (button) — warps to the selected giver's prompt immediately.
+- **Try TriggerQuest Remote** (toggle, default off) — also fires `workspace.QuestItems.TriggerQuest` every third attempt when the giver's prompt opens no dialog. Its arguments are a guess (the giver's ID), which is why it is off by default.
+
+How it works: each giver's prompt (`ProxBase.ProximityAttach.ProximityPrompt`) is fired with `fireproximityprompt` when the executor has it, otherwise with `InputHoldBegin`/`InputHoldEnd`, and the game's own Interact binding is pressed as well — the same press Auto Farm uses for doors. The dialog at `PlayerGui.QuestUI_Root.Dialogue` is clicked through with `GuiClick`: the visible button named Accept (or Continue / Next / OK) is pressed every 0.35 s, up to 20 times, because the game's dialogs are several pages. The quest is read from `QuestUI_Root.Tracker.Content.Objectives`: every `ObjectiveRow*` whose `Task` has text, with `Count` (`0/10`) split into done and total.
+
+**Quest Tracker** section
+
+- **Task and count readout** — every objective row as `<count>  <task>`, e.g. `0/10  Defeat Boars`. "No quest tracked" when the tracker has no rows.
+- **Copy Quest Info** (button) — dumps the quest givers (ID, prompt, position, children), the quest UI nodes, the tracker rows as read, the `QuestItems` folder and what it holds, the `TriggerQuest` class, and which live mobs match each objective. It is printed to the console with a `[QUEST]` prefix, copied to the clipboard, and saved to `<profile folder>/QuestDump.txt` when the executor has file access. This is the button that says why a giver does nothing.
+
+**Quest Helper** section
+
+- **Quest ESP** (toggle, default off) — marks the selected giver, every live mob the tracker's kill objectives name, and any object in workspace whose name an errand objective names. Mob wording is matched against the model name and `Config.Entity`, with plural forms (`Defeat Boars` finds `Boar`), and a task with no verb is still a kill task when a live mob answers to it.
+- **Show All Quest Items** (toggle, default off) — marks everything inside the workspace's `QuestItems` folder. It draws on its own, without Quest ESP being on first.
+- **Extra Quest Targets** (textbox) — more names to mark, comma separated; case, spaces and symbols are ignored.
+- **Rescan Quest Targets** (button) — searches the workspace again now.
+- Limits: `MAX_HIGHLIGHTS` (20) highlights and `MAX_TAGS` (200) labels at once, distances refreshed every `UPDATE_INTERVAL` (0.25 s), labels hidden past `LABEL_MAX_DISTANCE` (5000 studs), world name scans every `WORLD_SCAN_INTERVAL` (2.5 s), and marks rebuilt from the tracker every 0.25 s so a finished objective stops being marked.
+
+**Assign By ID** section
+
+- **Quest ID** (textbox) + **Assign Quest** (button) — the manual fallback: sends `("AssignQuest", ID)` on the game's `QuestEvent` remote, so a quest can be taken without walking to its giver. If the remote is not in the place, a notice says so instead of failing quietly.
 
 ### Status tab
 
@@ -849,11 +870,14 @@ Everything here is shared by every profile and PlaceId, so none of it is part of
   when the character dies, so it never holds the run at a dialog. The notice is looked for at
   `PlayerGui.GameGui.Confirm2` first and then as a `Confirm` or `Confirm2` anywhere under a
   ScreenGui, and the **No** side is clicked whether it is a button or the frame the label sits
-  in. A death or a respawn
+  in. A nested `Confirm` only counts when it has a visible **No** to press, so the trade window's
+  own `Confirm` is never mistaken for the notice. A death or a respawn
   (`CharacterAdded`) opens a 30 s window, so a confirm opened by hand at any other time is never
-  pressed. When nothing matches, the console lists the on-screen buttons it could see, once per
-  death. Executor only: pressing it needs one of the click methods GuiClick uses
-  (`getconnections`, `firesignal`, `VirtualInputManager`, the real mouse).
+  pressed. When nothing matches, the console lists every path on screen named or labelled
+  **No**, **Yes**, **Cancel** or **Confirm** — with the visible guis — once per death, so a dialog
+  in an unknown shape can be added from its real path. Executor only: pressing it needs one of
+  the click methods GuiClick uses (`getconnections`, `firesignal`, `VirtualInputManager`, the real
+  mouse).
 
 #### Webhook
 

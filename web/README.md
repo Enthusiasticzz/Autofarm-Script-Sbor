@@ -97,10 +97,66 @@ The loadstring and the Download button both read `GA.SCRIPT.raw` at the top of
 repository's `script/` folder, so `main/Init.lua` is a 404. If the entry point
 ever moves again, this is the one line to change.
 
+## Crosstrading (escrow)
+
+Crosstrading is anonymous. Seller and buyer never deal with each other; an
+escrow account holds both sides until each has paid in.
+
+1. **List.** A seller posts one or more items and a single total price, plus
+   their in-game username. The public sees a bundle, a price and a short
+   listing code, never the username. The seller is given a private
+   `S-XXXX-XXXX` code to track or cancel the listing.
+2. **Reserve.** A buyer gives their own username and reserves it. They get a
+   `B-XXXX-XXXX` code. The listing shows as Reserved and cannot be bought twice.
+3. **Deposit.** The buyer sends the price to the escrow account, and the seller
+   sends the items to it. Staff confirm each deposit in the staff panel
+   (**Escrow** tab: *Mark received*).
+4. **Release.** Once both are in, staff press *Release*: the items go to the
+   buyer's username and the payment to the seller's. The listing is sold.
+
+**Prices and the fee.** Crosstrading is priced in US dollars and stored as whole
+cents (`price: 1200` is $12.00). The site keeps `GA.ESCROW.feePct` percent of
+each sale, taken from the seller's side; the buyer pays exactly the listed
+price. The fee is shown on the Trading page, in the listing pop-up, in the buy
+and post dialogs (the seller sees their payout as they type) and in the
+tracker. An order copies its price and fee when it is reserved, so changing the
+percentage later never alters a trade already under way. `10` is a placeholder:
+set the real figure in `data.js`. Exchange listings and database values stay in
+game currency and are not affected.
+
+**Chat.** Once a buyer reserves, the buyer and the seller each get a private
+thread with the escrow staff inside *Track a trade*; neither can read the
+other's. Staff open both threads from the **Escrow** tab (*Chat* button, which
+turns into *Reply needed* when someone has written last) and can set the name
+people see in the *Handled by* field. Messages are kept in `localStorage`
+(`gilded.chat`), so a reply written in another tab of the same browser appears
+live, with an unread badge on *Track a trade*. Chats are read-only once a trade
+is released, cancelled or expired.
+
+A reservation with nothing deposited lapses after `GA.ESCROW.holdMinutes`
+(default 60) and the listing reopens. Once escrow holds anything, the order
+stays open until staff release or cancel it, so no deposit is stranded. Either
+side can cancel on their own until something has reached escrow.
+
+State is derived from the order's flags (`itemsHeld`, `payHeld`, `stage`), so
+there is no status to keep in sync. Listings store `items: [{ name, qty }]`,
+`price` (total), `code` (public) and `sellerUser` / `sellerCode` (private).
+Public tables, search and the pop-up are built from `publicRow()`, which copies
+only the public fields. Set the real escrow account in `GA.ESCROW.account` in
+`data.js`; `GildedEscrow` is a placeholder.
+
+**This is a front-end prototype.** Everything is stored in this browser, so the
+"private" username is private only from the pages, not from someone reading
+local storage, and a buyer on another device cannot see your listing. Real
+anonymity needs a server that holds the usernames and codes, and a person (or
+bot) operating the escrow account, plus a way to take the dollar payments;
+the chat is where staff tell each person how to pay. In-game exchange listings are unchanged and
+stay open: the trader's username is public and people message each other.
+
 ## Market and gains
 
-Both are anonymous and need no account: a listing is an item, a side, a
-quantity, a price and an in-game username. Everything is stored in this browser
+Both need no account. Exchange listings are an item, a side, a quantity, a
+price and an in-game username. Everything is stored in this browser
 until there is a server, and the pages say so. Listings can be marked sold and
 reopened.
 

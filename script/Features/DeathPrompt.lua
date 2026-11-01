@@ -4,11 +4,17 @@
 --
 -- The notice is looked for at that path first, then as a Confirm or Confirm2
 -- anywhere under a ScreenGui - the death dialog is one of those two names, and
--- not always in GameGui. The No side is clicked whether it is a GuiButton or
--- the Frame the label sits in: the game's dialogs are not all built the same
--- way. When nothing matches, what is on screen is printed once, so a notice in
--- a shape this does not know can be fixed from the real paths rather than
--- guessed at.
+-- not always in GameGui. A nested one only counts when it holds a visible No
+-- to press: the trade window has its own Confirm buried deep inside it, and
+-- taking that for the notice left the real one unseen and the dump below
+-- describing the wrong window.
+--
+-- The No side is clicked whether it is a GuiButton or the Frame the label sits
+-- in: the game's dialogs are not all built the same way. When nothing matches,
+-- every answer on screen - a node or a label reading No, Yes, Cancel or
+-- Confirm, anywhere in the PlayerGui - is printed once with its path, so a
+-- notice in a shape this does not know can be fixed from the real paths rather
+-- than guessed at.
 --
 -- It is armed by a death and looks for the notice only inside that window, so
 -- a confirm the user opens themselves at any other time is never pressed.
@@ -41,6 +47,20 @@ return {
 
         local BUTTON_LOWER = string.lower(BUTTON_NAME)
 
+        --// The words an answer wears, as a node name or as a label's text.
+        --// Only these are printed by the dump: the rest of the gui is noise.
+        local ANSWERS = {
+            ["no"] = true,
+            ["yes"] = true,
+            ["cancel"] = true,
+            ["confirm"] = true,
+            ["ok"] = true,
+            ["respawn"] = true,
+            ["revive"] = true,
+            ["retry"] = true,
+            ["dismiss"] = true,
+        }
+
         --// How long after the death the notice may still turn up. The game
         --// builds it a frame or two after the character goes down, and it can
         --// arrive around the respawn rather than at the exact death, so the
@@ -55,6 +75,9 @@ return {
         --// reported with the real paths instead of "it does not work".
         local DUMP_AFTER = 4
         local DUMP_LIMIT = 30
+        --// A label's text in the dump is clipped to this, so one long label
+        --// that happens to be named Confirm cannot flood the console.
+        local TEXT_LIMIT = 60
 
         local Feature = {
             Name = "DeathPrompt",
@@ -92,48 +115,6 @@ return {
         --// How long the fallback search's answer is reused. Only the fallback
         --// is cached: the GameGui path is two lookups and stays live.
         local NOTICE_CACHE_TIME = 0.25
-
-        --// The notice itself, while it is up. GameGui's Confirm2, then its
-        --// Confirm, then either of them anywhere under a ScreenGui: a reskin
-        --// that moves it to another screen gui used to mean the notice was
-        --// never seen at all.
-        local function FindNotice()
-            local GameGui = PlayerGui:FindFirstChild(GUI_NAME)
-
-            if GameGui then
-                for _, Name in ipairs(NOTICE_NAMES) do
-                    local Found = GameGui:FindFirstChild(Name)
-
-                    if Found then
-                        return Found
-                    end
-                end
-            end
-
-            local Now = os.clock()
-
-            if Now - S.NoticeAt < NOTICE_CACHE_TIME then
-                return S.NoticeCache
-            end
-
-            S.NoticeAt = Now
-            S.NoticeCache = nil
-
-            for _, Root in ipairs(PlayerGui:GetChildren()) do
-                if Root:IsA("LayerCollector") then
-                    for _, Name in ipairs(NOTICE_NAMES) do
-                        local Found = Root:FindFirstChild(Name, true)
-
-                        if Found then
-                            S.NoticeCache = Found
-                            return Found
-                        end
-                    end
-                end
-            end
-
-            return nil
-        end
 
         --// What to click for the answer. The game's buttons are not always
         --// GuiButtons: the name often sits on a Frame with the label inside it,
@@ -174,17 +155,10 @@ return {
             return nil
         end
 
-        --// The No answer of the death notice, or nil while there is none on
-        --// screen. Confirm2.C.No first; failing that, the first node called No
-        --// inside this notice, in any case and at any depth - never one from
-        --// elsewhere in the game.
-        local function FindNoticeButton()
-            local Notice = FindNotice()
-
-            if not Notice then
-                return nil
-            end
-
+        --// The node called No inside a notice: the C row first, then the first
+        --// one anywhere in it, in any case - never one from elsewhere in the
+        --// game.
+        local function FindNoticeNo(Notice)
             local Row = Notice:FindFirstChild(ROW_NAME)
             local Node = Row and Row:FindFirstChild(BUTTON_NAME)
 
@@ -197,7 +171,68 @@ return {
                 end
             end
 
-            return GetClickTarget(Node)
+            return Node
+        end
+
+        --// A notice is only worth taking for the death one when the answer it
+        --// holds can actually be pressed. The trade window's Confirm passes a
+        --// name test and nothing else: it is closed, and it is not a notice.
+        local function IsAnswerable(Notice)
+            return GetClickTarget(FindNoticeNo(Notice)) ~= nil
+        end
+
+        --// The notice itself, while it is up. GameGui's Confirm2, then its
+        --// Confirm, then either of them anywhere under a ScreenGui, but only
+        --// with an answer showing: a reskin that moves it to another screen
+        --// gui used to mean the notice was never seen at all.
+        local function FindNotice()
+            local GameGui = PlayerGui:FindFirstChild(GUI_NAME)
+
+            if GameGui then
+                for _, Name in ipairs(NOTICE_NAMES) do
+                    local Found = GameGui:FindFirstChild(Name)
+
+                    if Found then
+                        return Found
+                    end
+                end
+            end
+
+            local Now = os.clock()
+
+            if Now - S.NoticeAt < NOTICE_CACHE_TIME then
+                return S.NoticeCache
+            end
+
+            S.NoticeAt = Now
+            S.NoticeCache = nil
+
+            for _, Root in ipairs(PlayerGui:GetChildren()) do
+                if Root:IsA("LayerCollector") then
+                    for _, Name in ipairs(NOTICE_NAMES) do
+                        for _, Found in ipairs(Root:GetDescendants()) do
+                            if Found.Name == Name and IsAnswerable(Found) then
+                                S.NoticeCache = Found
+                                return Found
+                            end
+                        end
+                    end
+                end
+            end
+
+            return nil
+        end
+
+        --// The No answer of the death notice, or nil while there is none on
+        --// screen.
+        local function FindNoticeButton()
+            local Notice = FindNotice()
+
+            if not Notice then
+                return nil
+            end
+
+            return GetClickTarget(FindNoticeNo(Notice))
         end
 
         --// True once the notice is gone, which is the only proof a press
@@ -206,36 +241,78 @@ return {
             return FindNoticeButton() == nil
         end
 
-        --// What is on screen when nothing matched. Printed once per death
+        --// What is on screen when nothing matched, printed once per death
         --// window: the paths it names are what the next fix is written from.
+        --// It walks the whole PlayerGui rather than the node the finder
+        --// settled on, because a finder that picked the wrong node is one of
+        --// the ways to end up here.
         local function DumpVisible()
-            local Notice = FindNotice()
-            local Root = Notice or PlayerGui:FindFirstChild(GUI_NAME)
-
-            if not Root then
-                print("[DeathPrompt] No Confirm, no Confirm2 and no GameGui in PlayerGui: nothing to click and nothing to list")
-                return
-            end
-
-            print("[DeathPrompt] No No button found under " .. Root:GetFullName() .. ". On screen:")
+            print("[DeathPrompt] No No button found " .. DUMP_AFTER .. "s after the death. Answers on screen:")
 
             local Count = 0
+            local Truncated = false
 
-            for _, Descendant in ipairs(Root:GetDescendants()) do
-                if GuiClick.IsOnScreen(Descendant)
-                    and (Descendant:IsA("GuiButton") or string.lower(Descendant.Name) == BUTTON_LOWER)
-                then
-                    Count += 1
-                    print(string.format("  [%s] %s", Descendant.ClassName, Descendant:GetFullName()))
+            for _, Root in ipairs(PlayerGui:GetChildren()) do
+                if Root:IsA("LayerCollector") and Count < DUMP_LIMIT then
+                    for _, Descendant in ipairs(Root:GetDescendants()) do
+                        if Count >= DUMP_LIMIT then
+                            Truncated = true
+                            break
+                        end
 
-                    if Count >= DUMP_LIMIT then
-                        break
+                        local Text = nil
+
+                        if Descendant:IsA("TextLabel")
+                            or Descendant:IsA("TextButton")
+                            or Descendant:IsA("TextBox")
+                        then
+                            Text = Descendant.Text
+                        end
+
+                        local Named = ANSWERS[string.lower(Descendant.Name)] == true
+                        local Labelled = type(Text) == "string"
+                            and ANSWERS[string.lower(string.match(Text, "^%s*(.-)%s*$"))] == true
+
+                        if (Named or Labelled) and GuiClick.IsOnScreen(Descendant) then
+                            Count += 1
+
+                            if type(Text) == "string" and Text ~= "" then
+                                print(string.format(
+                                    "  [%s] %s  text=\"%s\"",
+                                    Descendant.ClassName,
+                                    Descendant:GetFullName(),
+                                    string.sub(Text, 1, TEXT_LIMIT)
+                                ))
+                            else
+                                print(string.format(
+                                    "  [%s] %s",
+                                    Descendant.ClassName,
+                                    Descendant:GetFullName()
+                                ))
+                            end
+                        end
                     end
                 end
             end
 
             if Count == 0 then
-                print("  (nothing named No and no buttons)")
+                print("  (nothing on screen is named or labelled No, Yes, Cancel or Confirm)")
+            elseif Truncated then
+                print(string.format("  (stopped at %d lines)", DUMP_LIMIT))
+            end
+
+            local Guis = {}
+
+            for _, Root in ipairs(PlayerGui:GetChildren()) do
+                if Root:IsA("LayerCollector") and Root.Enabled then
+                    table.insert(Guis, Root.Name)
+                end
+            end
+
+            if #Guis > 0 then
+                print("  visible guis: " .. table.concat(Guis, ", "))
+            else
+                print("  visible guis: (none)")
             end
         end
 

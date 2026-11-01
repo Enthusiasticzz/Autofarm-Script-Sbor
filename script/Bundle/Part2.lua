@@ -3906,7 +3906,7 @@ UIRef.CraftTab = UI:AddTab{ Name = "Crafting", Description = "Recipe priority, t
 UIRef.PartyTab = UI:AddTab{ Name = "Party", Description = "Follow the leader between servers" }
 UIRef.ServerTab = UI:AddTab{ Name = "Server", Description = "Rejoin, hop, job IDs and the player log" }
 UIRef.TeleportTab = UI:AddTab{ Name = "Teleport", Description = "Doors and waypoints, by name or by number" }
-UIRef.QuestTab = UI:AddTab{ Name = "Quest", Description = "Assign a quest and track what it asks for" }
+UIRef.QuestTab = UI:AddTab{ Name = "Quest", Description = "Walk to a quest giver, accept its quest and fight what it asks for" }
 UIRef.DebugTab = UI:AddTab{ Name = "Debug", Description = "Draw zones, waypoints and targets in the world" }
 UIRef.UtilityTab = UI:AddTab{ Name = "Utility", Description = "Webhook reports and profiles" }
 UIRef.UtilitySection = UIRef.UtilityTab:AddSection{ Title = "Utilities" }
@@ -3928,8 +3928,10 @@ UIRef.ServerSafetySection = UIRef.ServerTab:AddSection{ Title = "Server Safety" 
 UIRef.ServerLogSection = UIRef.ServerTab:AddSection{ Title = "Player Log" }
 UIRef.DoorTeleportSection = UIRef.TeleportTab:AddSection{ Title = "Door Teleport" }
 UIRef.WaypointTeleportSection = UIRef.TeleportTab:AddSection{ Title = "Waypoint Teleport" }
-UIRef.QuestSection = UIRef.QuestTab:AddSection{ Title = "Assign Quest" }
+UIRef.QuestSection = UIRef.QuestTab:AddSection{ Title = "Auto Quest" }
+UIRef.QuestTrackerSection = UIRef.QuestTab:AddSection{ Title = "Quest Tracker" }
 UIRef.QuestHelperSection = UIRef.QuestTab:AddSection{ Title = "Quest Helper" }
+UIRef.QuestAssignSection = UIRef.QuestTab:AddSection{ Title = "Assign By ID" }
 local NotifyState = {
 GAP = 0.4,
 Last = -10,
@@ -4744,6 +4746,7 @@ SaveConfig.Features = {
 { Name = "RandomLeaveDelay", Default = true, Global = true },
 { Name = "FpsBoost",          Default = false, Key = "w", Global = true },
 { Name = "JumpWhileFighting", Default = false, Key = "x" },
+{ Name = "AutoQuest",         Default = false },
 { Name = "DebugWaypoints",    Default = true },
 { Name = "DebugFarmZones",    Default = true },
 { Name = "DebugDeadzones",    Default = true },

@@ -130,6 +130,7 @@ local MODULES = {
     "Features/Webhook.lua",
     "Features/TeleportNavigate.lua",
     "Features/QuestAssign.lua",
+    "Features/AutoQuest.lua",
     "Features/QuestHelper.lua",
     "Features/ProfileSettings.lua",
     "Features/Waypoints.lua",

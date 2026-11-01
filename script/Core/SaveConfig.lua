@@ -86,6 +86,10 @@ return {
             --// its feet on the ground for the whole fight; the waypoint route,
             --// patrol, mining and smithing jumps are their own.
             { Name = "JumpWhileFighting", Default = false, Key = "x" },
+            --// Walks to the quest giver picked in the Quest tab, accepts its
+            --// quest and fights what the live tracker asks for (AutoQuest).
+            --// No Key: saved in the profile, left out of the exported text.
+            { Name = "AutoQuest",         Default = false },
             { Name = "DebugWaypoints",    Default = true },
             { Name = "DebugFarmZones",    Default = true },
             { Name = "DebugDeadzones",    Default = true },

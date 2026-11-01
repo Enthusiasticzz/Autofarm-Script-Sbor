@@ -127,11 +127,17 @@ return {
             --// Quest
             ["Quest ID"] = "The ID of the quest to take, as the game names it",
             ["Assign Quest"] = "Asks the game to give you the quest typed above",
-            ["Quest ESP"] = "Highlights the quest targets below and shows how far each one is",
-            ["Quest Targets"] = "Names of items in QuestItems to find, comma separated (case, spaces and symbols ignored)",
-            ["Show All Quest Items"] = "Tags every item in the QuestItems folder, not just the names typed below",
-            ["Rescan Quest Targets"] = "Looks through the QuestItems folder for the quest targets again",
-            ["Copy Quest Info"] = "Copies what the game shows of your quest, to set targets automatically later",
+            ["Auto Quest"] = "Walks to the quest giver, accepts its quest, then fights what the tracker asks for",
+            ["Quest Giver"] = "The quest givers found in workspace.Interactions, by the ID each one carries",
+            ["Refresh Quests"] = "Looks through workspace.Interactions for quest givers again",
+            ["Teleport If Stuck"] = "Warps to the giver when walking there stops making progress",
+            ["Try TriggerQuest Remote"] = "Also fires workspace.QuestItems.TriggerQuest when the prompt opens no dialog (off by default: its arguments are a guess)",
+            ["Teleport To Quest"] = "Puts the character at the selected giver's prompt now",
+            ["Quest ESP"] = "Marks the giver, the mobs the quest asks for and anything its items are named after",
+            ["Extra Quest Targets"] = "More names to mark, comma separated (case, spaces and symbols ignored)",
+            ["Show All Quest Items"] = "Marks everything in the workspace's QuestItems folder, on its own",
+            ["Rescan Quest Targets"] = "Searches the workspace for the quest's targets again",
+            ["Copy Quest Info"] = "Dumps the givers, tracker rows, dialog and QuestItems to the console and a file",
             ["Clear Log"] = "Empties the Player Log",
 
             --// Party

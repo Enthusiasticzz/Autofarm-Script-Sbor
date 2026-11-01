@@ -87,16 +87,32 @@
       label: 'Listing',
       plural: 'Listings',
       fields: [
-        { k: 'item', label: 'Item', type: 'text', required: true },
+        { k: 'item', label: 'Item summary', type: 'text', required: true },
         { k: 'mode', label: 'Trade type', type: 'select', options: ['Crosstrading', 'Exchange'] },
         { k: 'side', label: 'Side', type: 'select', options: ['Selling', 'Buying'] },
         { k: 'qty', label: 'Quantity', type: 'number' },
-        { k: 'price', label: 'Price each', type: 'number' },
-        { k: 'user', label: 'Trader', type: 'text' },
+        { k: 'price', label: 'Price (crosstrading: US cents in total; exchange: each)', type: 'number' },
+        { k: 'user', label: 'Trader (exchange)', type: 'text' },
+        { k: 'sellerUser', label: 'Seller username (crosstrading, private)', type: 'text' },
         { k: 'note', label: 'Note', type: 'text' },
         { k: 'sold', label: 'Sold (1 = yes)', type: 'number' }
       ],
-      adminCols: ['item', 'side', 'qty', 'price', 'user', 'sold']
+      adminCols: ['item', 'mode', 'price', 'user', 'sellerUser']
+    },
+    orders: {
+      label: 'Escrow order',
+      plural: 'Escrow',
+      fields: [
+        { k: 'ref', label: 'Order reference', type: 'text', required: true },
+        { k: 'stage', label: 'Stage', type: 'select', options: ['Waiting', 'Released', 'Cancelled'] },
+        { k: 'handler', label: 'Handled by (name shown in the chat)', type: 'text' },
+        { k: 'itemsHeld', label: 'Items received by escrow (1 = yes)', type: 'number' },
+        { k: 'payHeld', label: 'Payment received by escrow (1 = yes)', type: 'number' },
+        { k: 'sellerUser', label: 'Seller username', type: 'text' },
+        { k: 'buyerUser', label: 'Buyer username', type: 'text' },
+        { k: 'staffNote', label: 'Staff note', type: 'textarea' }
+      ],
+      adminCols: ['ref', 'stage', 'itemsHeld', 'payHeld', 'sellerUser', 'buyerUser']
     },
     gains: {
       label: 'Gain',
@@ -146,13 +162,21 @@
       }
     ],
 
+    // Crosstrading listings are bundles for one total price in US cents (1200 =
+    // $12.00). `sellerUser` and
+    // `sellerCode` are private: the public pages never show them, and only the
+    // escrow side (the staff panel) reads the username.
     listings: [
-      { id: 'l-1', itemId: 'banewand', item: 'Bane Wand', mode: 'Crosstrading', side: 'Selling', qty: 1, price: 4500, user: 'Kaito_X', note: 'Negotiable', createdAt: mins(2), sold: false },
-      { id: 'l-2', itemId: 'antidotecrystal', item: 'Antidote Crystal', mode: 'Crosstrading', side: 'Buying', qty: 5, price: 120, user: 'AsunaFan07', note: '', createdAt: mins(9), sold: false },
+      { id: 'l-1', mode: 'Crosstrading', side: 'Selling', code: 'K7M2', items: [{ name: 'Bane Wand', qty: 1 }], item: 'Bane Wand', qty: 1, price: 1200, currency: 'USD', note: '', sellerUser: 'Kaito_X', sellerCode: 'S-DEMO-0001', createdAt: mins(2) },
+      { id: 'l-2', mode: 'Crosstrading', side: 'Selling', code: 'R4TN', items: [{ name: 'Antidote Crystal', qty: 5 }], item: 'Antidote Crystal ×5', qty: 5, price: 300, currency: 'USD', note: '', sellerUser: 'AsunaFan07', sellerCode: 'S-DEMO-0002', createdAt: mins(9) },
       { id: 'l-3', itemId: 'ironingot', item: 'Iron Ingot', mode: 'Exchange', side: 'Selling', qty: 40, price: 9, user: 'Forge_Lord', note: 'Bulk discount', createdAt: mins(31), sold: false },
-      { id: 'l-4', itemId: 'demondarkclover', item: 'Demon Dark Clover', mode: 'Crosstrading', side: 'Buying', qty: 1, price: 1800, user: 'NightOwl_9', note: 'Online evenings', createdAt: mins(60), sold: false },
-      { id: 'l-5', itemId: 'candycorn', item: 'Candy Corn', mode: 'Exchange', side: 'Buying', qty: 200, price: 3, user: 'Mira_K', note: '', createdAt: mins(120), sold: false }
+      { id: 'l-4', mode: 'Crosstrading', side: 'Selling', code: 'W9QD', items: [{ name: 'Demon Dark Clover', qty: 1 }], item: 'Demon Dark Clover', qty: 1, price: 850, currency: 'USD', note: '', sellerUser: 'NightOwl_9', sellerCode: 'S-DEMO-0003', createdAt: mins(60) },
+      { id: 'l-5', itemId: 'candycorn', item: 'Candy Corn', mode: 'Exchange', side: 'Buying', qty: 200, price: 3, user: 'Mira_K', note: '', createdAt: mins(120), sold: false },
+      { id: 'l-6', mode: 'Crosstrading', side: 'Selling', code: 'F3HX', items: [{ name: 'Apple', qty: 20 }, { name: 'Candy', qty: 10 }], item: 'Apple ×20, Candy ×10', qty: 30, price: 200, currency: 'USD', note: 'Event leftovers', sellerUser: 'Mira_K', sellerCode: 'S-DEMO-0004', createdAt: mins(180) }
     ],
+
+    // Escrow orders: one per purchase. See the Crosstrading section of the README.
+    orders: [],
 
     gains: [
       { id: 'g-1', lvl: 14, ec: 52000, floor: 'Floor 16', message: 'Left it on overnight.', createdAt: mins(60) },
@@ -186,6 +210,11 @@
     MOBS: (DB.mobs || []).slice(),
     SCHEMA: SCHEMA,
     SEED: SEED,
+    // The middleman account both sides trade with. Set `account` to the real
+    // in-game username that staff operate; it is shown to buyers and sellers.
+    // `feePct` is the site's cut of every crosstrade, taken from the seller's side
+    // and shown to both people. It is a placeholder: set the real percentage here.
+    ESCROW: { account: 'GildedEscrow', holdMinutes: 60, feePct: 10 },
     PASS: 'gilded-staff'
   };
 })();

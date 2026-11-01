@@ -59,62 +59,113 @@
   </section>
 
   <section class="view" id="market">
-    <div class="phead">
+    <div class="dbhead">
       <h1>Trading</h1>
-      <p class="lede">Find a player to trade with. Click a listing for details, then message the trader in-game. No account needed to post.</p>
-      <div class="acts"><button class="btn" id="postBtn">Post a listing</button></div>
+      <div class="seg tabs"><button class="on" data-tab="pCross">Crosstrading <b data-n="cross"></b></button><button data-tab="pExch">In-game exchange <b data-n="exch"></b></button></div>
+      <div class="dbacts"><button class="btn g" id="trackBtn" type="button">Track a trade</button><button class="btn" id="postBtn" type="button">Post a listing</button></div>
     </div>
-    <div class="seg bar tabs"><button class="on" data-tab="pCross">Crosstrading</button><button data-tab="pExch">In-game exchange</button></div>
+    <p class="lede left">Crosstrading is anonymous and runs through an escrow account, so buyer and seller never deal directly. In-game exchange listings are open: message the trader yourself. No account needed for either.</p>
   <div class="pane on" id="pCross">
-    <div class="phead">
-      <div class="search"><input class="f" data-t="tCross" placeholder="Search crosstrading listings by item or trader..."></div>
-      <p class="count" data-for="tCross" data-u="listings"></p>
+    <div class="dbgrid">
+      <aside class="facets" aria-label="Filter crosstrading listings">
+        <div class="facets-head"><span>Filters</span><button type="button" class="clear" data-clear="tCross">Clear all</button></div>
+        <div class="chips" data-t="tCross" data-k="status" data-label="Status"></div>
+        <div class="chips" data-t="tCross" data-k="cat" data-label="Category"></div>
+      </aside>
+      <div class="dbmain">
+        <ol class="flow" aria-label="How crosstrading works">
+          <li><b>List</b>Seller posts the items and one price under an anonymous code.</li>
+          <li><b>Reserve</b>Buyer reserves it. Both sides send their part to the escrow account.</li>
+          <li><b>Release</b>Escrow checks both arrived, then hands over the items and the payment.</li>
+        </ol>
+        <p class="fee-note" data-fee></p>
+        <button type="button" class="btn g s facets-toggle" data-facets>Filters</button>
+        <div class="phead">
+          <div class="search"><input class="f" data-t="tCross" placeholder="Search by item or listing code..." aria-label="Search crosstrading listings" autocomplete="off"></div>
+          <p class="count" data-for="tCross" data-u="listings"></p>
+        </div>
+        <div class="tw click" id="tCross"></div>
+      </div>
     </div>
-    <div class="chips" data-t="tCross" data-k="side" data-label="Listing type"></div>
-    <div class="tw click" id="tCross"></div>
   </div>
   <div class="pane" id="pExch">
-    <div class="phead">
-      <div class="search"><input class="f" data-t="tExch" placeholder="Search exchange listings by item or trader..."></div>
-      <p class="count" data-for="tExch" data-u="listings"></p>
+    <div class="dbgrid">
+      <aside class="facets" aria-label="Filter exchange listings">
+        <div class="facets-head"><span>Filters</span><button type="button" class="clear" data-clear="tExch">Clear all</button></div>
+        <div class="chips" data-t="tExch" data-k="side" data-label="Listing type"></div>
+        <div class="chips" data-t="tExch" data-k="cat" data-label="Category"></div>
+      </aside>
+      <div class="dbmain">
+        <button type="button" class="btn g s facets-toggle" data-facets>Filters</button>
+        <div class="phead">
+          <div class="search"><input class="f" data-t="tExch" placeholder="Search by item or trader..." aria-label="Search exchange listings" autocomplete="off"></div>
+          <p class="count" data-for="tExch" data-u="listings"></p>
+        </div>
+        <div class="tw click" id="tExch"></div>
+      </div>
     </div>
-    <div class="chips" data-t="tExch" data-k="side" data-label="Listing type"></div>
-    <div class="tw click" id="tExch"></div>
   </div>
   <p class="note local-note">Listings are stored in this browser. There is no server yet, so other visitors cannot see them.</p>
   </section>
 
   <section class="view" id="database">
-    <div class="phead">
+    <div class="dbhead">
       <h1>Database</h1>
+      <div class="seg tabs"><button class="on" data-tab="pItems">Items <b data-n="items"></b></button><button data-tab="pEquip">Equipment <b data-n="equipment"></b></button><button data-tab="pOver">Overlays <b data-n="overlays"></b></button></div>
     </div>
-    <div class="seg bar tabs"><button class="on" data-tab="pItems">Items</button><button data-tab="pEquip">Equipment</button><button data-tab="pOver">Overlays</button></div>
   <div class="pane on" id="pItems">
-    <div class="phead">
-      <div class="search"><input class="f" data-t="tItems" placeholder="Search materials and consumables..."></div>
-      <p class="count" data-for="tItems" data-u="items"></p>
+    <div class="dbgrid">
+      <aside class="facets" aria-label="Filter items">
+        <div class="facets-head"><span>Filters</span><button type="button" class="clear" data-clear="tItems">Clear all</button></div>
+        <div class="chips" data-t="tItems" data-k="type" data-label="Type"></div>
+        <div class="chips" data-t="tItems" data-k="rarity" data-label="Rarity"></div>
+        <div class="chips" data-t="tItems" data-k="source" data-label="Source"></div>
+      </aside>
+      <div class="dbmain">
+        <button type="button" class="btn g s facets-toggle" data-facets>Filters</button>
+        <div class="phead">
+          <div class="search"><input class="f" data-t="tItems" placeholder="Search materials and consumables..." aria-label="Search items" autocomplete="off"></div>
+          <p class="count" data-for="tItems" data-u="items"></p>
+        </div>
+        <div class="tw click" id="tItems"></div>
+      </div>
     </div>
-    <div class="chips" data-t="tItems" data-k="type" data-label="Type"></div>
-    <div class="chips sm" data-t="tItems" data-k="rarity" data-label="Rarity"></div>
-    <div class="tw click" id="tItems"></div>
   </div>
   <div class="pane" id="pEquip">
-    <div class="phead">
-      <div class="search"><input class="f" data-t="tEquip" placeholder="Search weapons, armor, headwear, accessories and tools..."></div>
-      <p class="count" data-for="tEquip" data-u="pieces"></p>
+    <div class="dbgrid">
+      <aside class="facets" aria-label="Filter equipment">
+        <div class="facets-head"><span>Filters</span><button type="button" class="clear" data-clear="tEquip">Clear all</button></div>
+        <div class="chips" data-t="tEquip" data-k="slot" data-label="Slot"></div>
+        <div class="chips" data-t="tEquip" data-k="rarity" data-label="Rarity"></div>
+        <div class="chips" data-t="tEquip" data-k="source" data-label="Source"></div>
+      </aside>
+      <div class="dbmain">
+        <button type="button" class="btn g s facets-toggle" data-facets>Filters</button>
+        <div class="phead">
+          <div class="search"><input class="f" data-t="tEquip" placeholder="Search weapons, armor, headwear, accessories and tools..." aria-label="Search equipment" autocomplete="off"></div>
+          <p class="count" data-for="tEquip" data-u="pieces"></p>
+        </div>
+        <div class="tw click" id="tEquip"></div>
+      </div>
     </div>
-    <div class="chips" data-t="tEquip" data-k="slot" data-label="Slot"></div>
-    <div class="chips sm" data-t="tEquip" data-k="rarity" data-label="Rarity"></div>
-    <div class="tw click" id="tEquip"></div>
   </div>
   <div class="pane" id="pOver">
-    <div class="phead">
-      <div class="search"><input class="f" data-t="tOver" placeholder="Search 3D armor, overlays and facewear..."></div>
-      <p class="count" data-for="tOver" data-u="overlays"></p>
+    <div class="dbgrid">
+      <aside class="facets" aria-label="Filter overlays">
+        <div class="facets-head"><span>Filters</span><button type="button" class="clear" data-clear="tOver">Clear all</button></div>
+        <div class="chips" data-t="tOver" data-k="group" data-label="Type"></div>
+        <div class="chips" data-t="tOver" data-k="rarity" data-label="Rarity"></div>
+        <div class="chips" data-t="tOver" data-k="source" data-label="Source"></div>
+      </aside>
+      <div class="dbmain">
+        <button type="button" class="btn g s facets-toggle" data-facets>Filters</button>
+        <div class="phead">
+          <div class="search"><input class="f" data-t="tOver" placeholder="Search 3D armor, overlays and facewear..." aria-label="Search overlays" autocomplete="off"></div>
+          <p class="count" data-for="tOver" data-u="overlays"></p>
+        </div>
+        <div class="tw click" id="tOver"></div>
+      </div>
     </div>
-    <div class="chips" data-t="tOver" data-k="group" data-label="Type"></div>
-    <div class="chips sm" data-t="tOver" data-k="rarity" data-label="Rarity"></div>
-    <div class="tw click" id="tOver"></div>
   </div>
   </section>
 
@@ -214,6 +265,7 @@
   <small>© 2026 Gilded Archive. All rights reserved.</small>
 </footer>
 
+<div id="scrim"></div>
 <aside id="drawer" role="dialog" aria-modal="true" aria-label="Details"></aside>
 <dialog id="dlg"></dialog>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
