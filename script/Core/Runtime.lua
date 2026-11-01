@@ -107,6 +107,10 @@ return {
         UIRef.ServerTab = UI:AddTab{ Name = "Server", Description = "Rejoin, hop, job IDs and the player log" }
         UIRef.TeleportTab = UI:AddTab{ Name = "Teleport", Description = "Doors and waypoints, by name or by number" }
         UIRef.QuestTab = UI:AddTab{ Name = "Quest", Description = "Walk to a quest giver, accept its quest and fight what it asks for" }
+        --// Gear: read the game's own Equipment panel and put on the best item
+        --// owned for each slot, ranked by the real damage/defence numbers in
+        --// the game's item table (AutoEquip).
+        UIRef.GearTab = UI:AddTab{ Name = "Gear", Description = "Put on the best gear you own, by damage or by the armour build you pick" }
         UIRef.DebugTab = UI:AddTab{ Name = "Debug", Description = "Draw zones, waypoints and targets in the world" }
         UIRef.UtilityTab = UI:AddTab{ Name = "Utility", Description = "Webhook reports and profiles" }
         UIRef.UtilitySection = UIRef.UtilityTab:AddSection{ Title = "Utilities" }
@@ -136,6 +140,7 @@ return {
         --// tracker section reads the game's own quest UI, the helper section
         --// draws what the tracker asks for, and the last one is the manual
         --// QuestEvent assigner for a quest whose giver cannot be reached.
+        UIRef.GearSection = UIRef.GearTab:AddSection{ Title = "Auto Equip" }
         UIRef.QuestSection = UIRef.QuestTab:AddSection{ Title = "Auto Quest" }
         UIRef.QuestTrackerSection = UIRef.QuestTab:AddSection{ Title = "Quest Tracker" }
         UIRef.QuestHelperSection = UIRef.QuestTab:AddSection{ Title = "Quest Helper" }

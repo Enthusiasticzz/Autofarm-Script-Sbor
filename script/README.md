@@ -17,9 +17,10 @@ and downloads every module next to it from the same folder in this repository,
 so **a change only reaches the game once it is pushed to `main` here** — and
 pointing an executor at a single feature file does nothing.
 
-Behind the scenes it fetches `UI/Utils.lua` plus the 76 modules in `MODULES`
-(77 requests), compiles them, and starts them in dependency order. It needs an
-executor (`loadstring`, `game:HttpGet`, `LocalPlayer`/`PlayerGui`).
+Behind the scenes it fetches `UI/Utils.lua` and the bundle parts built from the
+82 modules under `script/` (`tools/build-bundle.ps1`), decodes them a part at a
+time and starts them in dependency order. It needs an executor (`loadstring`,
+`game:HttpGet`, `LocalPlayer`/`PlayerGui`).
 
 
 ### Options
@@ -61,6 +62,9 @@ The feature modules, roughly grouped:
   the quest through its dialog and fights what the game's tracker asks for),
   QuestHelper (marks that giver, those mobs and the quest items), QuestAssign
   (the manual `QuestEvent` assigner, kept as the fallback).
+- **Gear** — AutoEquip: reads the game's own Equipment panel and puts on the
+  best item you own for each slot you tick, ranked by the damage/defence
+  numbers in the game's item table, with a Dexterity or Defence armour build.
 - **Browsers & UI data** — MobBrowser, AssetBrowser, MobDictionary, AssetDictionary.
   The Asset Explorer's **Dump Database** button writes every item, recipe and
   mob it can read to `AutoFarmProfiles/DatabaseDump.json` (DatabaseDump).

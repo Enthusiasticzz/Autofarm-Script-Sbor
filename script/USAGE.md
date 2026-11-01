@@ -846,6 +846,32 @@ Each giver's prompt (`ProxBase.ProximityAttach.ProximityPrompt`) is fired with `
 
 - **Quest ID** (textbox) + **Assign Quest** (button) — the manual fallback: sends `("AssignQuest", ID)` on the game's `QuestEvent` remote, so a quest can be taken without walking to its giver. If the remote is not in the place, a notice says so instead of failing quietly.
 
+### Gear tab
+
+Puts on the best gear you own, in one click. It works from the game's own Equipment panel — every owned item there is a card carrying its type and its Level/Skill requirement — and takes the actual power numbers from the game's item table, because the card itself only shows how many you have.
+
+**Auto Equip** section
+
+- **Equip Now** (button) — one pass: reads the panel, picks the best eligible item for each ticked slot, presses its equip button and waits for the game to confirm the item is on. There is no loop and no timer, and a second press while a pass is running is ignored.
+- Readout — `READING THE EQUIPMENT PAGE…`, then `DONE  ·  601 cards  ·  Weapon -> Sanctum Edge Oathbreaker (2690)`, `ALREADY BEST`, `NOTHING RANKABLE` (no candidate carried the number that slot ranks on), or one of `NO EQUIPMENT PAGE`, `NO CARDS ON THE EQUIPMENT PAGE`, `NO ITEM DATA` (the game's item table could not be read), `NO PLAYER STATS` (Level and skills are missing, so no requirement can be checked).
+- **Armour Build** (dropdown, saved) — **Dexterity** (default) or **Defence**. It ranks the armour slots (outfit, upper and lower headwear) by DEX or by DEF. Weapons always rank on damage and shields always on DEF, since no shield in the game carries DEX. A card with no value for the chosen stat can never beat one that has it; if nothing in the slot has it either, the other stat decides.
+- **SLOTS** (checkboxes, saved, all on) — **Weapon** (one-handed, two-handed, rapiers, daggers, melee), **Dual weapon**, **Shield**, **Outfit**, **Upper headwear**, **Lower headwear**, **Facewear**, **3D armour**. Lower headwear is where the game keeps capes, cloaks, mantles, amulets and pendants, so the best cape is chosen through that slot. Facewear and 3D armour carry no power stat at all, so they only fill an empty slot and never swap what is on.
+- **Refresh List** (button) — reads the panel and reports what it *would* equip without pressing anything.
+- The first press reads every item in the game's item table (the same table the Asset Browser builds when it opens), which takes a moment and shows `READING THE EQUIPMENT PAGE…`; later presses reuse it.
+
+How it decides:
+
+- **Only what you own.** A card counts only when its name is in `PlayerStats.Inventory` (`Fists` excepted); that also rejects a stale card left behind by the game.
+- **Overlays are never equipped.** A `Type` containing `Overlay` is dropped before anything else, and the list's `Base` template is dropped on its empty `Type` — its labels read `999` / `9999` and would otherwise look like the best item in the game.
+- **The requirement is a gate.** `Level` is checked against `PlayerStats.Level`; `Skill` against the stat the card's `Type` names (`One-Handed` → `One-HandedSkill`, `Rapier` → `RapierSkill`, `Dagger` → `DaggerSkill`, `Two-Handed` → `Two-HandedSkill`, `Melee` → `MeleeSkill`). Anything above your number is skipped, and so is a card whose requirement cannot be read.
+- **The winner is the number, not the name.** Damage for weapons, the build's stat for armour, with the other stat as tie-break, then the requirement, then the name so the result is stable between passes. An item the game's table has no damage (or defence) for cannot win a slot that ranks on it — it is left alone rather than equipped for having no number.
+- **One item, one slot per pass.** A card equipped to the weapon slot is not then pressed into the dual slot, because `E2` on the sword just equipped could take it back out of the main hand. The dual slot wants a second item.
+- **Already-worn is left alone.** The card's `isEquipped` and `PlayerStats` both decide that, so a slot wearing the winner is skipped rather than clicked forever.
+- **The press is verified.** `E` equips slot 1 and `E2` slot 2 (the dual slot). If nothing changes within 2.5 s the other button is pressed once; if that fails too the slot is reported as `FAILED` and the pass moves on — never a click loop.
+- **The menu is not opened unless it has to be.** The page's tab button is pressed first; the menu button (`DeviceGui.ConsolePC.MenuButton`, or the mobile one) is only used when the page cannot be read without it, and it is pressed again at the end only when this pass opened it.
+
+Nothing here moves the character or starts and stops another feature. It needs an executor that can press a button — the same clicker Auto Confirm Block and Auto Start Game use.
+
 ### Status tab
 
 A read-only window on what the farm is doing, plus the Reset Stats button.

@@ -132,6 +132,7 @@ local MODULES = {
     "Features/QuestAssign.lua",
     "Features/AutoQuest.lua",
     "Features/QuestHelper.lua",
+    "Features/AutoEquip.lua",
     "Features/ProfileSettings.lua",
     "Features/Waypoints.lua",
     "Features/Farmzone.lua",

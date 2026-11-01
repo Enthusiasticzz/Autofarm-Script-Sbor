@@ -1,0 +1,188 @@
+[EQUIP] -- A. player
+[EQUIP]   worn Weapon                 Sanctum Edge Oathbreaker
+[EQUIP]   worn WeaponOverlay          Glacier Sabre
+[EQUIP]   worn DualWeapon             Blackflame Katana Mk V
+[EQUIP]   worn DualWeaponOverlay      Glacier Sabre
+[EQUIP]   worn Shield                 
+[EQUIP]   worn ShieldOverlay          
+[EQUIP]   worn Outfit                 Easter Sangreal Armor Mk V
+[EQUIP]   worn OutfitOverlay          Veydras Underlayer Clothing
+[EQUIP]   worn UpperHeadwear          Kringlewrath Sanctified Helm
+[EQUIP]   worn UpperHeadwearOverlay   Nosferatu Dominion Black
+[EQUIP]   worn LowerHeadwear          Crimson Coil Mk III
+[EQUIP]   worn LowerHeadwearOverlay   Hunters Robe Black
+[EQUIP]   worn Facewear               Round Sunglasses Tan
+[EQUIP]   worn Necklace               
+[EQUIP]   worn Armor3D                
+[EQUIP]   --- level and skills
+[EQUIP]   DaggerSkill            83.45
+[EQUIP]   CurrentSkill           Starburst Stream
+[EQUIP]   Two-HandedSkill        4.3
+[EQUIP]   RapierSkill            460
+[EQUIP]   One-HandedSkill        1582.6
+[EQUIP]   Level                  1125
+[EQUIP]   TailoringSkill         0
+[EQUIP]   SmithingSkill          448.1
+[EQUIP]   CookingSkill           0
+[EQUIP]   BoostSkill             0
+[EQUIP]   MiningSkill            1
+[EQUIP]   FishingSkill           1
+[EQUIP]   LevelPoints            0
+[EQUIP]   MeleeSkill             1.1
+[EQUIP] -- B. the list
+[EQUIP] GameGui true / MenuGui-NEW true / Frames true / Equipment true / FrameB true / List true
+[EQUIP] MenuGui-NEW visible true, on screen true
+[EQUIP] Equipment page visible true, on screen true
+[EQUIP] List children (603):
+[EQUIP]   [TextButton] Base                           visible true  card false
+[EQUIP]   [UIListLayout] UIListLayout                   visible n/a   card false
+[EQUIP]   [TextButton] Antlers Overlay                visible true  card true
+[EQUIP]   [TextButton] Azure Fang                     visible true  card true
+[EQUIP]   [TextButton] Sanctum Edge Oathbreaker       visible true  card true
+[EQUIP]   [TextButton] Blackflame Katana Mk V         visible true  card true
+[EQUIP]   [TextButton] Easter Sangreal Armor Mk V     visible true  card true
+[EQUIP]   [TextButton] Kringlewrath Sanctified Helm   visible true  card true
+[EQUIP]   [TextButton] Crimson Coil Mk III            visible true  card true
+[EQUIP]   [TextButton] Veydras Underlayer Clothing    visible true  card true
+[EQUIP]   ... 593 more
+[EQUIP] cards (real items): 400
+[EQUIP] template "Base": Type "", Requirement "Level", RequiredAmount "999", Amount "9999", isEquipped ?, onDisplay ?
+[EQUIP] -- C. card shape
+[EQUIP]   name | type | requirement | amount | equipped | E | E2
+[EQUIP]   Antlers Overlay              | UpperHeadwearOve | Level     0     | 1      | nil   | true | true
+[EQUIP]   Azure Fang                   | DaggerOverlay    | Skill     0     | 1      | nil   | true | true
+[EQUIP]   Sanctum Edge Oathbreaker     | One-Handed       | Skill     435   | 1      | true  | true | true
+[EQUIP]   Blackflame Katana Mk V       | One-Handed       | Skill     430   | 1      | true  | true | true
+[EQUIP]   Easter Sangreal Armor Mk V   | Outfit           | Level     220   | 1      | true  | true | true
+[EQUIP]   Kringlewrath Sanctified Helm | UpperHeadwear    | Level     205   | 1      | true  | true | true
+[EQUIP]   Crimson Coil Mk III          | LowerHeadwear    | Level     170   | 1      | true  | true | true
+[EQUIP]   Veydras Underlayer Clothing  | OutfitOverlay    | Level     0     | 1      | true  | true | true
+[EQUIP]   Round Sunglasses Tan         | Facewear         | Level     0     | 1      | true  | true | true
+[EQUIP]   Nosferatu Dominion Black     | UpperHeadwearOve | Level     0     | 1      | true  | true | true
+[EQUIP]   Hunters Robe Black           | LowerHeadwearOve | Level     0     | 1      | true  | true | true
+[EQUIP]   Glacier Sabre                | One-HandedOverla | Skill     0     | 2      | true  | true | true
+[EQUIP]   Glacier Frost Cross          | LowerHeadwearOve | Level     0     | 1      | true  | true | true
+[EQUIP]   Easter Struanctus Mk V       | One-Handed       | Skill     425   | 2      | nil   | true | true
+[EQUIP]   ... 386 more cards
+[EQUIP]   Background                         Frame              in 400  <Frame>
+[EQUIP]   Buttons                            Frame              in 400  <Frame>
+[EQUIP]   Buttons.De                         ImageButton        in 400  Value
+[EQUIP]   Buttons.De.Value                   StringValue        in 400  rbxassetid://232144421
+[EQUIP]   Buttons.Dr                         ImageButton        in 400  Value
+[EQUIP]   Buttons.Dr.Value                   StringValue        in 400  rbxassetid://232144275
+[EQUIP]   Buttons.E                          ImageButton        in 400  Value
+[EQUIP]   Buttons.E.Slot                     TextLabel          in 400  1
+[EQUIP]   Buttons.E.Value                    StringValue        in 400  rbxassetid://232144354
+[EQUIP]   Buttons.E2                         ImageButton        in 400  Value
+[EQUIP]   Buttons.E2.Slot                    TextLabel          in 400  2
+[EQUIP]   Buttons.E2.Value                   StringValue        in 400  rbxassetid://232144354
+[EQUIP]   Buttons.I                          ImageButton        in 400  Value
+[EQUIP]   Buttons.I.Value                    StringValue        in 400  rbxassetid://232144421
+[EQUIP]   Buttons.UIListLayout               UIListLayout       in 400  <UIListLayout>
+[EQUIP]   Entry                              Frame              in 400  <Frame>
+[EQUIP]   Entry.Amount                       TextLabel          in 400  1 | 2 | 7 | 3 | 96 | 111
+[EQUIP]   Entry.Amount.UICorner              UICorner           in 400  <UICorner>
+[EQUIP]   Entry.Container                    Frame              in 400  <Frame>
+[EQUIP]   Entry.Container.Effects            Frame              in 400  <Frame>
+[EQUIP]   Entry.Container.UIListLayout       UIListLayout       in 400  <UIListLayout>
+[EQUIP]   Entry.Effect                       ImageLabel         in 400  <ImageLabel>
+[EQUIP]   Entry.Icon                         ImageLabel         in 400  <ImageLabel>
+[EQUIP]   Entry.ItemName                     TextLabel          in 400  Antlers Overlay | Azure Fang | Sanctum Edge Oathbreaker | Blackflame Katana Mk V | Easter Sangreal Armor Mk V | Kringlewrath Sanctified Helm
+[EQUIP]   Entry.ItemName.UITextSizeConstraint UITextSizeConstraint in 400  <UITextSizeConstraint>
+[EQUIP]   Entry.QuantityChar                 TextLabel          in 400  x
+[EQUIP]   Entry.QuantityChar.UITextSizeConstraint UITextSizeConstraint in 400  <UITextSizeConstraint>
+[EQUIP]   Entry.RequiredAmount               TextLabel          in 400  0 | 435 | 430 | 220 | 205 | 170
+[EQUIP]   Entry.RequiredAmount.UICorner      UICorner           in 400  <UICorner>
+[EQUIP]   Entry.Requirement                  TextLabel          in 400  Level | Skill
+[EQUIP]   Entry.Requirement.UITextSizeConstraint UITextSizeConstraint in 400  <UITextSizeConstraint>
+[EQUIP]   Type                               StringValue        in 400  UpperHeadwearOverlay | DaggerOverlay | One-Handed | Outfit | UpperHeadwear | LowerHeadwear
+[EQUIP]   UIGradient                         UIGradient         in 400  <UIGradient>
+[EQUIP]   UITextSizeConstraint               UITextSizeConstraint in 400  <UITextSizeConstraint>
+[EQUIP]   isEquipped                         BoolValue          in 400  <BoolValue> | true
+[EQUIP]   onDisplay                          BoolValue          in 400  true
+[EQUIP] --- distinct values
+[EQUIP]   Type:            "One-Handed" x57, "Outfit" x52, "Two-Handed" x46, "Rapier" x41, "OutfitOverlay" x40, "Dagger" x36, "UpperHeadwearOverlay" x25, "Shield" x20, "LowerHeadwear" x19, "UpperHeadwear" x18, ...
+[EQUIP]   Requirement:     "Skill" x208, "Level" x192
+[EQUIP]   RequiredAmount:  "0" x69, "150" x13, "160" x11, "20" x11, "30" x10, "1" x8, "205" x8, "105" x7, "225" x7, "45" x7, ...
+[EQUIP]   Entry.Amount:    "1" x216, "2" x76, "4" x12, "7" x6, "5" x5, "14" x5, "10" x5, "3" x5, "6" x4, "999" x3, ...
+[EQUIP]   isEquipped:      "nil" x389, "true" x11
+[EQUIP] -- D. whole cards
+[EQUIP] --- equipped
+[EQUIP]   [TextButton] Sanctum Edge Oathbreaker
+[EQUIP]     UITextSizeConstraint   [UITextSizeConstraint]
+[EQUIP]     Background             [Frame]
+[EQUIP]     Type                   [StringValue] = "One-Handed"
+[EQUIP]     isEquipped             [BoolValue] = "true"
+[EQUIP]     Buttons                [Frame] 6 children
+[EQUIP]     Entry                  [Frame] 8 children
+[EQUIP]     onDisplay              [BoolValue] = "true"
+[EQUIP]     UIGradient             [UIGradient]
+[EQUIP] --- an overlay
+[EQUIP]   [TextButton] Antlers Overlay
+[EQUIP]     UITextSizeConstraint   [UITextSizeConstraint]
+[EQUIP]     Background             [Frame]
+[EQUIP]     Type                   [StringValue] = "UpperHeadwearOverlay"
+[EQUIP]     isEquipped             [BoolValue]
+[EQUIP]     Buttons                [Frame] 6 children
+[EQUIP]     Entry                  [Frame] 8 children
+[EQUIP]     onDisplay              [BoolValue] = "true"
+[EQUIP]     UIGradient             [UIGradient]
+[EQUIP] --- first card
+[EQUIP]   [TextButton] Azure Fang
+[EQUIP]     UITextSizeConstraint   [UITextSizeConstraint]
+[EQUIP]     Background             [Frame]
+[EQUIP]     Type                   [StringValue] = "DaggerOverlay"
+[EQUIP]     isEquipped             [BoolValue]
+[EQUIP]     Buttons                [Frame] 6 children
+[EQUIP]     Entry                  [Frame] 8 children
+[EQUIP]     onDisplay              [BoolValue] = "true"
+[EQUIP]     UIGradient             [UIGradient]
+[EQUIP] -- E. equip buttons
+[EQUIP] card "Sanctum Edge Oathbreaker" buttons:
+[EQUIP]   E      [ImageButton] true  slot 1
+[EQUIP]   Dr     [ImageButton] true
+[EQUIP]   De     [ImageButton] true
+[EQUIP]   I      [ImageButton] true
+[EQUIP]   UIListLayout [UIListLayout] false
+[EQUIP]   E2     [ImageButton] true  slot 2
+[EQUIP] cards with E: 400, with E2: 400
+[EQUIP] -- F. the menu
+[EQUIP] pages and which one is showing:
+[EQUIP]   Trade          [Frame] visible false
+[EQUIP]   Friends        [Frame] visible false
+[EQUIP]   Owned          [Frame] visible false
+[EQUIP]   Equipment      [Frame] visible true  ON SCREEN
+[EQUIP]   Guild          [Frame] visible false
+[EQUIP]   Arrow          [ImageLabel] visible true  ON SCREEN
+[EQUIP]   Quest          [Frame] visible false
+[EQUIP]   GM             [Frame] visible false
+[EQUIP]   Store          [Frame] visible false
+[EQUIP]   Items          [Frame] visible false
+[EQUIP]   Players        [Frame] visible false
+[EQUIP]   Map            [Frame] visible false
+[EQUIP]   Skills         [Frame] visible false
+[EQUIP]   Stats          [Frame] visible false
+[EQUIP]   Help           [Frame] visible false
+[EQUIP]   Appearance     [Frame] visible false
+[EQUIP]   Options        [Frame] visible false
+[EQUIP] equipment tab buttons:
+[EQUIP]   Players.LordInsrat.PlayerGui.GameGui.MenuGui-NEW.FrontRight.Menu.MidFrames.Player-PageLayout.Equipment  (ImageButton, 0, 234.314453, on screen false)
+[EQUIP]   Players.LordInsrat.PlayerGui.GameGui.MenuGui-NEW.FrontRight.Menu.MidFrames.Player.Equipment  (ImageButton, 248.425385, 50.9978561, on screen true)
+[EQUIP] --- buttons anywhere in the PlayerGui whose name or label suggests the menu
+[EQUIP]   Players.LordInsrat.PlayerGui.DeviceGui.ConsolePC.MenuButton  (ImageButton, on screen true)
+[EQUIP]   Players.LordInsrat.PlayerGui.DeviceGui.ConsolePC.EquipButton  (ImageButton, on screen true)
+[EQUIP]   Players.LordInsrat.PlayerGui.DeviceGui.Mobile.MobileEquipButton  (ImageButton, on screen false)
+[EQUIP]   Players.LordInsrat.PlayerGui.DeviceGui.Mobile.MobileMenuButton  (ImageButton, on screen false)
+[EQUIP]   Players.LordInsrat.PlayerGui.GameGui.MenuGui-NEW.FrontRight.Menu.MidFrames.Player-PageLayout.Equipment  (ImageButton, on screen false)
+[EQUIP]   Players.LordInsrat.PlayerGui.GameGui.MenuGui-NEW.FrontRight.Menu.MidFrames.Player.Equipment  (ImageButton, on screen true)
+[EQUIP]   Players.LordInsrat.PlayerGui.GameGui.MenuGui-NEW.FrontRight.Menu.Frames.Owned.FrameB.MainFrame.GamePasses.[Equip] Black Swordsman Equipment  (TextButton, on screen false)
+[EQUIP]   Players.LordInsrat.PlayerGui.GameGui.MenuGui-NEW.FrontRight.Menu.Frames.Owned.FrameB.MainFrame.GamePasses.Beast Tamer Equipment  (TextButton, on screen false)
+[EQUIP]   Players.LordInsrat.PlayerGui.GameGui.MenuGui-NEW.FrontRight.Menu.Frames.Owned.FrameB.MainFrame.GamePasses.[Equip] Sharp Shooter Equipment  (TextButton, on screen false)
+[EQUIP]   Players.LordInsrat.PlayerGui.GameGui.MenuGui-NEW.FrontRight.Menu.Frames.Owned.FrameB.MainFrame.GamePasses.[Equip] Master Blacksmith Equipment  (TextButton, on screen false)
+[EQUIP]   Players.LordInsrat.PlayerGui.GameGui.MenuGui-NEW.FrontRight.Menu.Frames.Owned.FrameB.MainFrame.GamePasses.[Equip] Veteran Merchant Equipment  (TextButton, on screen false)
+[EQUIP]   Players.LordInsrat.PlayerGui.GameGui.MenuGui-NEW.FrontRight.Menu.Frames.Equipment.FrameB.List.Easter Bunny Backpack  (TextButton, on screen true)
+[EQUIP]   Players.LordInsrat.PlayerGui.GameGui.MenuGui-NEW.FrontRight.Menu.Frames.Store.FrameB.MainFrame.GamePasses.[Equip] Blood Enforcer Equipment  (TextButton, on screen false)
+[EQUIP]   Players.LordInsrat.PlayerGui.GameGui.MenuGui-NEW.FrontRight.Menu.Frames.Store.FrameB.MainFrame.GamePasses.[Equip] Blue Swordsman Equipment  (TextButton, on screen false)
+[EQUIP]   Players.LordInsrat.PlayerGui.GameGui.MenuGui-NEW.FrontRight.Menu.Frames.Store.FrameB.MainFrame.GamePasses.[Equip] Grandmaster Liberator Equipment  (TextButton, on screen false)
+[EQUIP] GameGui.Switch: [ImageButton] on screen false, size 0, 0
+[EQUIP] done — paste every [EQUIP] line

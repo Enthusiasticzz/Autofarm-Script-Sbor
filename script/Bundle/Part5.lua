@@ -5529,6 +5529,7 @@ START_ORDER = {
 "Features/QuestAssign.lua",
 "Features/AutoQuest.lua",
 "Features/QuestHelper.lua",
+"Features/AutoEquip.lua",
 "Features/ProfileSettings.lua",
 "Features/Waypoints.lua",
 "Features/Farmzone.lua",
@@ -5575,6 +5576,7 @@ FEATURE_MODULES = {
 ["Features/Webhook.lua"] = true,
 ["Features/AutoQuest.lua"] = true,
 ["Features/QuestHelper.lua"] = true,
+["Features/AutoEquip.lua"] = true,
 ["Features/ProfileSettings.lua"] = true,
 ["Features/Waypoints.lua"] = true,
 ["Features/Farmzone.lua"] = true,
@@ -6107,6 +6109,7 @@ end
 Component:Refresh()
 end
 AICUI.S.SettingSliders = AICUI.S.SettingSliders or {}
+AICUI.S.SettingControls = AICUI.S.SettingControls or {}
 function AICUI.AddSettingSlider(Section, Label, Key, Whole)
 local Entry = Context.SaveConfig.GetSetting(Key)
 assert(Entry, "Setting not declared in SaveConfig.Settings: " .. tostring(Key))
@@ -6305,6 +6308,14 @@ for Key, Slider in pairs(AICUI.S.SettingSliders) do
 local Entry = Context.SaveConfig.GetSetting(Key)
 if Entry then
 Slider:Set(Context.SaveConfig.NormalizeSetting(Entry, CONFIG[Key]), true)
+end
+end
+for Key, Control in pairs(AICUI.S.SettingControls) do
+local Entry = Context.SaveConfig.GetSetting(Key)
+if Entry then
+pcall(function()
+Control:Set(Context.SaveConfig.NormalizeSetting(Entry, CONFIG[Key]), true)
+end)
 end
 end
 if UIRef.BlockWhitelistComponent then

@@ -263,6 +263,21 @@ return {
             --// Materials Auto Smithing never uses below Keep.
             { Key = "SMITH_RESERVES", Default = {}, Normalize = NormalizeCountList("Keep", 0) },
 
+            --// Gear tab (Features/AutoEquip). The build decides which armour
+            --// stat ranks the armour slots — the game's sets are built one
+            --// way or the other, and a helmet with DEF 37 / DEX 592 is a DEX
+            --// helmet. Weapons always use DMG and shields only have DEF.
+            { Key = "EQUIP_ARMOUR_BUILD", Default = "Dexterity", Options = { "Dexterity", "Defence" } },
+            --// Which slots a pass may touch. Off means the slot is left alone.
+            { Key = "EQUIP_SLOT_WEAPON", Default = true },
+            { Key = "EQUIP_SLOT_DUAL", Default = true },
+            { Key = "EQUIP_SLOT_SHIELD", Default = true },
+            { Key = "EQUIP_SLOT_OUTFIT", Default = true },
+            { Key = "EQUIP_SLOT_UPPER_HEADWEAR", Default = true },
+            { Key = "EQUIP_SLOT_LOWER_HEADWEAR", Default = true },
+            { Key = "EQUIP_SLOT_FACEWEAR", Default = true },
+            { Key = "EQUIP_SLOT_ARMOR3D", Default = true },
+
             --// ESP (Features/Esp.lua). Which kinds are on, how each one is
             --// drawn (Outline, Box or None), whether it carries info text,
             --// the three colours and the box controls. Saved per profile so

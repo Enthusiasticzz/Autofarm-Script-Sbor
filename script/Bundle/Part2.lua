@@ -3907,6 +3907,7 @@ UIRef.PartyTab = UI:AddTab{ Name = "Party", Description = "Follow the leader bet
 UIRef.ServerTab = UI:AddTab{ Name = "Server", Description = "Rejoin, hop, job IDs and the player log" }
 UIRef.TeleportTab = UI:AddTab{ Name = "Teleport", Description = "Doors and waypoints, by name or by number" }
 UIRef.QuestTab = UI:AddTab{ Name = "Quest", Description = "Walk to a quest giver, accept its quest and fight what it asks for" }
+UIRef.GearTab = UI:AddTab{ Name = "Gear", Description = "Put on the best gear you own, by damage or by the armour build you pick" }
 UIRef.DebugTab = UI:AddTab{ Name = "Debug", Description = "Draw zones, waypoints and targets in the world" }
 UIRef.UtilityTab = UI:AddTab{ Name = "Utility", Description = "Webhook reports and profiles" }
 UIRef.UtilitySection = UIRef.UtilityTab:AddSection{ Title = "Utilities" }
@@ -3928,6 +3929,7 @@ UIRef.ServerSafetySection = UIRef.ServerTab:AddSection{ Title = "Server Safety" 
 UIRef.ServerLogSection = UIRef.ServerTab:AddSection{ Title = "Player Log" }
 UIRef.DoorTeleportSection = UIRef.TeleportTab:AddSection{ Title = "Door Teleport" }
 UIRef.WaypointTeleportSection = UIRef.TeleportTab:AddSection{ Title = "Waypoint Teleport" }
+UIRef.GearSection = UIRef.GearTab:AddSection{ Title = "Auto Equip" }
 UIRef.QuestSection = UIRef.QuestTab:AddSection{ Title = "Auto Quest" }
 UIRef.QuestTrackerSection = UIRef.QuestTab:AddSection{ Title = "Quest Tracker" }
 UIRef.QuestHelperSection = UIRef.QuestTab:AddSection{ Title = "Quest Helper" }
@@ -4835,6 +4837,15 @@ SaveConfig.Settings = {
 { Name = "Copper Ingot", Target = 500 },
 }, Normalize = NormalizeCountList("Target", SaveConfig.ITEM_MAX_STACK) },
 { Key = "SMITH_RESERVES", Default = {}, Normalize = NormalizeCountList("Keep", 0) },
+{ Key = "EQUIP_ARMOUR_BUILD", Default = "Dexterity", Options = { "Dexterity", "Defence" } },
+{ Key = "EQUIP_SLOT_WEAPON", Default = true },
+{ Key = "EQUIP_SLOT_DUAL", Default = true },
+{ Key = "EQUIP_SLOT_SHIELD", Default = true },
+{ Key = "EQUIP_SLOT_OUTFIT", Default = true },
+{ Key = "EQUIP_SLOT_UPPER_HEADWEAR", Default = true },
+{ Key = "EQUIP_SLOT_LOWER_HEADWEAR", Default = true },
+{ Key = "EQUIP_SLOT_FACEWEAR", Default = true },
+{ Key = "EQUIP_SLOT_ARMOR3D", Default = true },
 { Key = "ESP_PLAYER_ENABLED", Default = false },
 { Key = "ESP_MOB_ENABLED", Default = false },
 { Key = "ESP_WEAPON_ENABLED", Default = false },

@@ -246,6 +246,10 @@ return {
         --// range. Whole rounds the value down to an integer.
         --// Setting key -> its slider, so a loaded profile resyncs every one.
         AICUI.S.SettingSliders = AICUI.S.SettingSliders or {}
+        --// The same for saved settings that are not sliders (a dropdown or a
+        --// checkbox such as the Gear tab's build and slot toggles). Any
+        --// control with a :Set(value, silent) works.
+        AICUI.S.SettingControls = AICUI.S.SettingControls or {}
 
         function AICUI.AddSettingSlider(Section, Label, Key, Whole)
             local Entry = Context.SaveConfig.GetSetting(Key)
@@ -530,6 +534,18 @@ return {
 
                 if Entry then
                     Slider:Set(Context.SaveConfig.NormalizeSetting(Entry, CONFIG[Key]), true)
+                end
+            end
+
+            --// Saved settings that are not sliders: the module registers
+            --// its own control, and a loaded profile resyncs it here.
+            for Key, Control in pairs(AICUI.S.SettingControls) do
+                local Entry = Context.SaveConfig.GetSetting(Key)
+
+                if Entry then
+                    pcall(function()
+                        Control:Set(Context.SaveConfig.NormalizeSetting(Entry, CONFIG[Key]), true)
+                    end)
                 end
             end
 
