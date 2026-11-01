@@ -64,6 +64,9 @@ return {
         local GIVER_REFRESH_INTERVAL = 3
         local TRACKER_REFRESH_INTERVAL = 0.35
         local MOB_REFRESH_INTERVAL = 0.5
+        --// The input handle is cleared on every respawn; while it is missing a
+        --// new one is looked for at this rate rather than every frame.
+        local BINDABLE_RETRY_INTERVAL = 1
         --// Prompt presses and Accept clicks. A dialog is two or three pages,
         --// so Accept has to be pressed a few times.
         local PROMPT_INTERVAL = 0.6
@@ -189,6 +192,8 @@ return {
                 --// only stuck when it is barely closer at the end of it.
                 StuckFrom = nil,
                 ClickMethod = nil,
+                BindableAt = -10,
+                Character = nil,
                 WasEnabled = false,
                 Dead = false,
                 StatusLabel = nil,
@@ -987,20 +992,28 @@ return {
         --// Prompt and movement
         ------------------------------------------------------------------------
 
+        --// The game's input BindableFunction, the handle every combat press
+        --// goes through (EquipButton, AttackButton, InteractButton). Bootstrap
+        --// clears the runtime's copy on every respawn and only Auto Farm ever
+        --// looks it up again, so with Auto Farm paused the character used to
+        --// stand at a mob unable to swing: the handle was nil.
         local function GetInputBindable()
             local Existing = Runtime.GetInputBindableFunction and Runtime:GetInputBindableFunction()
 
-            if Existing then
+            if Existing and Existing.Parent then
                 return Existing
             end
 
-            local Gui = GetGui()
+            local Now = os.clock()
 
-            if not Gui then
+            if Now - S.BindableAt < BINDABLE_RETRY_INTERVAL then
                 return nil
             end
 
-            local Bindable = Gui:FindFirstChild("InputBindableFunction", true)
+            S.BindableAt = Now
+
+            local Gui = GetGui()
+            local Bindable = Gui and Gui:FindFirstChild("InputBindableFunction", true)
 
             if Bindable and Bindable:IsA("BindableFunction") then
                 Runtime:SetInputBindableFunction(Bindable)
@@ -1008,6 +1021,25 @@ return {
             end
 
             return nil
+        end
+
+        --// The farm's own weapon draw, called exactly as it does: EquipButton
+        --// through the input handle, and true means the frame was spent
+        --// drawing and the caller should give it up. AttackButton does nothing
+        --// while the sword is sheathed, which is what made the loop walk up to
+        --// a mob and stand there.
+        local function DrawWeapon(Now, Character)
+            local Input = GetInputBindable()
+            local Sword = Character and Character:FindFirstChild("Sword")
+            local MainWeld = Sword and Sword:FindFirstChild("MainWeld", true)
+
+            if not Input or not MainWeld or not AICFeature.EnsureWeaponDrawnRaw then
+                return false
+            end
+
+            local Ok, Drew = pcall(AICFeature.EnsureWeaponDrawnRaw, Now, Input, MainWeld)
+
+            return Ok and Drew == true
         end
 
         --// Fires the prompt the way an executor can (fireproximityprompt, else
@@ -1116,19 +1148,36 @@ return {
             return Ok
         end
 
+        --// The farm's fight, without its Enemy Priority gate: draw first, close
+        --// in with its own combat jump, then swing. Enemy Priority decides what
+        --// Auto Farm hunts, and quest mobs are not on that list, so the swing
+        --// goes through AICCombat.AttackTarget — the same entry point a boss
+        --// stop uses, which takes the mob it is given.
         local function FightMob(Mob, Now)
-            local _, Humanoid, RootPart = Runtime:GetCharacter()
+            local Character, Humanoid, RootPart = Runtime:GetCharacter()
             local MobRoot = Mob:FindFirstChild("HumanoidRootPart")
 
-            if not Humanoid or not RootPart or not MobRoot then
+            if not Humanoid or not RootPart or not MobRoot or Humanoid.Health <= 0 then
+                return
+            end
+
+            if DrawWeapon(Now, Character) then
                 return
             end
 
             local Distance = (MobRoot.Position - RootPart.Position).Magnitude
             local Reach = tonumber(CONFIG.PLAYER_ATTACK_DISTANCE) or 12
 
-            if Distance > Reach then
-                MoveTo(MobRoot.Position, Now)
+            if Distance > Reach and Now >= S.MoveAt then
+                S.MoveAt = Now + MOVE_INTERVAL
+
+                local Jump = AICCombatUtils.DoCombatJumpIfObstacle
+
+                if Jump then
+                    pcall(Jump, MobRoot.Position)
+                end
+
+                Humanoid:MoveTo(MobRoot.Position)
             end
 
             AICCombat.AttackTarget(Mob, Now)
@@ -1398,7 +1447,24 @@ return {
             return table.concat(Parts, " · ")
         end
 
+        --// The farm's own drink (AutoFarming_Combat's TryHeal), at the saved
+        --// heal share. Nothing else drinks with Auto Farm paused, and a quest
+        --// fight is as good a place to die as a farm one.
+        local function HealIfHurt(Now)
+            if not AICFeature.TryHeal or not AICCombat.GetCombatHealthPercent then
+                return
+            end
+
+            local Share = tonumber(CONFIG.AUTO_HEAL_HEALTH_PERCENT) or 65
+
+            if AICCombat.GetCombatHealthPercent() <= Share then
+                pcall(AICFeature.TryHeal, Now)
+            end
+        end
+
         local function StepKill(Now)
+            HealIfHurt(Now)
+
             local Rows = Module.GetObjectives()
             local Pending, AllDone = 0, #Rows > 0
 
@@ -1793,11 +1859,18 @@ return {
                 return
             end
 
-            local _, Humanoid = Runtime:GetCharacter()
+            local Character, Humanoid = Runtime:GetCharacter()
 
             if not Humanoid then
                 SetStatus("WAITING FOR A CHARACTER", STATUS_COLOR.Wait)
                 return
+            end
+
+            --// A new life: the input handle Bootstrap cleared is looked for
+            --// again on the next fighting frame instead of a second later.
+            if Character ~= S.Character then
+                S.Character = Character
+                S.BindableAt = -10
             end
 
             if Humanoid.Health <= 0 then

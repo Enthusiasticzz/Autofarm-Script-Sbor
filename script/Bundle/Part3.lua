@@ -2102,6 +2102,7 @@ local MOVE_INTERVAL = 0.2
 local GIVER_REFRESH_INTERVAL = 3
 local TRACKER_REFRESH_INTERVAL = 0.35
 local MOB_REFRESH_INTERVAL = 0.5
+local BINDABLE_RETRY_INTERVAL = 1
 local PROMPT_INTERVAL = 0.6
 local PROMPT_TRIES = 10
 local ACCEPT_INTERVAL = 0.35
@@ -2208,6 +2209,8 @@ KillSince = 0,
 StuckAt = 0,
 StuckFrom = nil,
 ClickMethod = nil,
+BindableAt = -10,
+Character = nil,
 WasEnabled = false,
 Dead = false,
 StatusLabel = nil,
@@ -2760,19 +2763,31 @@ return Method ~= nil
 end
 local function GetInputBindable()
 local Existing = Runtime.GetInputBindableFunction and Runtime:GetInputBindableFunction()
-if Existing then
+if Existing and Existing.Parent then
 return Existing
 end
-local Gui = GetGui()
-if not Gui then
+local Now = os.clock()
+if Now - S.BindableAt < BINDABLE_RETRY_INTERVAL then
 return nil
 end
-local Bindable = Gui:FindFirstChild("InputBindableFunction", true)
+S.BindableAt = Now
+local Gui = GetGui()
+local Bindable = Gui and Gui:FindFirstChild("InputBindableFunction", true)
 if Bindable and Bindable:IsA("BindableFunction") then
 Runtime:SetInputBindableFunction(Bindable)
 return Bindable
 end
 return nil
+end
+local function DrawWeapon(Now, Character)
+local Input = GetInputBindable()
+local Sword = Character and Character:FindFirstChild("Sword")
+local MainWeld = Sword and Sword:FindFirstChild("MainWeld", true)
+if not Input or not MainWeld or not AICFeature.EnsureWeaponDrawnRaw then
+return false
+end
+local Ok, Drew = pcall(AICFeature.EnsureWeaponDrawnRaw, Now, Input, MainWeld)
+return Ok and Drew == true
 end
 local function GetTriggerRemote()
 local Items = workspace:FindFirstChild(QUEST_ITEMS_NAME)
@@ -2847,15 +2862,23 @@ end
 return Ok
 end
 local function FightMob(Mob, Now)
-local _, Humanoid, RootPart = Runtime:GetCharacter()
+local Character, Humanoid, RootPart = Runtime:GetCharacter()
 local MobRoot = Mob:FindFirstChild("HumanoidRootPart")
-if not Humanoid or not RootPart or not MobRoot then
+if not Humanoid or not RootPart or not MobRoot or Humanoid.Health <= 0 then
+return
+end
+if DrawWeapon(Now, Character) then
 return
 end
 local Distance = (MobRoot.Position - RootPart.Position).Magnitude
 local Reach = tonumber(CONFIG.PLAYER_ATTACK_DISTANCE) or 12
-if Distance > Reach then
-MoveTo(MobRoot.Position, Now)
+if Distance > Reach and Now >= S.MoveAt then
+S.MoveAt = Now + MOVE_INTERVAL
+local Jump = AICCombatUtils.DoCombatJumpIfObstacle
+if Jump then
+pcall(Jump, MobRoot.Position)
+end
+Humanoid:MoveTo(MobRoot.Position)
 end
 AICCombat.AttackTarget(Mob, Now)
 end
@@ -3047,7 +3070,17 @@ table.insert(Parts, Row.Task .. Count)
 end
 return table.concat(Parts, " · ")
 end
+local function HealIfHurt(Now)
+if not AICFeature.TryHeal or not AICCombat.GetCombatHealthPercent then
+return
+end
+local Share = tonumber(CONFIG.AUTO_HEAL_HEALTH_PERCENT) or 65
+if AICCombat.GetCombatHealthPercent() <= Share then
+pcall(AICFeature.TryHeal, Now)
+end
+end
 local function StepKill(Now)
+HealIfHurt(Now)
 local Rows = Module.GetObjectives()
 local Pending, AllDone = 0, #Rows > 0
 for _, Row in ipairs(Rows) do
@@ -3339,10 +3372,14 @@ S.WasEnabled = Enabled
 if not Enabled then
 return
 end
-local _, Humanoid = Runtime:GetCharacter()
+local Character, Humanoid = Runtime:GetCharacter()
 if not Humanoid then
 SetStatus("WAITING FOR A CHARACTER", STATUS_COLOR.Wait)
 return
+end
+if Character ~= S.Character then
+S.Character = Character
+S.BindableAt = -10
 end
 if Humanoid.Health <= 0 then
 S.Dead = true
