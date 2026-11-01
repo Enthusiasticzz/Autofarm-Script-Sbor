@@ -80,6 +80,9 @@ return {
         --// The tracker is given this long to show rows after the dialog ends
         --// before the loop reports that nothing was accepted.
         local QUEST_READ_GRACE = 4
+        --// A quest already on the tracker is given this long to reappear after
+        --// a respawn before the loop gives up on it and walks to a giver.
+        local QUEST_RESUME_WAIT = 12
         local STATUS_COLOR = {
             Work = Color3.fromRGB(120, 220, 140),
             Wait = Color3.fromRGB(230, 200, 120),
@@ -89,6 +92,10 @@ return {
 
         local PHASE_IDLE = "idle"
         local PHASE_START = "start"
+        --// A quest is on the tracker but its rows are not readable yet: the
+        --// PlayerGui is rebuilt on every respawn, so the tracker comes back a
+        --// moment after the character does.
+        local PHASE_RESUME = "resume"
         local PHASE_TRAVEL = "travel"
         local PHASE_PROMPT = "prompt"
         local PHASE_ACCEPT = "accept"
@@ -192,6 +199,10 @@ return {
                 --// only stuck when it is barely closer at the end of it.
                 StuckFrom = nil,
                 ClickMethod = nil,
+                --// A quest was being worked on (rows were read), so a respawn
+                --// resumes it instead of walking to a giver again.
+                HadQuest = false,
+                ResumeUntil = 0,
                 BindableAt = -10,
                 Character = nil,
                 WasEnabled = false,
@@ -516,6 +527,10 @@ return {
             if Force or Now - S.RowsAt >= TRACKER_REFRESH_INTERVAL then
                 S.Rows = ReadObjectives()
                 S.RowsAt = Now
+
+                if #S.Rows > 0 then
+                    S.HadQuest = true
+                end
             end
 
             return S.Rows
@@ -1237,6 +1252,18 @@ return {
                 return
             end
 
+            --// A quest was on the tracker before this life started reading.
+            --// Its rows are rebuilt with the PlayerGui, which is reset on
+            --// respawn, so walking to a giver here would talk to it again for
+            --// a quest that is already accepted.
+            if S.HadQuest then
+                S.Phase = PHASE_RESUME
+                S.ResumeUntil = Now + QUEST_RESUME_WAIT
+                SetStatus("WAITING FOR THE QUEST TRACKER", STATUS_COLOR.Wait)
+
+                return
+            end
+
             local Giver = Module.GetSelectedGiver()
 
             if not Giver then
@@ -1458,12 +1485,125 @@ return {
             local Share = tonumber(CONFIG.AUTO_HEAL_HEALTH_PERCENT) or 65
 
             if AICCombat.GetCombatHealthPercent() <= Share then
+                GetInputBindable()
                 pcall(AICFeature.TryHeal, Now)
             end
         end
 
+        --// The farm's retreat decision, unchanged: below Retreat At HP% the
+        --// character flees, an enemy skill is dodged whatever the health, and
+        --// it goes back in only once health is back above the retreat share
+        --// plus ten (70 at the least, 95 at most). The latch lives in
+        --// AICCombat.S, which Core/Bootstrap clears on every respawn.
+        local function UpdateRetreat(Now, Humanoid)
+            local RetreatPercent = math.clamp(tonumber(CONFIG.RETREAT_HEALTH_PERCENT) or 40, 0, 80)
+            local RecoverPercent = math.min(95, math.max(70, RetreatPercent + 10))
+            local Emergency = RetreatPercent > 0
+                and Humanoid.Health <= Humanoid.MaxHealth * (RetreatPercent / 100)
+            local Recovered = Humanoid.Health >= Humanoid.MaxHealth * (RecoverPercent / 100)
+            local EnemySkill = AICCombat.UpdateSkillThreat(Now)
+
+            if EnemySkill then
+                if not (AICCombat.S.RETREATING and AICCombat.S.RetreatReason == "Health") then
+                    AICCombat.S.RetreatReason = "Skill"
+                end
+
+                AICCombat.S.RETREATING = true
+            end
+
+            if Emergency then
+                AICCombat.S.RETREATING = true
+                AICCombat.S.RetreatReason = "Health"
+            elseif AICCombat.S.RETREATING
+                and not EnemySkill
+                and (AICCombat.S.RetreatReason ~= "Health" or Recovered)
+            then
+                AICCombat.S.RETREATING = false
+                AICCombat.S.RetreatReason = nil
+            end
+
+            return AICCombat.S.RETREATING == true, AICCombat.S.RetreatReason, EnemySkill
+        end
+
+        --// Flees with the farm's own mover. DodgeOffRoute lets the escape
+        --// leave the profile's farm zones, which a quest almost always is
+        --// outside of; deadzones still apply, exactly as on the waypoint
+        --// route. False means there was nothing to flee from, or nowhere to
+        --// go: the character then holds still and keeps healing.
+        local function Retreat(EnemySkill)
+            if not AICCombat.RetreatFromGoblins then
+                return false
+            end
+
+            AICCombatUtils.S.DodgeOffRoute = true
+            local Moved = AICCombat.RetreatFromGoblins(EnemySkill)
+            AICCombatUtils.S.DodgeOffRoute = false
+
+            return Moved == true
+        end
+
+        --// True when the retreat owned this frame: running, dodging or
+        --// holding still to heal beats swinging whatever the loop was doing.
+        local function StepRetreat(Now)
+            local _, Humanoid = Runtime:GetCharacter()
+
+            if not Humanoid then
+                return false
+            end
+
+            local Retreating, Reason, EnemySkill = UpdateRetreat(Now, Humanoid)
+
+            if not Retreating then
+                return false
+            end
+
+            SetStatus("RETREATING (" .. tostring(Reason or "?") .. ")", STATUS_COLOR.Wait)
+
+            if not Retreat(EnemySkill) then
+                StandStill()
+            end
+
+            return true
+        end
+
+        --// Waiting for a quest that is already accepted to reappear in the
+        --// rebuilt PlayerGui. Only when it does not come back within
+        --// QUEST_RESUME_WAIT is the quest treated as gone.
+        local function StepResume(Now)
+            HealIfHurt(Now)
+
+            if StepRetreat(Now) then
+                return
+            end
+
+            local Rows = Module.GetObjectives()
+
+            if #Rows > 0 then
+                S.Phase = PHASE_KILL
+                S.KillSince = Now
+
+                return
+            end
+
+            if Now >= S.ResumeUntil then
+                --// Finished, failed or dropped: the giver is the way back
+                --// into a quest.
+                S.HadQuest = false
+                S.Phase = PHASE_START
+
+                return
+            end
+
+            SetStatus("WAITING FOR THE QUEST TRACKER", STATUS_COLOR.Wait)
+            StandStill()
+        end
+
         local function StepKill(Now)
             HealIfHurt(Now)
+
+            if StepRetreat(Now) then
+                return
+            end
 
             local Rows = Module.GetObjectives()
             local Pending, AllDone = 0, #Rows > 0
@@ -1479,6 +1619,7 @@ return {
                 if Now - S.KillSince < QUEST_READ_GRACE then
                     SetStatus("READING THE QUEST", STATUS_COLOR.Wait)
                 else
+                    S.HadQuest = false
                     S.Phase = PHASE_IDLE
                     SetStatus("QUEST COMPLETE", STATUS_COLOR.Work)
                     StandStill()
@@ -1488,6 +1629,7 @@ return {
             end
 
             if AllDone then
+                S.HadQuest = false
                 S.Phase = PHASE_IDLE
                 SetStatus("QUEST COMPLETE", STATUS_COLOR.Work)
                 StandStill()
@@ -1742,9 +1884,12 @@ return {
                 if Entry then
                     S.SelectedKey = Value
                     S.SelectedInstance = Entry.Instance
+                    --// A pick of its own overrides a quest left on the tracker.
+                    S.HadQuest = false
+                    S.ResumeUntil = 0
 
                     --// Picking another quest starts it without a re-toggle.
-                    if S.Phase == PHASE_IDLE then
+                    if S.Phase == PHASE_IDLE or S.Phase == PHASE_RESUME then
                         S.Phase = PHASE_START
                     end
                 end
@@ -1897,6 +2042,8 @@ return {
 
             if Phase == PHASE_START then
                 BeginQuest(Now)
+            elseif Phase == PHASE_RESUME then
+                StepResume(Now)
             elseif Phase == PHASE_TRAVEL then
                 StepTravel(Now)
             elseif Phase == PHASE_PROMPT then
