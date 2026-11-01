@@ -80,17 +80,26 @@ return {
         --// Interact presses while walking, when the place config has no
         --// interaction interval of its own.
         local INTERACT_INTERVAL = 0.5
-        --// Waited after a waypoint teleport, so the character lands before
-        --// the walk to the spot starts.
-        local TELEPORT_WAIT = 2
+        --// A waypoint teleport is watched this long for the body to move. The
+        --// watch ends the frame the character moves; only a request that moves
+        --// it nowhere at all for the whole window is a dropped one. A fixed
+        --// distance check a couple of seconds after the send was too short for
+        --// a slow landing: the body was still where the request had fired, the
+        --// teleport was read as failed, and the same waypoint was sent again -
+        --// a second trip, and a third when a restart in between cleared the
+        --// retry count.
+        local TELEPORT_LAND_WINDOW = 6
         --// After a respawn the first waypoint teleport waits this long: the
         --// game drops a TeleportEvent fired on the respawn frame, before the
         --// new character has loaded, and the stop was then walked from spawn.
         local RESPAWN_SETTLE = 1.5
         --// A teleport that did not move the character was dropped by the game.
         --// It is asked again this many times, this far apart, before the
-        --// route gives up and walks.
-        local TELEPORT_RETRIES = 2
+        --// route gives up and walks. One: the case the retry covers (a
+        --// request fired at a body the game was not ready for) is settled by
+        --// the second try, and a game that keeps dropping them costs the walk
+        --// either way.
+        local TELEPORT_RETRIES = 1
         local TELEPORT_RETRY_DELAY = 0.75
         --// Moved less than this from where the teleport fired means it never
         --// landed.
@@ -150,6 +159,30 @@ return {
         --// Waited after a prompt teleport, for the landing and the prompt's
         --// own range check, before Interact is pressed.
         local PROMPT_WAIT = 0.6
+        --// A prompt teleport that leaves the character further than this from
+        --// the prompt did not take: the body was snapped back, and walking is
+        --// the only way left.
+        local PROMPT_ARRIVAL = 12
+        --// A landing this far below the prompt fell through the floor it was
+        --// sent to, whatever the floor probe under the body reads.
+        local PROMPT_FALL_DEPTH = 12
+        --// Looked at again this long after a landing was put back on the floor,
+        --// so the short drop has settled before the walk starts.
+        local PROMPT_RECHECK = 0.4
+        --// The floor under the body: probed this far above the root and this
+        --// far below the feet, so a body inside the ground or through it is
+        --// measured rather than guessed.
+        local FLOOR_PROBE_UP = 6
+        local FLOOR_PROBE_DOWN = 40
+        --// Feet this far under the surface are inside the ground, not on it. A
+        --// slope or a stair contact reads about zero, so only real burial
+        --// passes this.
+        local FLOOR_BURIED = 1.5
+        --// Lifted this far above the surface, then let fall back onto it.
+        local FLOOR_LIFT_CLEARANCE = 3
+        --// Lifts per visit. A spot that buries the character again after this
+        --// many is not walked out of; the no-progress timeout moves on.
+        local FLOOR_LIFTS = 3
         --// How far from a stop its interaction prompt may be found when the
         --// stop has not saved one.
         local PROMPT_SCAN_RADIUS = 80
@@ -297,9 +330,14 @@ return {
                 --// When the game's Interact input was last pressed on the way.
                 InteractAt = nil,
                 --// Where the character stood when the waypoint teleport was
-                --// fired, and how many times it has been retried for this stop.
+                --// fired, when it fired, and how many times it has been retried
+                --// for this stop.
                 TeleportFrom = nil,
+                TeleportAt = nil,
                 Teleports = 0,
+                --// A teleport moved the body on this visit. Once one has, no
+                --// later "nothing moved" is read as a dropped request.
+                TeleportLanded = false,
                 --// No waypoint teleport before this: set after a respawn so the
                 --// game has a loaded character to move, and between retries.
                 TeleportHold = nil,
@@ -315,6 +353,12 @@ return {
                 --// Whether the stop's interaction prompt was already taken this
                 --// visit.
                 PromptUsed = false,
+                --// The visit's prompt teleport: when its landing is checked, and
+                --// where it was meant to land.
+                PromptCheckAt = nil,
+                PromptTargetPosition = nil,
+                --// Floor lifts used this visit (see LiftFromFloor).
+                FloorLifts = 0,
                 --// No Interact press before this: quiet for
                 --// PROMPT_INTERACT_MUTE after a prompt teleport.
                 --// The prompt teleport's landing press is the visit's only
@@ -651,6 +695,68 @@ return {
             S.WalkSampleAt = nil
         end
 
+        --// How far the feet are under the floor the body stands on, in studs.
+        --// nil when there is no floor under it at all (a drop, a ledge), so
+        --// only a body that is actually inside the ground is measured.
+        --//
+        --// A prompt teleport sets the body's CFrame, and a landing point that
+        --// sits inside a floor leaves the character standing in the ground:
+        --// it cannot walk out, nothing on the way notices, and the stop is
+        --// skipped as unreachable after twenty seconds of not moving.
+        local function GetFloorOverlap(RootPart)
+            local Character = RootPart and RootPart.Parent
+
+            if not Character then
+                return nil
+            end
+
+            local Params = RaycastParams.new()
+            Params.FilterType = Enum.RaycastFilterType.Exclude
+            Params.FilterDescendantsInstances = { Character }
+            --// A swimmer's surface is above the body; water is not a floor.
+            Params.IgnoreWater = true
+
+            local FeetY = RootPart.Position.Y - RootPart.Size.Y * 0.5
+            local Hit = workspace:Raycast(
+                Vector3.new(RootPart.Position.X, RootPart.Position.Y + FLOOR_PROBE_UP, RootPart.Position.Z),
+                Vector3.new(0, -(FLOOR_PROBE_UP + FLOOR_PROBE_DOWN), 0),
+                Params
+            )
+
+            if not Hit then
+                return nil
+            end
+
+            --// Positive: the floor is above the feet, so the body is in it.
+            return Hit.Position.Y - FeetY
+        end
+
+        --// Puts the body back above the floor it is standing in and lets the
+        --// fall settle it onto the surface. False when it cannot (a dead body,
+        --// or the lifts for this visit are used up).
+        local function LiftFromFloor(Humanoid, RootPart, Depth)
+            if not RootPart or (tonumber(Humanoid and Humanoid.Health) or 0) <= 0 then
+                return false
+            end
+
+            if (S.FloorLifts or 0) >= FLOOR_LIFTS then
+                return false
+            end
+
+            local Ok = pcall(function()
+                RootPart.CFrame = RootPart.CFrame + Vector3.new(0, Depth + FLOOR_LIFT_CLEARANCE, 0)
+            end)
+
+            if not Ok then
+                return false
+            end
+
+            S.FloorLifts = (S.FloorLifts or 0) + 1
+            Humanoid:Move(Vector3.zero)
+            ResetWalk()
+            return true
+        end
+
         --// Walks at Point until it is within Reach of it. Straight MoveTo with
         --// a hop over anything low: the way there is the stop's saved Path, so
         --// nothing has to guess a route round a building.
@@ -671,7 +777,16 @@ return {
             --// frame, which a per-frame check reads as standing still.
             if not S.WalkSampleAt or Now - S.WalkSampleAt >= STUCK_SAMPLE then
                 if S.WalkFrom and (RootPart.Position - S.WalkFrom).Magnitude < STUCK_DISTANCE then
-                    AICCombatUtils.DoJump()
+                    --// Not moving *and* under the floor is not a step to hop:
+                    --// the body is inside the ground and has to be lifted out.
+                    --// Read only from a body that is already not moving, so a
+                    --// stair edge or a slope (which never stops it) is never
+                    --// taken for burial.
+                    local Depth = GetFloorOverlap(RootPart)
+
+                    if not (Depth and Depth >= FLOOR_BURIED and LiftFromFloor(Humanoid, RootPart, Depth)) then
+                        AICCombatUtils.DoJump()
+                    end
                 end
 
                 S.WalkFrom = RootPart.Position
@@ -1075,6 +1190,12 @@ return {
             S.SkipSpotWait = false
             S.SkipSpotWaitNext = false
             S.TeleportHold = nil
+            S.TeleportAt = nil
+            S.TeleportFrom = nil
+            S.TeleportLanded = false
+            S.PromptCheckAt = nil
+            S.PromptTargetPosition = nil
+            S.FloorLifts = 0
             S.OwnDeaths = 0
             S.OwnDeathAt = nil
             SyncDeathMark()
@@ -1110,9 +1231,14 @@ return {
             S.Path = Stop.Path and table.clone(Stop.Path) or {}
             S.InteractAt = nil
             S.TeleportFrom = nil
+            S.TeleportAt = nil
             S.Teleports = 0
+            S.TeleportLanded = false
             S.TeleportHold = nil
             S.PromptUsed = false
+            S.PromptCheckAt = nil
+            S.PromptTargetPosition = nil
+            S.FloorLifts = 0
             S.SpotWaitUntil = nil
             S.SkipSpotWait = S.SkipSpotWaitNext == true
             S.SkipSpotWaitNext = false
@@ -2154,6 +2280,176 @@ return {
             return true
         end
 
+        --// A landing that put the body inside a floor. Lifted out and looked at
+        --// again on the next frame: a landing point half a stud under the ground
+        --// leaves the character standing in the floor, unable to walk out, and
+        --// nothing on the way notices until the stop is given up on.
+        local function FixLandedFloor(Humanoid, RootPart)
+            local Depth = GetFloorOverlap(RootPart)
+
+            if Depth and Depth >= FLOOR_BURIED then
+                return LiftFromFloor(Humanoid, RootPart, Depth)
+            end
+
+            return false
+        end
+
+        --// The waypoint teleport in flight. True means the frame is spoken for:
+        --// the landing is still coming, or it has just been read and the walk
+        --// (or the one retry) is set up. The same waypoint is never sent to
+        --// twice over a slow landing - only a request that moved the body
+        --// nowhere at all for TELEPORT_LAND_WINDOW is a dropped one.
+        local function WatchTeleportLanding(Stop, Humanoid, RootPart, Now)
+            local From = S.TeleportFrom
+            local At = S.TeleportAt or Now
+
+            if (RootPart.Position - From).Magnitude >= TELEPORT_LAND_DISTANCE then
+                S.TeleportFrom = nil
+                S.TeleportAt = nil
+                S.TeleportLanded = true
+                S.WaitUntil = nil
+                ResetWalk()
+                S.BestDistance = nil
+                S.LastProgressAt = Now
+                S.WalkStart = Now
+
+                --// The landing point can sit inside the ground (a waypoint
+                --// saved under a floor plane): lifted out before the walk, so
+                --// the body is not left standing in it.
+                if FixLandedFloor(Humanoid, RootPart) then
+                    SetStatus(string.format(
+                        "STOP %d/%d  LIFTED OUT OF FLOOR",
+                        S.Index,
+                        #GetStops()
+                    ))
+                    return true
+                end
+
+                SetStatus(string.format(
+                    "STOP %d/%d  TELEPORT LANDED",
+                    S.Index,
+                    #GetStops()
+                ))
+                return true
+            end
+
+            if Now - At < TELEPORT_LAND_WINDOW then
+                Humanoid:Move(Vector3.zero)
+                SetStatus(string.format(
+                    "STOP %d/%d  TELEPORT WP%d",
+                    S.Index,
+                    #GetStops(),
+                    Stop.Waypoint or 0
+                ))
+                return true
+            end
+
+            --// Not a stud of movement in the whole window: the game dropped the
+            --// request. Asked one more time, then walked.
+            S.TeleportFrom = nil
+            S.TeleportAt = nil
+
+            local ToStop = AICCombatUtils.GetHorizontalDistance(Stop.Position, RootPart.Position)
+
+            --// A landing already happened on this visit, so a send that moved
+            --// nothing is the game's answer, not a dropped request: only a
+            --// visit where no send has ever moved the body re-asks.
+            if ToStop > TELEPORT_RETRY_DISTANCE
+                and not S.PromptUsed
+                and not S.TeleportLanded
+                and (S.Teleports or 0) < TELEPORT_RETRIES
+            then
+                S.Teleports = (S.Teleports or 0) + 1
+                S.Teleported = false
+                S.TeleportHold = Now + TELEPORT_RETRY_DELAY
+                Say("Boss Route", string.format(
+                    "Waypoint teleport to stop #%d moved nothing; asking once more (%d/%d)",
+                    S.Index,
+                    S.Teleports,
+                    TELEPORT_RETRIES
+                ), 4)
+                return true
+            end
+
+            Say("Boss Route", string.format(
+                "Waypoint teleport to stop #%d did not take; walking the rest",
+                S.Index
+            ), 4)
+            S.BestDistance = nil
+            S.LastProgressAt = Now
+            S.WalkStart = Now
+            SetStatus(string.format("STOP %d/%d  WALKING", S.Index, #GetStops()))
+            return true
+        end
+
+        --// What the prompt teleport actually did. The request goes out and the
+        --// game puts the character where it likes: a landing point inside a floor
+        --// left the body standing in the ground, and a send the game dropped left
+        --// it far from the prompt with nothing checking - the walk carried on, or
+        --// the no-progress timeout skipped the stop as unreachable. Checked once,
+        --// PROMPT_WAIT after the send; the body is put back on the prompt and the
+        --// check repeated when the landing was inside the floor or through it.
+        local function CheckPromptLanding(Humanoid, RootPart, Now)
+            local Target = S.PromptTargetPosition
+
+            S.PromptCheckAt = nil
+
+            if not Target then
+                return false
+            end
+
+            local Flat = AICCombatUtils.GetHorizontalDistance(Target, RootPart.Position)
+            local Depth = GetFloorOverlap(RootPart)
+            local Buried = Depth and Depth >= FLOOR_BURIED
+            local Fell = RootPart.Position.Y < Target.Y - PROMPT_FALL_DEPTH
+
+            if Flat <= PROMPT_ARRIVAL and not Buried and not Fell then
+                return false
+            end
+
+            --// Inside the ground, or through it: put the body back where the
+            --// prompt meant to land, then look again once the drop settles.
+            if Buried or Fell then
+                if (S.FloorLifts or 0) < FLOOR_LIFTS then
+                    local Ok = pcall(function()
+                        RootPart.CFrame = CFrame.new(Target + Vector3.new(0, FLOOR_LIFT_CLEARANCE, 0))
+                    end)
+
+                    if Ok then
+                        S.FloorLifts = (S.FloorLifts or 0) + 1
+                        S.PromptCheckAt = Now + PROMPT_RECHECK
+                        S.WaitUntil = nil
+                        Humanoid:Move(Vector3.zero)
+                        ResetWalk()
+                        SetStatus(string.format(
+                            "STOP %d/%d  PROMPT LANDING IN FLOOR",
+                            S.Index,
+                            #GetStops()
+                        ))
+                        return true
+                    end
+                end
+            end
+
+            --// Not on the prompt: the send did not take this visit. Nothing is
+            --// pressed on it again, and the stop is walked from here.
+            S.Teleported = true
+            S.BestDistance = nil
+            S.LastProgressAt = Now
+            S.WalkStart = Now
+            Say("Boss Route", string.format(
+                "Prompt teleport to stop #%d landed %.0f studs away; walking the rest",
+                S.Index,
+                Flat
+            ), 4)
+            SetStatus(string.format(
+                "STOP %d/%d  PROMPT MISSED  WALKING",
+                S.Index,
+                #GetStops()
+            ))
+            return true
+        end
+
         --// How long a spot with no boss has to stay empty before the walk back
         --// calls it a kill: one scan miss can be a model swap, two cannot.
         local RETURN_KILL_MISS_SECONDS = 1
@@ -2226,6 +2522,14 @@ return {
                 S.TeleportHold = nil
             end
 
+            --// A waypoint teleport in flight is watched first, so no other
+            --// send can go out while it is still landing.
+            if S.TeleportFrom then
+                if WatchTeleportLanding(Stop, Humanoid, RootPart, Now) then
+                    return
+                end
+            end
+
             --// The stop saved an interaction prompt (a door or portal in front
             --// of the boss): land on it once, then walk the rest. A stop that
             --// has both uses the prompt first, because it is the point of
@@ -2239,7 +2543,6 @@ return {
                     --// The prompt is this visit's travel, so a waypoint the
                     --// stop also names is not taken on top of it.
                     S.Teleported = true
-                    S.TeleportFrom = RootPart.Position
                     --// Off before the teleport, not on landing: waiting to
                     --// mute afterwards left a frame or two where a press
                     --// could still go out. It stays off for the visit, and
@@ -2253,6 +2556,12 @@ return {
                     end
 
                     if TeleportToPoint(PromptPosition) then
+                        --// Read back once the landing has had PROMPT_WAIT,
+                        --// instead of trusting the send: the prompt can drop
+                        --// the body inside a floor or put it back where it
+                        --// stood, and neither used to be noticed.
+                        S.PromptCheckAt = Now + PROMPT_WAIT
+                        S.PromptTargetPosition = PromptPosition
                         S.WaitUntil = Now + PROMPT_WAIT
                         SetStatus(string.format(
                             "STOP %d/%d  TELEPORT %s",
@@ -2266,10 +2575,12 @@ return {
             end
 
             --// The stop names one of the game's waypoints: take it once, then
-            --// give the character a moment to land.
+            --// watch the body for the landing (see WatchTeleportLanding, which
+            --// ends the watch the frame the character moves).
             if not S.Teleported and (Stop.Waypoint or 0) > 0 then
                 S.Teleported = true
                 S.TeleportFrom = RootPart.Position
+                S.TeleportAt = Now
                 --// A waypoint can land on a prompt, and the walk after it can
                 --// pass the same one again. Off for the visit, set before the
                 --// request goes out so no press can beat the mute.
@@ -2280,10 +2591,13 @@ return {
                 end
 
                 if TeleportToWaypoint(Stop.Waypoint) then
-                    S.WaitUntil = Now + TELEPORT_WAIT
                     SetStatus(string.format("STOP %d/%d  TELEPORT WP%d", S.Index, #GetStops(), Stop.Waypoint))
                     return
                 end
+
+                --// Nothing was sent, so there is no landing to watch.
+                S.TeleportFrom = nil
+                S.TeleportAt = nil
             end
 
             if S.WaitUntil and Now < S.WaitUntil then
@@ -2299,30 +2613,18 @@ return {
                 return
             end
 
-            --// A teleport fired before a just-respawned character had loaded
-            --// can be dropped by the game. If nothing moved and the stop is
-            --// still far away, hold the body and ask again rather than walking
-            --// the whole way from spawn. Bounded, so a game that never accepts
-            --// the request still reaches the stop.
-            if S.TeleportFrom then
-                local Moved = (RootPart.Position - S.TeleportFrom).Magnitude
-                local ToStop = AICCombatUtils.GetHorizontalDistance(Stop.Position, RootPart.Position)
-                S.TeleportFrom = nil
+            --// What the prompt teleport did, read after its landing window.
+            --// The waypoint teleport is watched at the top of this step.
+            if S.PromptCheckAt then
+                --// Held, not walked: a landing lifted out of a floor is looked
+                --// at again once it has dropped back onto the surface, and the
+                --// walk starting under it would move a body still falling.
+                if Now < S.PromptCheckAt then
+                    Humanoid:Move(Vector3.zero)
+                    return
+                end
 
-                if Moved < TELEPORT_LAND_DISTANCE
-                    and ToStop > TELEPORT_RETRY_DISTANCE
-                    and not S.PromptUsed
-                    and (S.Teleports or 0) < TELEPORT_RETRIES
-                then
-                    S.Teleports = (S.Teleports or 0) + 1
-                    S.Teleported = false
-                    S.TeleportHold = Now + TELEPORT_RETRY_DELAY
-                    Say("Boss Route", string.format(
-                        "Teleport did not land at stop #%d; retrying (%d/%d)",
-                        S.Index,
-                        S.Teleports,
-                        TELEPORT_RETRIES
-                    ), 4)
+                if CheckPromptLanding(Humanoid, RootPart, Now) then
                     return
                 end
             end

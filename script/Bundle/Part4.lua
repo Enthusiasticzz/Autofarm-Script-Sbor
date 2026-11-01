@@ -29,9 +29,9 @@ local UIRef = Context.UIRef
 local NotifyAction = Context.NotifyAction
 local REACH_DISTANCE = 5
 local INTERACT_INTERVAL = 0.5
-local TELEPORT_WAIT = 2
+local TELEPORT_LAND_WINDOW = 6
 local RESPAWN_SETTLE = 1.5
-local TELEPORT_RETRIES = 2
+local TELEPORT_RETRIES = 1
 local TELEPORT_RETRY_DELAY = 0.75
 local TELEPORT_LAND_DISTANCE = 4
 local TELEPORT_RETRY_DISTANCE = 60
@@ -50,6 +50,14 @@ local RESET_STAY_DISTANCE = 30
 local HOLD_FLEE_DISTANCE = 40
 local HOLD_FLEE_RING = 45
 local PROMPT_WAIT = 0.6
+local PROMPT_ARRIVAL = 12
+local PROMPT_FALL_DEPTH = 12
+local PROMPT_RECHECK = 0.4
+local FLOOR_PROBE_UP = 6
+local FLOOR_PROBE_DOWN = 40
+local FLOOR_BURIED = 1.5
+local FLOOR_LIFT_CLEARANCE = 3
+local FLOOR_LIFTS = 3
 local PROMPT_SCAN_RADIUS = 80
 local PROMPT_SAVE_RADIUS = 40
 local PROMPT_INTERACT_MUTE = 10
@@ -106,13 +114,18 @@ FleeFromSpeed = nil,
 RecoveredAt = nil,
 InteractAt = nil,
 TeleportFrom = nil,
+TeleportAt = nil,
 Teleports = 0,
+TeleportLanded = false,
 TeleportHold = nil,
 ResetHumanoid = nil,
 ResetFiredAt = nil,
 ResetRetries = 0,
 ResetPosition = nil,
 PromptUsed = false,
+PromptCheckAt = nil,
+PromptTargetPosition = nil,
+FloorLifts = 0,
 InteractSuppressed = false,
 PromptFallback = nil,
 HpAt = nil,
@@ -288,6 +301,44 @@ local function ResetWalk()
 S.WalkFrom = nil
 S.WalkSampleAt = nil
 end
+local function GetFloorOverlap(RootPart)
+local Character = RootPart and RootPart.Parent
+if not Character then
+return nil
+end
+local Params = RaycastParams.new()
+Params.FilterType = Enum.RaycastFilterType.Exclude
+Params.FilterDescendantsInstances = { Character }
+Params.IgnoreWater = true
+local FeetY = RootPart.Position.Y - RootPart.Size.Y * 0.5
+local Hit = workspace:Raycast(
+Vector3.new(RootPart.Position.X, RootPart.Position.Y + FLOOR_PROBE_UP, RootPart.Position.Z),
+Vector3.new(0, -(FLOOR_PROBE_UP + FLOOR_PROBE_DOWN), 0),
+Params
+)
+if not Hit then
+return nil
+end
+return Hit.Position.Y - FeetY
+end
+local function LiftFromFloor(Humanoid, RootPart, Depth)
+if not RootPart or (tonumber(Humanoid and Humanoid.Health) or 0) <= 0 then
+return false
+end
+if (S.FloorLifts or 0) >= FLOOR_LIFTS then
+return false
+end
+local Ok = pcall(function()
+RootPart.CFrame = RootPart.CFrame + Vector3.new(0, Depth + FLOOR_LIFT_CLEARANCE, 0)
+end)
+if not Ok then
+return false
+end
+S.FloorLifts = (S.FloorLifts or 0) + 1
+Humanoid:Move(Vector3.zero)
+ResetWalk()
+return true
+end
 local function WalkTo(Point, Reach, Now)
 local _, Humanoid, RootPart = Runtime:GetCharacter()
 if not Humanoid or not RootPart then
@@ -299,7 +350,10 @@ return true
 end
 if not S.WalkSampleAt or Now - S.WalkSampleAt >= STUCK_SAMPLE then
 if S.WalkFrom and (RootPart.Position - S.WalkFrom).Magnitude < STUCK_DISTANCE then
+local Depth = GetFloorOverlap(RootPart)
+if not (Depth and Depth >= FLOOR_BURIED and LiftFromFloor(Humanoid, RootPart, Depth)) then
 AICCombatUtils.DoJump()
+end
 end
 S.WalkFrom = RootPart.Position
 S.WalkSampleAt = Now
@@ -601,6 +655,12 @@ S.WalkStart = nil
 S.SkipSpotWait = false
 S.SkipSpotWaitNext = false
 S.TeleportHold = nil
+S.TeleportAt = nil
+S.TeleportFrom = nil
+S.TeleportLanded = false
+S.PromptCheckAt = nil
+S.PromptTargetPosition = nil
+S.FloorLifts = 0
 S.OwnDeaths = 0
 S.OwnDeathAt = nil
 SyncDeathMark()
@@ -633,9 +693,14 @@ S.PathIndex = 1
 S.Path = Stop.Path and table.clone(Stop.Path) or {}
 S.InteractAt = nil
 S.TeleportFrom = nil
+S.TeleportAt = nil
 S.Teleports = 0
+S.TeleportLanded = false
 S.TeleportHold = nil
 S.PromptUsed = false
+S.PromptCheckAt = nil
+S.PromptTargetPosition = nil
+S.FloorLifts = 0
 S.SpotWaitUntil = nil
 S.SkipSpotWait = S.SkipSpotWaitNext == true
 S.SkipSpotWaitNext = false
@@ -1300,6 +1365,128 @@ return false
 end
 return true
 end
+local function FixLandedFloor(Humanoid, RootPart)
+local Depth = GetFloorOverlap(RootPart)
+if Depth and Depth >= FLOOR_BURIED then
+return LiftFromFloor(Humanoid, RootPart, Depth)
+end
+return false
+end
+local function WatchTeleportLanding(Stop, Humanoid, RootPart, Now)
+local From = S.TeleportFrom
+local At = S.TeleportAt or Now
+if (RootPart.Position - From).Magnitude >= TELEPORT_LAND_DISTANCE then
+S.TeleportFrom = nil
+S.TeleportAt = nil
+S.TeleportLanded = true
+S.WaitUntil = nil
+ResetWalk()
+S.BestDistance = nil
+S.LastProgressAt = Now
+S.WalkStart = Now
+if FixLandedFloor(Humanoid, RootPart) then
+SetStatus(string.format(
+"STOP %d/%d  LIFTED OUT OF FLOOR",
+S.Index,
+#GetStops()
+))
+return true
+end
+SetStatus(string.format(
+"STOP %d/%d  TELEPORT LANDED",
+S.Index,
+#GetStops()
+))
+return true
+end
+if Now - At < TELEPORT_LAND_WINDOW then
+Humanoid:Move(Vector3.zero)
+SetStatus(string.format(
+"STOP %d/%d  TELEPORT WP%d",
+S.Index,
+#GetStops(),
+Stop.Waypoint or 0
+))
+return true
+end
+S.TeleportFrom = nil
+S.TeleportAt = nil
+local ToStop = AICCombatUtils.GetHorizontalDistance(Stop.Position, RootPart.Position)
+if ToStop > TELEPORT_RETRY_DISTANCE
+and not S.PromptUsed
+and not S.TeleportLanded
+and (S.Teleports or 0) < TELEPORT_RETRIES
+then
+S.Teleports = (S.Teleports or 0) + 1
+S.Teleported = false
+S.TeleportHold = Now + TELEPORT_RETRY_DELAY
+Say("Boss Route", string.format(
+"Waypoint teleport to stop #%d moved nothing; asking once more (%d/%d)",
+S.Index,
+S.Teleports,
+TELEPORT_RETRIES
+), 4)
+return true
+end
+Say("Boss Route", string.format(
+"Waypoint teleport to stop #%d did not take; walking the rest",
+S.Index
+), 4)
+S.BestDistance = nil
+S.LastProgressAt = Now
+S.WalkStart = Now
+SetStatus(string.format("STOP %d/%d  WALKING", S.Index, #GetStops()))
+return true
+end
+local function CheckPromptLanding(Humanoid, RootPart, Now)
+local Target = S.PromptTargetPosition
+S.PromptCheckAt = nil
+if not Target then
+return false
+end
+local Flat = AICCombatUtils.GetHorizontalDistance(Target, RootPart.Position)
+local Depth = GetFloorOverlap(RootPart)
+local Buried = Depth and Depth >= FLOOR_BURIED
+local Fell = RootPart.Position.Y < Target.Y - PROMPT_FALL_DEPTH
+if Flat <= PROMPT_ARRIVAL and not Buried and not Fell then
+return false
+end
+if Buried or Fell then
+if (S.FloorLifts or 0) < FLOOR_LIFTS then
+local Ok = pcall(function()
+RootPart.CFrame = CFrame.new(Target + Vector3.new(0, FLOOR_LIFT_CLEARANCE, 0))
+end)
+if Ok then
+S.FloorLifts = (S.FloorLifts or 0) + 1
+S.PromptCheckAt = Now + PROMPT_RECHECK
+S.WaitUntil = nil
+Humanoid:Move(Vector3.zero)
+ResetWalk()
+SetStatus(string.format(
+"STOP %d/%d  PROMPT LANDING IN FLOOR",
+S.Index,
+#GetStops()
+))
+return true
+end
+end
+end
+S.Teleported = true
+S.BestDistance = nil
+S.LastProgressAt = Now
+S.WalkStart = Now
+Say("Boss Route", string.format(
+"Prompt teleport to stop #%d landed %.0f studs away; walking the rest",
+S.Index,
+Flat
+), 4)
+SetStatus(string.format(
+"STOP %d/%d  PROMPT MISSED  WALKING",
+S.Index,
+#GetStops()
+))
+return true
+end
 local RETURN_KILL_MISS_SECONDS = 1
 local function CheckReturnKill(Stop, Now)
 if FindTarget(Stop, Now) then
@@ -1348,17 +1535,23 @@ return
 end
 S.TeleportHold = nil
 end
+if S.TeleportFrom then
+if WatchTeleportLanding(Stop, Humanoid, RootPart, Now) then
+return
+end
+end
 if not S.PromptUsed then
 local PromptPosition = GetStopPromptPosition(Stop)
 if PromptPosition then
 S.PromptUsed = true
 S.Teleported = true
-S.TeleportFrom = RootPart.Position
 S.InteractSuppressed = true
 if Runtime.MuteInteract then
 Runtime:MuteInteract(PROMPT_INTERACT_MUTE)
 end
 if TeleportToPoint(PromptPosition) then
+S.PromptCheckAt = Now + PROMPT_WAIT
+S.PromptTargetPosition = PromptPosition
 S.WaitUntil = Now + PROMPT_WAIT
 SetStatus(string.format(
 "STOP %d/%d  TELEPORT %s",
@@ -1373,15 +1566,17 @@ end
 if not S.Teleported and (Stop.Waypoint or 0) > 0 then
 S.Teleported = true
 S.TeleportFrom = RootPart.Position
+S.TeleportAt = Now
 S.InteractSuppressed = true
 if Runtime.MuteInteract then
 Runtime:MuteInteract(PROMPT_INTERACT_MUTE)
 end
 if TeleportToWaypoint(Stop.Waypoint) then
-S.WaitUntil = Now + TELEPORT_WAIT
 SetStatus(string.format("STOP %d/%d  TELEPORT WP%d", S.Index, #GetStops(), Stop.Waypoint))
 return
 end
+S.TeleportFrom = nil
+S.TeleportAt = nil
 end
 if S.WaitUntil and Now < S.WaitUntil then
 Humanoid:Move(Vector3.zero)
@@ -1390,24 +1585,12 @@ end
 if S.ReturnKill and CheckReturnKill(Stop, Now) then
 return
 end
-if S.TeleportFrom then
-local Moved = (RootPart.Position - S.TeleportFrom).Magnitude
-local ToStop = AICCombatUtils.GetHorizontalDistance(Stop.Position, RootPart.Position)
-S.TeleportFrom = nil
-if Moved < TELEPORT_LAND_DISTANCE
-and ToStop > TELEPORT_RETRY_DISTANCE
-and not S.PromptUsed
-and (S.Teleports or 0) < TELEPORT_RETRIES
-then
-S.Teleports = (S.Teleports or 0) + 1
-S.Teleported = false
-S.TeleportHold = Now + TELEPORT_RETRY_DELAY
-Say("Boss Route", string.format(
-"Teleport did not land at stop #%d; retrying (%d/%d)",
-S.Index,
-S.Teleports,
-TELEPORT_RETRIES
-), 4)
+if S.PromptCheckAt then
+if Now < S.PromptCheckAt then
+Humanoid:Move(Vector3.zero)
+return
+end
+if CheckPromptLanding(Humanoid, RootPart, Now) then
 return
 end
 end

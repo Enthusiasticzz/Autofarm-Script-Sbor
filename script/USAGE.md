@@ -431,7 +431,9 @@ teleport) to a boss, fight it, and reset back to spawn before the next one.
   `STOP 2/4  WALKING`, `… FIGHT`, `… WAITING  DAMAGE TAG`,
   `… CLEARING  7s  LOSE 95 EXP`, `… CLEARING  7s  LOSE 95 EXP  RUNNING`,
   `… BOSS DOWN`,
-  `… TELEPORT WP3`, `… TELEPORT <prompt>`, `… RESET PENDING`, `… RESET RETRY 1`,
+  `… TELEPORT WP3` (watched for the landing), `… TELEPORT LANDED`,
+  `… LIFTED OUT OF FLOOR`, `… TELEPORT <prompt>`, `… PROMPT LANDING IN FLOOR`,
+  `… PROMPT MISSED  WALKING`, `… RESET PENDING`, `… RESET RETRY 1`,
   `ROUTE FINISHED`, `OFF`.
 - **Always Wait After Kill** (off by default) — sits just under the status
   line. On, every stop waits its **Reset (s)** after the kill before resetting
@@ -546,8 +548,16 @@ the route started on the stop are still walked.
 #### What a stop does
 
 1. Teleports to its prompt (when **Teleport To Prompt** is on) and waits 0.6 s
-   for the landing; nothing is pressed there. Otherwise it teleports to its
-   waypoint (when one is set) and waits 2 s to land.
+   for the landing, then **reads the landing back**: the character has to be
+   actually at the prompt, not inside the floor, and not under it. A landing in
+   the ground is put back on the prompt and looked at again; a send that did not
+   take is walked from wherever the character is instead of being pressed at
+   again. Nothing is pressed on the prompt itself. Otherwise it teleports to its
+   waypoint (when one is set) and watches the body for the **landing itself**:
+   the frame it moves, the watch ends and the walk starts. Only a request that
+   moves it nowhere at all for 6 s counts as dropped, and only then is the
+   same waypoint asked for once more (a landing inside a floor is lifted out
+   before the walk).
 2. Walks its **Path to Boss** points in order, then the stop itself. A point
    counts as reached within 4 studs (`Waypoint Reach Distance` for the stop).
    The points are the visit's own copy, taken when the stop began: replacing or
@@ -724,8 +734,22 @@ Notes:
   starts empty and adding stops needs a loaded profile (`CREATE / LOAD PROFILE
   FIRST`, `DEFAULT PLACE_CONFIG IS READ-ONLY` on a built-in preset).
 - A prompt teleport the game refuses (a dead character, a load) falls back to
-  the stop's waypoint or the walk, and the teleport is retried once when nothing
-  moved and the stop is still far away.
+  the stop's waypoint or the walk. A landing that puts the character in the
+  floor, or through it, is fixed on the spot: the body is set back on the
+  prompt and checked again 0.4 s later, up to 3 times per visit. A landing
+  nowhere the prompt was (`PROMPT MISSED  WALKING` in the log) means the send
+  did not take, so the stop is walked from there — the prompt is never fired
+  twice in one visit.
+- **The same waypoint is never teleported to twice for a slow landing.** A
+  waypoint send is watched for up to 6 s for the body to move at all; the watch
+  ends on the frame it does, so a landing that takes a moment is not read as a
+  failure and the character is not sent to the same waypoint again (which was
+  costing a second, and sometimes a third, trip per stop). Only a send that
+  moves the body nowhere for the whole window is called dropped, and it is
+  re-asked exactly once — never after a landing that already worked on this
+  visit. If the replacement also moves nothing, the stop is walked instead of
+  asking again. The log says which happened: `TELEPORT LANDED`,
+  `LIFTED OUT OF FLOOR`, then either the walk or one more send.
 - Dying on the way, or in the fight, is **not** treated as the stop being done:
   the route waits for the respawn, then teleports to
   that stop's **Teleport Waypoint #** again (if it has one) and walks the same
