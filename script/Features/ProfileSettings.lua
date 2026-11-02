@@ -277,11 +277,21 @@ UIRef.ProfilesSection:AddButton{ Name = "Save Profile", Callback = function()
 end }
 
 UIRef.ProfilesSection:AddButton{ Name = "Export Save", Callback = function()
-    local Success, Result = AICProfile.ExportActiveProfile()
+    local Success, Result, SpotCount = AICProfile.ExportActiveProfile()
 
     if Success then
-        AICUI.SetProfileStatus("EXPORTED " .. tostring(AICProfile.S.ActiveProfileName))
-        NotifyAction("Export", "Copied " .. tostring(AICProfile.S.ActiveProfileName) .. " to clipboard")
+        --// The count is on the status line so a profile with no hiding spots
+        --// in the export says so here instead of being found in the JSON.
+        AICUI.SetProfileStatus(string.format(
+            "EXPORTED %s (%d HIDING SPOTS)",
+            tostring(AICProfile.S.ActiveProfileName),
+            tonumber(SpotCount) or 0
+        ))
+        NotifyAction("Export", string.format(
+            "Copied %s to clipboard (%d hiding spots)",
+            tostring(AICProfile.S.ActiveProfileName),
+            tonumber(SpotCount) or 0
+        ))
     else
         AICUI.SetProfileStatus(Result or "EXPORT FAILED")
     end

@@ -47,16 +47,45 @@ return {
             return Result
         end
 
+        --// Whether a decoded table is one of the vectors SerializeConfigValue
+        --// wrote: a Vector3 becomes exactly { X, Y, Z }, and nothing else.
+        --// Anything with a second kind of key is a saved table that happens to
+        --// hold a position, not a vector.
+        --//
+        --// The hiding spots are what taught this: a prompt spot is
+        --// { Kind = "Prompt", Name = "Door", X, Y, Z }, so the old check (X,
+        --// Y and Z are numbers) turned every saved prompt into a Vector3 on
+        --// the way back in. NormalizeBossEvadeSpots then dropped it - a
+        --// Vector3 has no Kind - while a waypoint spot, which has no X/Y/Z at
+        --// all, survived. Every prompt hiding spot was gone on reload and on
+        --// import, and the waypoint ones never were.
+        function AICProfile.IsEncodedVector3(Value)
+            if type(Value) ~= "table" then
+                return false
+            end
+
+            if type(Value.X) ~= "number"
+                or type(Value.Y) ~= "number"
+                or type(Value.Z) ~= "number"
+            then
+                return false
+            end
+
+            for Key in pairs(Value) do
+                if Key ~= "X" and Key ~= "Y" and Key ~= "Z" then
+                    return false
+                end
+            end
+
+            return true
+        end
+
         function AICProfile.DeserializeConfigValue(Value)
             if type(Value) ~= "table" then
                 return Value
             end
 
-            if Value.X ~= nil and Value.Y ~= nil and Value.Z ~= nil
-                and type(Value.X) == "number"
-                and type(Value.Y) == "number"
-                and type(Value.Z) == "number"
-            then
+            if AICProfile.IsEncodedVector3(Value) then
                 return AICConfig.DecodeVector3(Value)
             end
 
@@ -355,7 +384,20 @@ return {
                 return false, "EXPORT FAILED: " .. tostring(ClipboardError)
             end
 
-            return true, Raw
+            --// How many hiding spots the text carries, so the status line says
+            --// whether the export has them instead of leaving it to a search
+            --// through the JSON.
+            local PlaceConfig = Runtime:GetPlaceConfig()
+            local SpotCount = 0
+
+            if type(PlaceConfig) == "table"
+                and type(PlaceConfig.BOSS_EVADE) == "table"
+                and type(PlaceConfig.BOSS_EVADE.Spots) == "table"
+            then
+                SpotCount = #PlaceConfig.BOSS_EVADE.Spots
+            end
+
+            return true, Raw, SpotCount
         end
 
         function AICProfile.ImportProfileFromText(Raw)

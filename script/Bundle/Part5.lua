@@ -1390,10 +1390,18 @@ AICUI.SetProfileStatus("SAVE FAILED")
 end
 end }
 UIRef.ProfilesSection:AddButton{ Name = "Export Save", Callback = function()
-local Success, Result = AICProfile.ExportActiveProfile()
+local Success, Result, SpotCount = AICProfile.ExportActiveProfile()
 if Success then
-AICUI.SetProfileStatus("EXPORTED " .. tostring(AICProfile.S.ActiveProfileName))
-NotifyAction("Export", "Copied " .. tostring(AICProfile.S.ActiveProfileName) .. " to clipboard")
+AICUI.SetProfileStatus(string.format(
+"EXPORTED %s (%d HIDING SPOTS)",
+tostring(AICProfile.S.ActiveProfileName),
+tonumber(SpotCount) or 0
+))
+NotifyAction("Export", string.format(
+"Copied %s to clipboard (%d hiding spots)",
+tostring(AICProfile.S.ActiveProfileName),
+tonumber(SpotCount) or 0
+))
 else
 AICUI.SetProfileStatus(Result or "EXPORT FAILED")
 end
@@ -6270,10 +6278,11 @@ end
 table.insert(List, Value)
 return List
 end
-function Feature:BuildReport(Kind, Names)
+function Feature:BuildReport(Kind, Names, Waited)
 self:CaptureStart()
 local Ending = Kind == "End"
 local Waiting = Kind == "Waiting"
+local Left = Kind == "Left"
 local Currency = ReadCurrency()
 local Level = ReadLevel()
 local Exp = ReadExp()
@@ -6288,6 +6297,10 @@ if Waiting then
 local Who = ShortNames(Names)
 Head = "# Waiting For " .. (Who ~= "" and Who or "A Player")
 .. " at " .. ZoneClock()
+elseif Left then
+local Who = ShortNames(Names)
+Head = "# " .. (Who ~= "" and Who or "A Player")
+.. " Left at " .. ZoneClock()
 elseif Ending then
 Head = "# Macro Turned off at " .. ZoneClock()
 else
@@ -6300,8 +6313,13 @@ string.format("Floor: %s (%s)", GetPlaceName(game.PlaceId), tostring(game.PlaceI
 }
 if Waiting and #Names > 0 then
 table.insert(Lines, "Waiting on: " .. NameList(Names))
+elseif Left and #Names > 0 then
+table.insert(Lines, "Hid from: " .. NameList(Names))
 elseif Ending and #Names > 0 then
 table.insert(Lines, "Left because of: " .. NameList(Names))
+end
+if Left then
+table.insert(Lines, "They stayed: " .. FormatDuration(Waited))
 end
 if CONFIG.DISCORD_FORMAT == FORMAT_EXP then
 table.insert(Lines, "**Current Level:** " .. tostring(Level or 0))
@@ -6388,7 +6406,7 @@ return false, "Discord rejected the report (HTTP " .. tostring(Status) .. ")"
 end
 return false, "Request failed: " .. tostring(LastError or Response)
 end
-local function BuildPayload(Kind, Names)
+local function BuildPayload(Kind, Names, Waited)
 local Url = Trim(CONFIG.DISCORD_WEBHOOK)
 if Url == "" then
 return nil, "Paste a Discord webhook URL first"
@@ -6406,7 +6424,7 @@ if DuoPing ~= "" and DuoPing ~= Ping then
 table.insert(Mentions, DuoPing)
 end
 local Prefix = table.concat(Mentions, " ")
-local Text = Feature:BuildReport(Kind, Names)
+local Text = Feature:BuildReport(Kind, Names, Waited)
 local Content = Prefix ~= "" and (Prefix .. "\n" .. Text) or Text
 local Ok, Body = pcall(function()
 return HttpService:JSONEncode({
@@ -6440,7 +6458,7 @@ end)
 return true
 end
 local REPORT_DEDUPE = 8
-function Feature:PostReport(Kind, Force, Names)
+function Feature:PostReport(Kind, Force, Names, Waited)
 if CONFIG.DISCORD_ENABLED == false then
 return false
 end
@@ -6455,7 +6473,7 @@ then
 return false
 end
 self:CaptureStart()
-local Payload = BuildPayload(Kind, Names)
+local Payload = BuildPayload(Kind, Names, Waited)
 if not Payload then
 return false
 end
@@ -6468,7 +6486,9 @@ self.S.LastReportAt = Now
 NotifyAction(
 "Webhook",
 Kind == "Start" and "Macro started report sent"
-or (Kind == "Waiting" and "Waiting report sent" or "Macro ended report sent"),
+or (Kind == "Waiting" and "Waiting report sent")
+or (Kind == "Left" and "Left report sent")
+or "Macro ended report sent",
 3
 )
 return true
@@ -6488,6 +6508,12 @@ if CONFIG.DISCORD_HOLD_LOG == false then
 return false
 end
 return Feature:PostReport("Waiting", true, AsList(Strangers))
+end
+AICFeature.ReportHoldCleared = function(Strangers, Seconds)
+if CONFIG.DISCORD_HOLD_LOG == false then
+return false
+end
+return Feature:PostReport("Left", true, AsList(Strangers), tonumber(Seconds) or 0)
 end
 AICFeature.ReportHoldLeave = function(Strangers)
 local Posted = Feature:PostReport("End", true, AsList(Strangers))

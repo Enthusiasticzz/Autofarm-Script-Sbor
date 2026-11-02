@@ -290,17 +290,19 @@ return {
         end
 
         --// The message body, in the order Discord shows it. Kind is "Start",
-        --// "End" (a leave, or Auto Farm switched off) or "Waiting" (a stranger
-        --// is on the server and the hold is hiding from them). Names lists the
-        --// players the report is about; a report with nobody to name leaves
-        --// that line out.
-        function Feature:BuildReport(Kind, Names)
+        --// "End" (a leave, or Auto Farm switched off), "Waiting" (a stranger
+        --// is on the server and the hold is hiding from them) or "Left" (the
+        --// strangers went before the hold ran out). Names lists the players
+        --// the report is about; a report with nobody to name leaves that line
+        --// out. Waited is how long a "Left" report waited on them.
+        function Feature:BuildReport(Kind, Names, Waited)
             --// A report built before the first update still gets the session's
             --// starting numbers rather than today's.
             self:CaptureStart()
 
             local Ending = Kind == "End"
             local Waiting = Kind == "Waiting"
+            local Left = Kind == "Left"
             local Currency = ReadCurrency()
             local Level = ReadLevel()
             local Exp = ReadExp()
@@ -322,6 +324,11 @@ return {
 
                 Head = "# Waiting For " .. (Who ~= "" and Who or "A Player")
                     .. " at " .. ZoneClock()
+            elseif Left then
+                local Who = ShortNames(Names)
+
+                Head = "# " .. (Who ~= "" and Who or "A Player")
+                    .. " Left at " .. ZoneClock()
             elseif Ending then
                 Head = "# Macro Turned off at " .. ZoneClock()
             else
@@ -339,8 +346,16 @@ return {
             --// a manual leave) has no such line at all.
             if Waiting and #Names > 0 then
                 table.insert(Lines, "Waiting on: " .. NameList(Names))
+            elseif Left and #Names > 0 then
+                table.insert(Lines, "Hid from: " .. NameList(Names))
             elseif Ending and #Names > 0 then
                 table.insert(Lines, "Left because of: " .. NameList(Names))
+            end
+
+            --// How long the hold was parked before they went, and how much of
+            --// their window was left, so a short wait reads as one.
+            if Left then
+                table.insert(Lines, "They stayed: " .. FormatDuration(Waited))
             end
 
             --// A running report carries only where the run is now; the
@@ -461,7 +476,7 @@ return {
 
         --// Everything a report needs, or nil and why it cannot be made. The
         --// URL is checked first so an unconfigured hop stays silent.
-        local function BuildPayload(Kind, Names)
+        local function BuildPayload(Kind, Names, Waited)
             local Url = Trim(CONFIG.DISCORD_WEBHOOK)
 
             if Url == "" then
@@ -487,7 +502,7 @@ return {
             end
 
             local Prefix = table.concat(Mentions, " ")
-            local Text = Feature:BuildReport(Kind, Names)
+            local Text = Feature:BuildReport(Kind, Names, Waited)
             local Content = Prefix ~= "" and (Prefix .. "\n" .. Text) or Text
 
             local Ok, Body = pcall(function()
@@ -541,7 +556,7 @@ return {
         --// after it - so only the first one posts.
         local REPORT_DEDUPE = 8
 
-        function Feature:PostReport(Kind, Force, Names)
+        function Feature:PostReport(Kind, Force, Names, Waited)
             if CONFIG.DISCORD_ENABLED == false then
                 return false
             end
@@ -562,7 +577,7 @@ return {
 
             self:CaptureStart()
 
-            local Payload = BuildPayload(Kind, Names)
+            local Payload = BuildPayload(Kind, Names, Waited)
 
             if not Payload then
                 return false
@@ -579,7 +594,9 @@ return {
             NotifyAction(
                 "Webhook",
                 Kind == "Start" and "Macro started report sent"
-                    or (Kind == "Waiting" and "Waiting report sent" or "Macro ended report sent"),
+                    or (Kind == "Waiting" and "Waiting report sent")
+                    or (Kind == "Left" and "Left report sent")
+                    or "Macro ended report sent",
                 3
             )
             return true
@@ -616,6 +633,20 @@ return {
             end
 
             return Feature:PostReport("Waiting", true, AsList(Strangers))
+        end
+
+        --// The strangers went before their window ran out, so the hold ends
+        --// and the route starts again at stop #1. Seconds is how long the hold
+        --// sat there waiting on them (from the reset to the moment they were
+        --// gone), which is the answer to "how long did they take to leave".
+        --// Gated by Log When Hiding with the waiting report: both describe a
+        --// hold that ended quietly, while the leave below is not a setting.
+        AICFeature.ReportHoldCleared = function(Strangers, Seconds)
+            if CONFIG.DISCORD_HOLD_LOG == false then
+                return false
+            end
+
+            return Feature:PostReport("Left", true, AsList(Strangers), tonumber(Seconds) or 0)
         end
 
         --// The hold ran out and the game is being closed because the

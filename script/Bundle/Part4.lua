@@ -1957,6 +1957,16 @@ end
 end
 return List
 end
+local function SnapshotStrangers(List)
+local Copy = {}
+for _, OtherPlayer in ipairs(List or {}) do
+table.insert(Copy, {
+Name = tostring(OtherPlayer.Name or "?"),
+UserId = tonumber(OtherPlayer.UserId),
+})
+end
+return Copy
+end
 local function BeginEvade(Now, OtherPlayer)
 S.Evading = true
 S.EvadeName = tostring(OtherPlayer.Name)
@@ -1976,6 +1986,8 @@ S.EvadePromptTarget = nil
 S.EvadeLiveAt = nil
 S.EvadeKicked = false
 S.EvadeKickAt = nil
+S.EvadeStrangers = SnapshotStrangers(FindStrangers())
+S.EvadeStrangersAt = Now
 S.FloorLifts = 0
 S.Phase = "Evade"
 EndDodge()
@@ -2014,6 +2026,8 @@ S.EvadePromptTarget = nil
 S.EvadeLiveAt = nil
 S.EvadeKicked = false
 S.EvadeKickAt = nil
+S.EvadeStrangers = nil
+S.EvadeStrangersAt = nil
 S.Phase = "Idle"
 SyncDeathMark()
 if not (Restart and IsEnabled() and CurrentStop()) then
@@ -2025,6 +2039,15 @@ BeginStop(Now)
 if Was ~= "" then
 Say("Evasion", "@" .. Was .. " left; starting again at stop #1", 5)
 end
+end
+local function StrangersLeft(Now)
+local Waited = math.max(0, Now - (S.EvadeSince or Now))
+local Who = S.EvadeStrangers or {}
+S.EvadeStrangers = {}
+if AICFeature.ReportHoldCleared then
+AICFeature.ReportHoldCleared(Who, Waited)
+end
+EndEvade(Now, true)
 end
 local function EvadeResetStep(Now, Humanoid, RootPart)
 if S.EvadeResetHumanoid and Humanoid ~= S.EvadeResetHumanoid then
@@ -2174,7 +2197,10 @@ Humanoid.AutoRotate = true
 end
 local Stranger = FindStranger()
 if not Stranger then
-EndEvade(Now, true)
+if S.EvadeKicked then
+return true
+end
+StrangersLeft(Now)
 return true
 end
 if S.EvadeKicked then
@@ -2228,6 +2254,10 @@ end
 BeginEvade(Now, Stranger)
 end
 local _, Humanoid, RootPart = Runtime:GetCharacter()
+if not S.EvadeStrangersAt or Now - S.EvadeStrangersAt >= 0.5 then
+S.EvadeStrangers = SnapshotStrangers(FindStrangers())
+S.EvadeStrangersAt = Now
+end
 if S.EvadeStage == "Reset" then
 local Pending = Humanoid ~= nil
 and RootPart ~= nil
@@ -2241,7 +2271,7 @@ S.EvadeStage = "Travel"
 S.EvadeResetHumanoid = nil
 end
 if not Stranger then
-EndEvade(Now, true)
+StrangersLeft(Now)
 return true
 end
 if not Humanoid or not RootPart or (tonumber(Humanoid.Health) or 0) <= 0 then

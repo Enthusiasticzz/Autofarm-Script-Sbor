@@ -115,6 +115,14 @@ Context.AICFeature.updateCharacter = noop
 Context.AICCombat.GetDetectedPlayerTargets = function() return {} end
 Context.AICCombat.GetDetectedMobTargets = function() return {} end
 
+--// The real profile serializer. The hiding-spot round trips below are the code
+--// a reload or an import actually runs, so they have to run here too.
+local SerializeOk, SerializeErr = xpcall(function()
+    ProfileSerializationModule.Start(Context)
+end, debug.traceback)
+
+assert(SerializeOk, "PROFILE SERIALIZATION START ERROR:\n" .. tostring(SerializeErr))
+
 --// Runtime also decides what CONFIG and the feature table are, so the fields
 --// Bootstrap reads are re-seeded on whatever table it left behind.
 local Config = Context.CONFIG
@@ -449,6 +457,99 @@ assert(kept.Spots[2].Kind == "Prompt" and kept.Spots[2].Name == "Door", "the pro
 assert(Context.AICConfig.NormalizeBossEvade(nil).Spots == nil, "a save with no list should stay without one, so the old single spot can migrate")
 assert(#Context.AICConfig.NormalizeBossEvade{ Spots = {} }.Spots == 0, "a list the player cleared came back")
 
+--// A hiding spot has to survive the save format itself. A prompt spot is a
+--// table that holds X/Y/Z, and the decoder read every table with those three
+--// as a Vector3: the prompt came back as one, the normalizer dropped it (a
+--// Vector3 has no Kind) and only waypoint spots - which hold no position -
+--// survived. That is the bug that lost every prompt spot on reload.
+local spotConfig = {
+    BOSS_EVADE = {
+        Spots = {
+            { Kind = "Waypoint", Waypoint = 3 },
+            { Kind = "Prompt", Name = "Door", X = 10, Y = 2, Z = -3 },
+        },
+    },
+}
+
+local roundTrip = Context.AICProfile.DeserializeConfigValue(
+    Context.AICProfile.SerializeConfigValue(spotConfig)
+)
+local roundTripSpots = Context.AICConfig.NormalizeBossEvade(roundTrip.BOSS_EVADE).Spots
+assert(#roundTripSpots == 2, "a hiding spot was lost in the save format: " .. tostring(#roundTripSpots))
+assert(roundTripSpots[1].Kind == "Waypoint" and roundTripSpots[1].Waypoint == 3, "the waypoint spot did not survive the save format")
+assert(roundTripSpots[2].Kind == "Prompt" and roundTripSpots[2].Name == "Door", "the prompt spot did not survive the save format")
+assert(roundTripSpots[2].X == 10 and roundTripSpots[2].Z == -3, "the prompt spot lost its position")
+
+--// A real Vector3 still comes back as one, so the check above did not just
+--// switch the decode off.
+local vectorTrip = Context.AICProfile.DeserializeConfigValue(
+    Context.AICProfile.SerializeConfigValue({ Point = Vector3.new(1.5, 2.25, -3) })
+)
+assert(typeof(vectorTrip.Point) == "Vector3", "a saved Vector3 no longer decodes to a Vector3")
+assert(vectorTrip.Point.X == 1.5 and vectorTrip.Point.Z == -3, "a saved Vector3 lost its numbers")
+
+--// The exported config carries the hiding spots, so a profile handed to
+--// someone else brings them along instead of leaving them on this device.
+local compactExport = Context.AICProfile.BuildCompactConfig(Context.Runtime:GetBasePlaceConfig(), spotConfig)
+assert(compactExport.BOSS_EVADE and compactExport.BOSS_EVADE.Spots, "the exported config does not carry the hiding spots")
+assert(#compactExport.BOSS_EVADE.Spots == 2, "the exported config dropped a hiding spot")
+assert(compactExport.BOSS_EVADE.Spots[2].Kind == "Prompt", "the exported config dropped the prompt spot")
+
+--// The whole cycle a player runs: spots on the live config, the profile save,
+--// the reload that reads it back through the place merge, and the export.
+--// Asserted on the live config, not on a table built for the test, because a
+--// prompt spot that only survives in a hand-made table is not saved at all.
+local liveCycle = Context.Runtime:GetPlaceConfig()
+assert(type(liveCycle.BOSS_EVADE) == "table" and type(liveCycle.BOSS_EVADE.Spots) == "table", "the live config has no hiding-spot list")
+local beforePrompt = #liveCycle.BOSS_EVADE.Spots
+table.insert(liveCycle.BOSS_EVADE.Spots, { Kind = "Prompt", Name = "Door", X = 10, Y = 2, Z = -3 })
+assert(
+    #liveCycle.BOSS_EVADE.Spots == beforePrompt + 1,
+    "the prompt spot did not reach the live config: "
+        .. beforePrompt .. " -> " .. #liveCycle.BOSS_EVADE.Spots
+)
+
+local savedProfile = Context.AICProfile.CaptureCurrentProfile("Cycle")
+local storedPlace = Context.AICProfile.DeserializeConfigValue(savedProfile.PLACE_CONFIG)
+local reloadedPlace = Context.AICConfig.NormalizePlaceConfig(
+    Context.AICProfile.MergeConfig(Context.Runtime:GetBasePlaceConfig(), storedPlace)
+)
+assert(
+    reloadedPlace.BOSS_EVADE and #reloadedPlace.BOSS_EVADE.Spots == beforePrompt + 1,
+    "a hiding spot was lost reloading the profile: "
+        .. tostring(reloadedPlace.BOSS_EVADE and reloadedPlace.BOSS_EVADE.Spots and #reloadedPlace.BOSS_EVADE.Spots)
+)
+assert(
+    reloadedPlace.BOSS_EVADE.Spots[beforePrompt + 1].Kind == "Prompt",
+    "the prompt spot was lost reloading the profile"
+)
+
+local cycleExport = Context.AICProfile.BuildCompactConfig(Context.Runtime:GetBasePlaceConfig(), reloadedPlace)
+assert(
+    cycleExport.BOSS_EVADE and #cycleExport.BOSS_EVADE.Spots == beforePrompt + 1,
+    "the export from a reloaded config dropped a hiding spot: "
+        .. tostring(cycleExport.BOSS_EVADE and cycleExport.BOSS_EVADE.Spots and #cycleExport.BOSS_EVADE.Spots)
+)
+assert(
+    cycleExport.BOSS_EVADE.Spots[beforePrompt + 1].Kind == "Prompt",
+    "the export from a reloaded config dropped the prompt spot"
+)
+
+--// The status line the Export Save button prints counts what actually went
+--// into the text, so a profile with no spots cannot look exported with them.
+local exportedTo = nil
+setclipboard = function(value) exportedTo = value end
+local exportOk, exportRaw, exportSpots = Context.AICProfile.ExportActiveProfile()
+assert(exportOk, "exporting the profile failed: " .. tostring(exportRaw))
+assert(exportSpots == beforePrompt + 1, "the export reported the wrong hiding-spot count: " .. tostring(exportSpots))
+assert(exportedTo == exportRaw, "the export did not reach the clipboard")
+setclipboard = nil
+
+--// The prompt spot was put on the live list only for the cycle above; take it
+--// back off so the edit tests below count the spots they added themselves.
+table.remove(Context.Runtime:GetPlaceConfig().BOSS_EVADE.Spots, beforePrompt + 1)
+assert(#CurrentSpots() == beforePrompt, "the cycle left its prompt spot on the live config")
+
 --// The old single spot is still read, so a save from before the list keeps it.
 local legacy = Context.AICConfig.NormalizeBossEvade{ Waypoint = 12, Prompt = true, PromptName = " Door " }
 assert(legacy.Waypoint == 12 and legacy.Prompt == true and legacy.PromptName == "Door", "boss evade normalizer")
@@ -530,9 +631,21 @@ assert(Context.AICFeature.BossEvadeStep(now) == true, "hold did not take the fra
 assert(boss.BossStatusLabel.Instance.Text:find("EVADING", 1, true), "hold did not report the stranger")
 assert(#SmokeEnv.Errors == 0, "hold raised: " .. table.concat(SmokeEnv.Errors, "; "))
 
---// They left inside the window: the run starts again at the first boss.
+--// They left inside the window: the run starts again at the first boss, and
+--// the report that says so names them and how long the hold waited. Webhook is
+--// not started here, so the hook is captured instead of posted.
+local leftReport
+
+Context.AICFeature.ReportHoldCleared = function(Who, Seconds)
+    leftReport = { Who = Who, Seconds = Seconds }
+end
+
 players.GetPlayers = function() return { Context.Player } end
 assert(Context.AICFeature.BossEvadeStep(now) == true, "hold did not take the frame it ended on")
+assert(leftReport, "the hold ended without reporting that they left")
+assert(leftReport.Who[1] and leftReport.Who[1].Name == "Intruder", "the left report did not name who left")
+assert(leftReport.Who[1].UserId == 2, "the left report lost the UserId")
+assert(type(leftReport.Seconds) == "number" and leftReport.Seconds >= 0, "the left report has no wait on it")
 assert(boss.BossStatusLabel.Instance.Text:find("STOP 1/1", 1, true), "hold did not restart at stop #1: " .. boss.BossStatusLabel.Instance.Text)
 assert(Context.AICFeature.BossEvadeStep(now) == false, "hold kept the frame after ending")
 assert(#SmokeEnv.Errors == 0, "hold release raised: " .. table.concat(SmokeEnv.Errors, "; "))

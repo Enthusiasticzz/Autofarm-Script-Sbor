@@ -3258,6 +3258,22 @@ return {
             return List
         end
 
+        --// The strangers the hold is hiding from, as plain { Name, UserId }
+        --// copies. The report that says they left has to name them after their
+        --// Player objects are gone, so the hold keeps its own copy.
+        local function SnapshotStrangers(List)
+            local Copy = {}
+
+            for _, OtherPlayer in ipairs(List or {}) do
+                table.insert(Copy, {
+                    Name = tostring(OtherPlayer.Name or "?"),
+                    UserId = tonumber(OtherPlayer.UserId),
+                })
+            end
+
+            return Copy
+        end
+
         --// The hold starts: the route is parked, the fight dropped, and the
         --// reset fired. Nothing is walked or fought until it ends.
         local function BeginEvade(Now, OtherPlayer)
@@ -3279,6 +3295,8 @@ return {
             S.EvadeLiveAt = nil
             S.EvadeKicked = false
             S.EvadeKickAt = nil
+            S.EvadeStrangers = SnapshotStrangers(FindStrangers())
+            S.EvadeStrangersAt = Now
             S.FloorLifts = 0
             S.Phase = "Evade"
             EndDodge()
@@ -3328,6 +3346,8 @@ return {
             S.EvadeLiveAt = nil
             S.EvadeKicked = false
             S.EvadeKickAt = nil
+            S.EvadeStrangers = nil
+            S.EvadeStrangersAt = nil
             S.Phase = "Idle"
             --// The hold's own reset bumped the player's death counter. Taking
             --// it as read here is what keeps the restart from being treated as
@@ -3345,6 +3365,25 @@ return {
             if Was ~= "" then
                 Say("Evasion", "@" .. Was .. " left; starting again at stop #1", 5)
             end
+        end
+
+        --// The strangers went before their window ran out: the hold ends by
+        --// itself and the route starts again at stop #1. The wait they cost is
+        --// reported, with how long it was - that is the one report that says a
+        --// hold ended quietly instead of with a kick. Log When Hiding decides
+        --// whether it goes out; the leave for a hold that ran out never is a
+        --// setting.
+        local function StrangersLeft(Now)
+            local Waited = math.max(0, Now - (S.EvadeSince or Now))
+            local Who = S.EvadeStrangers or {}
+
+            S.EvadeStrangers = {}
+
+            if AICFeature.ReportHoldCleared then
+                AICFeature.ReportHoldCleared(Who, Waited)
+            end
+
+            EndEvade(Now, true)
         end
 
         --// The hold's reset, asked for once and then again only while the same
@@ -3593,7 +3632,15 @@ return {
             local Stranger = FindStranger()
 
             if not Stranger then
-                EndEvade(Now, true)
+                --// A leave asked for on the last frame is already under way.
+                --// Someone walking out now does not undo it, and a report that
+                --// says they left would describe a hold that ended with a kick
+                --// instead of quietly.
+                if S.EvadeKicked then
+                    return true
+                end
+
+                StrangersLeft(Now)
                 return true
             end
 
@@ -3672,6 +3719,14 @@ return {
 
             local _, Humanoid, RootPart = Runtime:GetCharacter()
 
+            --// Who is still on the server, kept so the report that says they
+            --// left can name them once their Player objects are gone. Read on a
+            --// slow tick rather than every frame.
+            if not S.EvadeStrangersAt or Now - S.EvadeStrangersAt >= 0.5 then
+                S.EvadeStrangers = SnapshotStrangers(FindStrangers())
+                S.EvadeStrangersAt = Now
+            end
+
             if S.EvadeStage == "Reset" then
                 local Pending = Humanoid ~= nil
                     and RootPart ~= nil
@@ -3691,7 +3746,7 @@ return {
             --// waited for: the run starts again now instead of taking a trip to
             --// a spot nobody needs it to stand on.
             if not Stranger then
-                EndEvade(Now, true)
+                StrangersLeft(Now)
                 return true
             end
 

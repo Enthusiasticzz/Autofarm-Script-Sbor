@@ -456,6 +456,11 @@ last saw it. Keep a single spot to always hide in the same place.
 - **Clear Hiding Spots** — empties the list, leaving the reset as the whole evade.
 - A save from before the list existed keeps working: its single waypoint or
   prompt becomes the first spot the first time the hold reads the list.
+- Both kinds are part of the saved profile, so they come back on a reload and
+  travel with **Export Save**: a profile handed to someone else brings its
+  hiding spots, waypoints and prompts alike. A prompt spot is a table holding a
+  name and an `X/Y/Z` position, which is why it used to be mistaken for a vector
+  on the way back in and dropped; that is fixed.
 
 #### Add A Hiding Spot
 
@@ -1048,7 +1053,7 @@ in `AutoFarmProfiles/Global.json`, so every profile and place reports to the sam
 - **Report Format** — **Event Currency** or **EXP Grind**; it chooses which two numbers the report carries (see below).
 - **EC Item Name** — the inventory item counted as event currency. Blank uses the currency the script already tracks for the current event (`Fallen Camellia` now).
 - **Time Zone** (dropdown, global) — the clock every report is stamped with: **US Eastern** (default), US Central, US Mountain, US Arizona, US Pacific, Alaska, Hawaii, UTC, UK, Central Europe or Australia Eastern. Daylight saving follows the calendar by itself: US Eastern prints `EDT` all summer and goes back to `EST` from the first Sunday in November, Arizona and Hawaii never change, and the southern zones switch the other way round. Only the clock is shown, never the date.
-- **Log When Hiding** (on, global) — posts a **waiting** report when someone joins and **Pause For Strangers** starts hiding, naming everyone who is on the server. Off, nothing is posted when they join.
+- **Log When Hiding** (on, global) — posts a **waiting** report when someone joins and **Pause For Strangers** starts hiding, naming everyone who is on the server, and a **left** report with how long they stayed when they go before the window runs out. Off, nothing is posted for either; the leave below always is.
 - A leave caused by the hold reports whatever **Log When Hiding** says: the run ends because the strangers would not go, so the ended report names all of them (`Left because of: @a (1), @b (2)`).
 - **Send Report** — posts the report for the current session.
 - **Reset Session** — stamps a new start time and takes today's EC/Level as the starting numbers, for a new run or a new floor.
@@ -1101,6 +1106,18 @@ Account: YourName
 Floor: Floor Name (10299594856)
 Waiting on: @SneakyGuest (12345678), @Alt (87654321), @Third (11223344)
 Time: 1 Hours, 4 Minutes, 7 Seconds
+```
+
+If they go before the window runs out, the hold ends quietly and a **left** report says who it
+was and how long the hold waited on them — the route simply starts again at stop #1:
+
+```text
+# SneakyGuest Left at 04:04 PM EST
+Account: YourName
+Floor: Floor Name (10299594856)
+Hid from: @SneakyGuest (12345678)
+They stayed: 1 Minute, 42 Seconds
+Time: 1 Hours, 6 Minutes, 1 Seconds
 ```
 
 If they stay for the whole hold, the leave that follows is an **ended** report with the same
