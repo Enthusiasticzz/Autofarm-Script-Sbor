@@ -202,6 +202,19 @@ return {
                 return
             end
 
+            --// Boss Evasion (Bosses tab, Evasion section): a stranger on the
+            --// server pauses the run here, above the retreat, the duel check
+            --// and the Auto Block player check below, so what happens to them
+            --// is the hold the section asks for and not a block or a hop. It
+            --// is this high in the frame on purpose: a character being healed
+            --// or backing out of a skill used to return before anything else
+            --// could notice, and the hold would start whenever the fight
+            --// stopped rather than when the stranger walked in.
+            if AICFeature.BossEvadeStep and AICFeature.BossEvadeStep(now) then
+                AICFeature.SetFarmState("BOSS EVADE")
+                return
+            end
+
             local PlayerStats = Player:FindFirstChild("PlayerStats")
             local Sword = Character:FindFirstChild("Sword")
 

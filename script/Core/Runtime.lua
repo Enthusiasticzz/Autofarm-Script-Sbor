@@ -99,7 +99,7 @@ return {
         UIRef.FarmTab = UI:AddTab{ Name = "Farming", Description = "Waypoints, targets, combat and the rules the farm follows" }
         --// Boss route: its own tab, list and timers, apart from the farming
         --// waypoints and the profile waypoints (BossNavigator).
-        UIRef.BossTab = UI:AddTab{ Name = "Bosses", Description = "Boss stops, their timers and when a reset is taken" }
+        UIRef.BossTab = UI:AddTab{ Name = "Bosses", Description = "Boss stops, their timers, when a reset is taken and how a stranger is evaded" }
         UIRef.EspTab = UI:AddTab{ Name = "ESP", Description = "Outline players, mobs and equipped weapons in the world" }
         UIRef.MineTab = UI:AddTab{ Name = "Mining", Description = "Ore priority and the mine zones Auto Mining works in" }
         UIRef.CraftTab = UI:AddTab{ Name = "Crafting", Description = "Recipe priority, the materials kept in reserve and the tables" }
@@ -121,7 +121,12 @@ return {
         UIRef.CoreSection = UIRef.FeatureSection
         UIRef.CombatSection = UIRef.FarmTab:AddSection{ Title = "Combat" }
         UIRef.TargetSection = UIRef.FarmTab:AddSection{ Title = "Targeting" }
-        UIRef.BlockSection = UIRef.FarmTab:AddSection{ Title = "Auto Block" }
+        --// Evasion: everything about other players, on the Bosses tab rather
+        --// than beside the farming waypoints. Auto Block builds its controls
+        --// (block, leave, whitelist) into it, and BossNavigator adds the
+        --// pause-for-strangers hold at the top of the same section, so every
+        --// way out of a server is in one place.
+        UIRef.BlockSection = UIRef.BossTab:AddSection{ Title = "Evasion", Side = "Right" }
         UIRef.GatherSection = UIRef.FarmTab:AddSection{ Title = "Mob Gather" }
         --// Holds AutoRefill's booster list: which boosters reset the character
         --// when they run out.
@@ -898,6 +903,11 @@ return {
             --// with its own teleport, wait and reset timers. Kept apart from
             --// WAYPOINTS so neither route moves the other.
             Config.BOSS_ROUTE = AICConfig.NormalizeBossStops(Config.BOSS_ROUTE)
+            --// Where the pause-for-strangers hold goes (the Evasion section):
+            --// the game's waypoint number, or the spot of an interaction prompt.
+            --// On the place config like BOSS_ROUTE, because the prompt exists in
+            --// that place and nowhere else.
+            Config.BOSS_EVADE = AICConfig.NormalizeBossEvade(Config.BOSS_EVADE)
             --// Where the chosen smithing table stands, or nil for "nearest".
             --// A position, not the table's Id, which may differ per server.
             Config.SMITH_TABLE = Config.SMITH_TABLE ~= nil
@@ -1127,6 +1137,41 @@ return {
             end
 
             return Result
+        end
+
+        --// Where the pause-for-strangers hold stands: one of the game's
+        --// waypoints, or the spot an interaction prompt sits on. Both stay
+        --// optional - a hold with neither saved is the reset alone.
+        function AICConfig.NormalizeBossEvade(Evade)
+            Evade = type(Evade) == "table" and Evade or {}
+
+            local PromptPosition = Evade.PromptPosition
+
+            if typeof(PromptPosition) == "Vector3" then
+                PromptPosition = AICConfig.RoundVector3(PromptPosition)
+            elseif type(PromptPosition) == "table" then
+                PromptPosition = AICConfig.DecodeVector3(PromptPosition)
+            else
+                PromptPosition = nil
+            end
+
+            return {
+                --// 0 = no waypoint saved.
+                Waypoint = math.clamp(
+                    math.floor(tonumber(Evade.Waypoint) or 0), 0, AICConfig.MAX_BOSS_WAYPOINT
+                ),
+                --// On: the prompt is taken instead of the waypoint, because a
+                --// spot saved from the button is the door the character was
+                --// actually standing at.
+                Prompt = Evade.Prompt == true,
+                --// On: each hold picks its own waypoint out of 1..Waypoint
+                --// instead of always going to the one saved below.
+                Random = Evade.Random == true,
+                PromptPosition = PromptPosition,
+                PromptName = type(Evade.PromptName) == "string"
+                    and string.sub(Evade.PromptName:gsub("^%s*(.-)%s*$", "%1"), 1, 64)
+                    or "",
+            }
         end
 
         --// Rewrites waypoint->zone pairs after farm zones are removed or

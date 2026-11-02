@@ -1,6 +1,6 @@
 # AIC usage guide
 
-How to use Gilded Archives (AutoFarmV3, `v3.92`) once it is loaded. The
+How to use Gilded Archives (AutoFarmV3, `v3.93`) once it is loaded. The
 loadstring and what the loader fetches are in [README.md](README.md); this file is
 about the features and about why the farm sometimes appears to do nothing.
 
@@ -158,8 +158,9 @@ the code with that exact label; defaults and ranges come from the profile schema
 ### Farming tab
 
 The Farming tab is where the farm loop is switched on and told what to fight, split into
-Core, Combat, Targeting, Auto Block, Mob Gather and Booster Reset sections. Every toggle here
-is saved in the active profile unless it is marked global.
+Core, Combat, Targeting, Mob Gather and Booster Reset sections. Every toggle here is saved in
+the active profile unless it is marked global. The **Auto Block** controls live on the Bosses
+tab's **Evasion** section now, beside the hold that hides the run from strangers.
 
 #### Core
 
@@ -181,7 +182,8 @@ The Core section ends with three sliders that belong to the combat loop:
 
 #### Combat
 
-How the character fights once Auto Farm has a target. Auto Block has its own section below.
+How the character fights once Auto Farm has a target. Auto Block has its own section on the
+Bosses tab (**Evasion**).
 
 - **Safe Combat** (on) — fights from outside enemy weapon reach, backing off and circling. Off, it fights up close at the distance in **Close Combat Range**.
 - **Jump While Fighting** (off) — jumps over something actually in the way while chasing a target. Off, the character keeps its feet on the ground for the whole fight: a crowd of mobs pressed against it used to read as low terrain, which hopped it at the fight on every frame. The waypoint route (route holes and ticked waypoints), Waypoint Loop, patrol, mining and smithing make their own jumps and are not affected.
@@ -210,31 +212,6 @@ tie-break, the retreat thresholds, the fighting distances, and two pickers for a
 
 With a farm zone picked in Profile Settings, that zone's own Zone Targets replace Enemy Priority
 while the character is inside it, so the same mobs can be fought in a different order per zone.
-
-#### Auto Block
-
-Handles players who are not on the whitelist, and the list itself. Above **Auto Block**, set apart
-by a divider, **Leave Instead Of Block** (off, global) skips the block entirely and instead closes
-the game — you drop out of the server to the Roblox app, not to another server (its help line says
-so). **Auto Block** (on) blocks strangers and leaves the server, delayed by
-**Block Delay (s)**; **Auto Confirm Block** (off), directly under it, presses Block in Roblox's
-block dialog for you so it needs no manual press — executor only, since it reads CoreGui. The
-whitelist, Whitelist Skips Safety and Leave Instead Of Block are shared by every profile and
-every place, unlike the rest of this tab.
-
-- **Leave Instead Of Block** (off, global) — instead of blocking an intruder, close the game as soon as their Block Delay runs out, plus the random pause below. The client is kicked out to the Roblox app (the connection closes and the run ends), so you are back at the home screen rather than on another server; a kick is the one thing a client script can use to get out of the game, and Roblox exposes no client API that leaves to the home screen directly, so the kick screen is what you see on the way out, with the intruder named. Nobody is added to Roblox's block list, so the same player can be met again next time.
-- **It happens once per session.** The kick is made, the farm stops on the spot and nothing is reported again — not another kick, not another report. That matters because a kicked client can sit on the disconnect screen with the executor still running: before, the farm asked to leave on every frame of that screen, which is where the burst of kicks and the stream of end reports came from. A hop that silently fails is the one case that frees the latch again, after 20 s, so a dead teleport does not freeze the run — still with no second report.
-- **Nobody on the Block Whitelist ever causes it.** Whitelisted players are already skipped by the intruder check, and Leave Instead Of Block refuses them a second time inside `LeaveGame`, so the list is who the setting leaves alone — including a whitelisted player who also sits on Roblox's block list, which a normal Auto Block would still hop for. With the setting on, that player is ignored and the status reads `IS WHITELISTED, STAYING`.
-- **Block Delay (s)** (0, 0–120) — how long a stranger may stay before being blocked (or, with Leave Instead Of Block, closing the game) and the server left. 0 acts at once; each player's delay starts the moment they join (or the first look at them, for someone already here when the script loaded). The leave itself waits it out too: a kick asked for early waits on one timer for the rest and looks at them again before closing the game, so no path can leave before the delay. A player who is no longer in the server when that timer runs out is left alone, and their delay starts over when they come back.
-- **Random Leave Delay** (on, global) — every leave the script starts on its own waits a random **2–4 s** first, so the client never drops the server on the very frame a stranger appeared. It is taken once per leave, not per ask, and the longer of it and the Block Delay still owed to the player is what runs. Covered: Leave Instead Of Block and the kick fallback, **Follower Guard's kick**, and the **Leave On Danger Group** hop. Manual exits (**Rejoin**, **Server Hop**, **Join Job ID**) and the server-age hop are your own doing and are not paused. Turn it off and only the Block Delay remains.
-- **Whitelist Skips Safety** (on, global) — players on the Block Whitelist never make Auto Block or Leave On Danger Group leave the server, even if already blocked.
-- **Block Whitelist** — the UserIds Auto Block never touches. Each entry is a row: the name on top (`@name`) and the UserId under it, or `UserId <id>` with `LOOKING UP NAME` / `NAME NOT FOUND` while Roblox has no name to give. The arrows move an entry, `✕` removes it, and the header counts how many are in the list.
-- **Add Player In Server** — dropdown of the players in this server, listed as `DisplayName (@name)  UserId`. Picking one whitelists them.
-- **User ID** — textbox for a raw UserId to whitelist.
-- **Add User ID** — adds the UserId typed above; digits only.
-- **Add Everyone Here** — whitelists every other player in the server in one press.
-- **Refresh Player List** — rebuilds the dropdown now.
-- **Clear Whitelist** — removes everyone from the Block Whitelist.
 
 #### Mob Gather
 
@@ -422,11 +399,91 @@ waypoint route and the Profile Settings waypoints never move it, and editing a
 boss stop never moves either of those. Use it for the run where you walk (or
 teleport) to a boss, fight it, and reset back to spawn before the next one.
 
+#### Evasion
+
+Everything about players who are not on the whitelist lives here: the hold that
+hides the run when one joins, the spots it can hide at, and the block controls
+Auto Block has always had.
+
+- **Pause For Strangers** (off by default, saved in the profile) — the hide. On,
+  the moment a player who is not on the **Block Whitelist** is in the server the
+  Boss Route stops where it is: the fight is dropped, the character resets
+  (`EVADING  @name  RESETTING`), then goes to the evade spot and stands there
+  while they are given a random **2–3 minutes** to leave
+  (`EVADING  @name  87s LEFT`).
+  - They leave inside that window: the route starts again at **stop #1**, from
+    wherever the body is standing (`@name left; starting again at stop #1`), and
+    the first stop's own teleport takes it from there.
+  - They are still there when the window runs out: the game is closed the same
+    way **Leave Instead Of Block** closes it, and the ask is repeated every 5 s
+    until the client is gone, so a refused kick cannot leave the character parked
+    next to them.
+  Nothing else on the farm moves while the hide runs — no waypoint, no combat, no
+  reset. It needs a running route to pause (Boss Route on, at least one stop):
+  with nothing running nothing is reset for. Switching the toggle off during a
+  hold lets go where it stands instead of restarting the run, and a stranger who
+  leaves during the reset itself is not waited on at all.
+- **Evade Waypoint #** (0, 0–30) — the game waypoint the hide teleports to. With
+  **Random Evade Waypoint** on it is the *highest* waypoint that may be picked
+  instead. 0 sends nothing, so the reset is the whole evade. Saved on the place
+  config (`BOSS_EVADE`) beside the route, not in the profile, so it follows the
+  place.
+- **Random Evade Waypoint** (off) — every hide picks its own waypoint out of
+  1 to the number above, so it does not appear in the same place twice; the pick
+  is never the waypoint the hide before it used (when there is more than one to
+  choose from). The spot line shows the range (`RANDOM  WP1-12`) and the status
+  line names the waypoint the running hold picked (`EVADING  @name  WP7`). It does
+  nothing while **Evade To Prompt** is on — a saved prompt is one fixed spot by
+  definition.
+- **Evade To Prompt** (off) — use the saved prompt position instead of the
+  waypoint. A spot saved from the button below is the door or portal the character
+  was actually standing at, which is where it has to be after a reset.
+- **Save Evade Prompt Here** — saves the prompt nearest to you (within 40 studs)
+  as the evade spot, with its name. With no prompt that close it saves where you
+  stand and names it `HERE`, so any spot can be the hide's.
+- **EVADE SPOT:  …** — what the hide will use: the prompt's name and position,
+  `WAYPOINT 12`, `RANDOM  WP1-12`, or
+  `NONE  (THE RESET IS THE WHOLE EVADE)`.
+- The teleport is read back the same way a stop's is — watched for movement, with
+  a prompt landing checked against the prompt's own position — so a send the game
+  dropped is retried instead of held at. Statuses: `EVADING  @name  RESETTING`,
+  `…  PROMPT`, `…  WP7`, `…  RESPAWNING`, `…  <n>s LEFT`, `…  STAYED  LEAVING`,
+  `EVASION OVER`.
+- The hold is one of the safety checks: Auto Farm off, it still runs (the route
+  is its own loop), and it is read before the retreat, the duel check and Auto
+  Block below.
+
+The rest of the section is Auto Block: it blocks players who are not on the
+whitelist and leaves the server, and it owns the list itself. Above **Auto
+Block**, set apart by a divider, **Leave Instead Of Block** (off, global) skips
+the block entirely and instead closes the game — you drop out of the server to
+the Roblox app, not to another server (its help line says so). **Auto Block** (on)
+blocks strangers and leaves the server, delayed by **Block Delay (s)**; **Auto
+Confirm Block** (off), directly under it, presses Block in Roblox's block dialog
+for you so it needs no manual press — executor only, since it reads CoreGui. The
+whitelist, Whitelist Skips Safety and Leave Instead Of Block are shared by every
+profile and every place, unlike the route beside them.
+
+- **Leave Instead Of Block** (off, global) — instead of blocking an intruder, close the game as soon as their Block Delay runs out, plus the random pause below. The client is kicked out to the Roblox app (the connection closes and the run ends), so you are back at the home screen rather than on another server; a kick is the one thing a client script can use to get out of the game, and Roblox exposes no client API that leaves to the home screen directly, so the kick screen is what you see on the way out, with the intruder named. Nobody is added to Roblox's block list, so the same player can be met again next time.
+- **It happens once per session.** The kick is made, the farm stops on the spot and nothing is reported again — not another kick, not another report. That matters because a kicked client can sit on the disconnect screen with the executor still running: before, the farm asked to leave on every frame of that screen, which is where the burst of kicks and the stream of end reports came from. A hop that silently fails is the one case that frees the latch again, after 20 s, so a dead teleport does not freeze the run — still with no second report.
+- **Nobody on the Block Whitelist ever causes it.** Whitelisted players are already skipped by the intruder check, and Leave Instead Of Block refuses them a second time inside `LeaveGame`, so the list is who the setting leaves alone — including a whitelisted player who also sits on Roblox's block list, which a normal Auto Block would still hop for. With the setting on, that player is ignored and the status reads `IS WHITELISTED, STAYING`.
+- **Block Delay (s)** (0, 0–120) — how long a stranger may stay before being blocked (or, with Leave Instead Of Block, closing the game) and the server left. 0 acts at once; each player's delay starts the moment they join (or the first look at them, for someone already here when the script loaded). The leave itself waits it out too: a kick asked for early waits on one timer for the rest and looks at them again before closing the game, so no path can leave before the delay. A player who is no longer in the server when that timer runs out is left alone, and their delay starts over when they come back.
+- **Random Leave Delay** (on, global) — every leave the script starts on its own waits a random **2–4 s** first, so the client never drops the server on the very frame a stranger appeared. It is taken once per leave, not per ask, and the longer of it and the Block Delay still owed to the player is what runs. Covered: Leave Instead Of Block and the kick fallback, **Follower Guard's kick**, and the **Leave On Danger Group** hop. Manual exits (**Rejoin**, **Server Hop**, **Join Job ID**) and the server-age hop are your own doing and are not paused. Turn it off and only the Block Delay remains.
+- **Whitelist Skips Safety** (on, global) — players on the Block Whitelist never make Auto Block or Leave On Danger Group leave the server, even if already blocked.
+- **Block Whitelist** — the UserIds Auto Block never touches. Each entry is a row: the name on top (`@name`) and the UserId under it, or `UserId <id>` with `LOOKING UP NAME` / `NAME NOT FOUND` while Roblox has no name to give. The arrows move an entry, `✕` removes it, and the header counts how many are in the list.
+- **Add Player In Server** — dropdown of the players in this server, listed as `DisplayName (@name)  UserId`. Picking one whitelists them.
+- **User ID** — textbox for a raw UserId to whitelist.
+- **Add User ID** — adds the UserId typed above; digits only.
+- **Add Everyone Here** — whitelists every other player in the server in one press.
+- **Refresh Player List** — rebuilds the dropdown now.
+- **Clear Whitelist** — removes everyone from the Block Whitelist.
+
 #### Boss Route
 
 - **Boss Route** (off by default) — the tab's master switch. It works with Auto
   Farm on or off; while it is on it owns movement and combat, and the safety
-  checks above it (party hold, retreat, Auto Block, server age) still run first.
+  checks above it (party hold, the Evasion hold, retreat, Auto Block, server age)
+  still run first.
 - **STATUS:  …** — what the route is doing: `STOP 2/4  PATH 3/8`,
   `STOP 2/4  WALKING`, `… FIGHT`, `… WAITING  DAMAGE TAG`,
   `… CLEARING  7s  LOSE 95 EXP`, `… CLEARING  7s  LOSE 95 EXP  RUNNING`,
@@ -1106,7 +1163,7 @@ previous file for a few minutes after a push.
 The first line in the console says which build and which source is running:
 
 ```
-[AIC] GILDED ARCHIVES v3.92  (from https://raw.githubusercontent.com/...)
+[AIC] GILDED ARCHIVES v3.93  (from https://raw.githubusercontent.com/...)
 ```
 
 If a fix looks absent, check that line first, then re-execute. To keep a build

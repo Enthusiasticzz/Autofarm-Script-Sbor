@@ -311,4 +311,111 @@ slider:Set(30)
 assert(callbacks == 2, "user changes stopped invoking callbacks")
 assert(#SmokeEnv.Errors == 0, "stub captured asynchronous handler errors: " .. table.concat(SmokeEnv.Errors, "; "))
 
+--// BossNavigator: the Evasion section is Auto Block's section (it builds its
+--// own controls into it), and the pause-for-strangers hold is built into the
+--// same section above the rest. Starting the module is what proves those
+--// controls construct at boot instead of only compiling.
+local BossNavOk, BossNavErr = xpcall(BossNavigatorModule.Start, debug.traceback, Context)
+
+if not BossNavOk then
+    error("BOSSNAVIGATOR START ERROR:\n" .. tostring(BossNavErr))
+end
+
+local boss = Context.UIRef
+assert(boss.BlockSection, "evasion section missing")
+assert(boss.EvadePauseToggle, "pause for strangers toggle missing")
+assert(boss.EvadeWaypointBox and boss.EvadePromptToggle, "evade spot controls missing")
+assert(boss.EvadePromptButton, "save evade prompt button missing")
+assert(boss.EvadeRandomToggle, "random evade waypoint toggle missing")
+assert(boss.EvadeSpotLabel, "evade spot label missing")
+assert(boss.EvadeSpotLabel.Instance.Text:find("EVADE SPOT:", 1, true), "evade spot label text missing")
+assert(boss.EvadePauseToggle:Get() == false, "pause for strangers started on")
+assert(boss.EvadePauseToggle.Row.LayoutOrder < 0, "evasion controls were not placed above the block controls")
+assert(boss.EvadeSpotLabel.Row.LayoutOrder < 0, "evade spot label was not placed with its section controls")
+
+Context.AICProfile.S.ActiveProfileName = "Saved"
+boss.EvadePauseToggle:Set(true)
+assert(Context.Feature.PauseForStrangers.Enabled == true, "pause toggle did not turn the feature on")
+assert(#SmokeEnv.Errors == 0, "pause toggle raised: " .. table.concat(SmokeEnv.Errors, "; "))
+boss.EvadePauseToggle:Set(false)
+assert(Context.Feature.PauseForStrangers.Enabled == false, "pause toggle did not turn the feature off")
+assert(#SmokeEnv.Errors == 0, "pause toggle raised: " .. table.concat(SmokeEnv.Errors, "; "))
+
+--// The spot is saved on the place config, so a reconnect to the same place has
+--// it again. A waypoint number written in the box is normalized and stored.
+boss.EvadeWaypointBox:Set("12")
+assert(#SmokeEnv.Errors == 0, "evade waypoint box raised: " .. table.concat(SmokeEnv.Errors, "; "))
+local livePlace = Context.Runtime:GetPlaceConfig()
+assert(type(livePlace) == "table", "no place config after the evade waypoint was saved")
+assert(livePlace.BOSS_EVADE and livePlace.BOSS_EVADE.Waypoint == 12, "evade waypoint was not saved on the place config")
+
+--// The random pick is saved beside it, and read back by the normalizer.
+boss.EvadeRandomToggle:Set(true)
+assert(#SmokeEnv.Errors == 0, "random evade toggle raised: " .. table.concat(SmokeEnv.Errors, "; "))
+assert(boss.EvadeRandomToggle:Get() == true, "random evade toggle did not stay on")
+assert(livePlace.BOSS_EVADE.Random == true, "random evade waypoint was not saved on the place config")
+assert(boss.EvadeSpotLabel.Instance.Text:find("RANDOM", 1, true), "evade spot label did not report the random pick")
+assert(Context.AICConfig.NormalizeBossEvade(livePlace.BOSS_EVADE).Random == true, "normalizer dropped the random flag")
+boss.EvadeRandomToggle:Set(false)
+assert(livePlace.BOSS_EVADE.Random == false, "random evade waypoint was not switched back off")
+assert(Context.AICConfig.NormalizeBossEvade(nil).Random == false, "random evade default")
+
+--// Read it back the way the module does: the live place config's BOSS_EVADE.
+assert(type(Context.AICConfig.NormalizeBossEvade) == "function", "boss evade normalizer missing")
+local normalized = Context.AICConfig.NormalizeBossEvade{ Waypoint = 12, Prompt = true, PromptName = " Door " }
+assert(normalized.Waypoint == 12 and normalized.Prompt == true and normalized.PromptName == "Door", "boss evade normalizer")
+assert(Context.AICConfig.NormalizeBossEvade(nil).Waypoint == 0, "boss evade normalizer default")
+
+--// The hold only acts for a running route with the toggle on, and it lets go
+--// the frame the stranger does. No character is needed for either: the hold
+--// parks in RESPAWNING and still ends on its own.
+local players = game:GetService("Players")
+local realGetPlayers = players.GetPlayers
+local intruder = { Name = "Intruder", UserId = 2, Parent = players }
+local now = 0
+
+Context.Feature.PauseForStrangers.Enabled = false
+Context.Feature.BossRoute.Enabled = false
+assert(Context.AICFeature.BossEvadeStep(now) == false, "hold ran with the route off")
+
+--// A route with no stops is not a run: nothing may be reset for it.
+Context.Feature.BossRoute.Enabled = true
+players.GetPlayers = function() return { Context.Player, intruder } end
+Context.Feature.PauseForStrangers.Enabled = true
+assert(Context.AICFeature.BossEvadeStep(now) == false, "hold ran with no boss stops")
+Context.Feature.PauseForStrangers.Enabled = false
+
+--// One stop, so the hold has a run to pause and restart.
+local stopPlace = Context.Runtime:GetPlaceConfig()
+stopPlace.BOSS_ROUTE = Context.AICConfig.NormalizeBossStops{
+    { Label = "Probe Stop", Position = Vector3.new(0, 0, 0) },
+}
+assert(Context.AICFeature.BossEvadeStep(now) == false, "hold ran with pause for strangers off")
+
+Context.Feature.PauseForStrangers.Enabled = true
+assert(Context.AICFeature.BossEvadeStep(now) == true, "hold did not take the frame for a stranger")
+assert(boss.BossStatusLabel.Instance.Text:find("EVADING", 1, true), "hold did not report the stranger")
+assert(#SmokeEnv.Errors == 0, "hold raised: " .. table.concat(SmokeEnv.Errors, "; "))
+
+--// They left inside the window: the run starts again at the first boss.
+players.GetPlayers = function() return { Context.Player } end
+assert(Context.AICFeature.BossEvadeStep(now) == true, "hold did not take the frame it ended on")
+assert(boss.BossStatusLabel.Instance.Text:find("STOP 1/1", 1, true), "hold did not restart at stop #1: " .. boss.BossStatusLabel.Instance.Text)
+assert(Context.AICFeature.BossEvadeStep(now) == false, "hold kept the frame after ending")
+assert(#SmokeEnv.Errors == 0, "hold release raised: " .. table.concat(SmokeEnv.Errors, "; "))
+
+--// Switched off mid-hold: let go where it stands, never restarted from there.
+players.GetPlayers = function() return { Context.Player, intruder } end
+assert(Context.AICFeature.BossEvadeStep(now) == true, "hold did not start again for a stranger")
+--// Through the control, so the toggle's own value moves with the flag.
+boss.EvadePauseToggle:Set(true)
+boss.EvadePauseToggle:Set(false)
+assert(not boss.BossStatusLabel.Instance.Text:find("EVADING", 1, true), "switching the toggle off left the hold running")
+assert(Context.AICFeature.BossEvadeStep(now) == false, "switching the toggle off left the frame to the hold")
+assert(#SmokeEnv.Errors == 0, "hold cancel raised: " .. table.concat(SmokeEnv.Errors, "; "))
+
+players.GetPlayers = realGetPlayers
+Context.Feature.PauseForStrangers.Enabled = false
+Context.Feature.BossRoute.Enabled = false
+
 print("BOOT PROBE PASSED")

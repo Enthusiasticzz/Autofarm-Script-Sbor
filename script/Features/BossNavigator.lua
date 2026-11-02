@@ -61,6 +61,7 @@ return {
     Start = function(Context)
         local Runtime = Context.Runtime
         local Player = Context.Player
+        local Players = Context.Services.Players
         local Replicated = Context.Services.Replicated
         local AICCombatUtils = Context.AICCombatUtils
         local CONFIG = Context.CONFIG
@@ -254,6 +255,22 @@ return {
         local STATUS_INTERVAL = 0.5
         --// Longest a stop name may be, for the list.
         local MAX_LABEL_LENGTH = 32
+        --// Pause For Strangers: how long a stranger is given to leave, in
+        --// seconds. Picked at random inside the window once per hold, so a run
+        --// that pauses on every join never leaves on a rhythm; the whole window
+        --// is theirs to go before the game is closed.
+        local EVADE_WAIT_MIN = 120
+        local EVADE_WAIT_MAX = 180
+        --// A reset the game ignores at the start of a hold is asked for again
+        --// this long after the last ask, the same number of times the route's
+        --// own resets get (RESET_RETRIES).
+        local EVADE_KICK_RETRY = 5
+        local EVADE_DEAD_SETTLE = 20
+        local EVADE_RESET_RETRY_DELAY = 3
+        --// A reset that has not landed in this long is not waited for any
+        --// further: the hold runs where the body is, which is still standing
+        --// still, out of the fight.
+        local EVADE_RESET_GIVE_UP = 12
 
         local Feature = {
             Name = "BossNavigator",
@@ -405,6 +422,46 @@ return {
                 LastProgressAt = nil,
                 --// Per visit, for the status line.
                 Resets = 0,
+                --// Pause For Strangers (Evasion section). Evading is the whole
+                --// hold: the route is parked while it runs and every frame
+                --// belongs to EvadeStep, wherever the farm called it from.
+                Evading = false,
+                --// Who the hold is for, for the status line and the leave.
+                EvadeName = "",
+                --// "Reset", "Travel" or "Hold".
+                EvadeStage = nil,
+                EvadeSince = nil,
+                --// When the hold ends, and the window it was given (shown at the
+                --// start so the wait is never a mystery).
+                EvadeWaitUntil = nil,
+                EvadeWaitTotal = 0,
+                --// The body the hold's reset fired on, when, and where it stood,
+                --// so a reset the game dropped is asked for again and a
+                --// respawned body is never killed a second time.
+                EvadeResetHumanoid = nil,
+                EvadeResetAt = nil,
+                EvadeResetRetries = 0,
+                EvadeResetPosition = nil,
+                --// The travel to the evade spot: what has been sent, the body it
+                --// was sent from and when (a waypoint landing is watched by
+                --// movement), and the prompt landing's check.
+                EvadeSent = false,
+                EvadeTeleportFrom = nil,
+                EvadeTeleportAt = nil,
+                EvadePromptCheckAt = nil,
+                EvadePromptTarget = nil,
+                --// When the body was first standing after the hold's reset. The
+                --// travel waits RESPAWN_SETTLE from here: the game drops a
+                --// TeleportEvent fired on the respawn frame, and a waypoint
+                --// teleport that never went out would leave the character at
+                --// spawn instead of the saved spot.
+                EvadeLiveAt = nil,
+                --// The waypoint the last hold picked with Random Evade Waypoint
+                --// on. Kept across holds on purpose: the next pick steps off it
+                --// rather than hiding in the same place twice.
+                EvadePick = nil,
+                --// The leave was asked for once the window ran out.
+                EvadeKicked = false,
             },
         }
 
@@ -1201,7 +1258,16 @@ return {
             S.FleeFromSpeed = nil
         end
 
+        --// Defined with the rest of the hold, further down: a stop of the route
+        --// has to be able to end one that is running.
+        local EndEvade
+
         local function StopRoute(StatusText)
+            if S.Evading and EndEvade then
+                --// Never restarts: the caller is switching the route off.
+                EndEvade(os.clock(), false)
+            end
+
             S.Phase = "Idle"
             S.ReturnKill = false
             S.ReturnMissAt = nil
@@ -1445,8 +1511,13 @@ return {
                 return false
             end
 
-            --// Already recovering from it, or nothing left to walk again.
-            if S.Phase == "Recover" or S.Phase == "Done" or not CurrentStop() then
+            --// Already recovering from it, or nothing left to walk again. A
+            --// hold of Pause For Strangers is parked on purpose and its reset
+            --// has already been counted on its own: it is not a death to walk
+            --// back from.
+            if S.Phase == "Recover" or S.Phase == "Done" or S.Phase == "Evade"
+                or not CurrentStop()
+            then
                 return false
             end
 
@@ -2991,7 +3062,520 @@ return {
             end
         end
 
+        ------------------------------------------------------------------------
+        --// Pause For Strangers (Evasion section)
+        --//
+        --// A stranger on the server stops the run instead of being blocked or
+        --// hopped from: the character resets at once, goes to the spot saved in
+        --// the section (a prompt or one of the game's waypoints), and stands
+        --// there while they are given a random 2-3 minutes to leave. If they go
+        --// the route starts again at stop #1; if they stay the game is closed
+        --// through Auto Block's leave, so the client is out either way.
+        ------------------------------------------------------------------------
+
+        --// Where the hold stands, saved on the place config (BOSS_EVADE) beside
+        --// the route. Made up when a save has none, so the section always has
+        --// something to write to.
+        local function GetEvadeConfig()
+            local PlaceConfig = Runtime:GetPlaceConfig()
+
+            if not PlaceConfig then
+                return { Waypoint = 0, Prompt = false, Random = false, PromptName = "" }
+            end
+
+            if type(PlaceConfig.BOSS_EVADE) ~= "table" then
+                PlaceConfig.BOSS_EVADE = AICConfig.NormalizeBossEvade(nil)
+            end
+
+            return PlaceConfig.BOSS_EVADE
+        end
+
+        --// Whether a player is a stranger to the hold: yourself and anyone on
+        --// the Block Whitelist are not. One list decides who is safe for Auto
+        --// Block and for here, so the two can never disagree about it.
+        local function IsStranger(OtherPlayer)
+            if not OtherPlayer or OtherPlayer == Player then
+                return false
+            end
+
+            if AICFeature.IsWhitelisted and AICFeature.IsWhitelisted(OtherPlayer.UserId) then
+                return false
+            end
+
+            return true
+        end
+
+        --// The first stranger on the server. Someone already there when the
+        --// toggle was switched on counts the same as one who just walked in:
+        --// the point is not to be seen, and whether the character was standing
+        --// next to them when they arrived changes nothing about that.
+        local function FindStranger()
+            for _, OtherPlayer in ipairs(Players:GetPlayers()) do
+                if IsStranger(OtherPlayer) then
+                    return OtherPlayer
+                end
+            end
+
+            return nil
+        end
+
+        --// The hold starts: the route is parked, the fight dropped, and the
+        --// reset fired. Nothing is walked or fought until it ends.
+        local function BeginEvade(Now, OtherPlayer)
+            S.Evading = true
+            S.EvadeName = tostring(OtherPlayer.Name)
+            S.EvadeStage = "Reset"
+            S.EvadeSince = Now
+            S.EvadeWaitUntil = nil
+            S.EvadeWaitTotal = 0
+            S.EvadeResetHumanoid = nil
+            S.EvadeResetAt = nil
+            S.EvadeResetRetries = 0
+            S.EvadeResetPosition = nil
+            S.EvadeSent = false
+            S.EvadeTeleportFrom = nil
+            S.EvadeTeleportAt = nil
+            S.EvadePromptCheckAt = nil
+            S.EvadePromptTarget = nil
+            S.EvadeLiveAt = nil
+            S.EvadeKicked = false
+            S.EvadeKickAt = nil
+            S.FloorLifts = 0
+            S.Phase = "Evade"
+            EndDodge()
+            StopFlee()
+            AICCombat.S.ClosestTarget = nil
+            S.LastTarget = nil
+            S.TargetSeenAt = nil
+            ClearKillClock()
+            ResetWalk()
+            SetStatus("EVADING  @" .. S.EvadeName .. "  RESETTING")
+            Say("Evasion", "Pause For Strangers: @" .. S.EvadeName .. " is here; resetting", 5)
+        end
+
+        --// The hold is over: the stranger went (Restart true), or the section
+        --// was switched off. A restart starts the route again at stop #1, from
+        --// wherever the character is standing - the first stop's own teleport
+        --// takes it from there.
+        EndEvade = function(Now, Restart)
+            if not S.Evading then
+                return
+            end
+
+            local Was = S.EvadeName
+
+            S.Evading = false
+            S.EvadeName = ""
+            S.EvadeStage = nil
+            S.EvadeSince = nil
+            S.EvadeWaitUntil = nil
+            S.EvadeWaitTotal = 0
+            S.EvadeResetHumanoid = nil
+            S.EvadeResetAt = nil
+            S.EvadeResetRetries = 0
+            S.EvadeResetPosition = nil
+            S.EvadeSent = false
+            S.EvadeTeleportFrom = nil
+            S.EvadeTeleportAt = nil
+            S.EvadePromptCheckAt = nil
+            S.EvadePromptTarget = nil
+            S.EvadeLiveAt = nil
+            S.EvadeKicked = false
+            S.EvadeKickAt = nil
+            S.Phase = "Idle"
+            --// The hold's own reset bumped the player's death counter. Taking
+            --// it as read here is what keeps the restart from being treated as
+            --// a death the route has to walk back from.
+            SyncDeathMark()
+
+            if not (Restart and IsEnabled() and CurrentStop()) then
+                SetStatus("EVASION OVER")
+                return
+            end
+
+            S.Index = 1
+            BeginStop(Now)
+
+            if Was ~= "" then
+                Say("Evasion", "@" .. Was .. " left; starting again at stop #1", 5)
+            end
+        end
+
+        --// The hold's reset, asked for once and then again only while the same
+        --// body is still alive and still standing where it was reset: a body
+        --// that came back is the reset landing, never a reason to kill it again.
+        --// True while the reset is still owed or still in flight.
+        local function EvadeResetStep(Now, Humanoid, RootPart)
+            --// A different body: the reset landed and the character is back.
+            if S.EvadeResetHumanoid and Humanoid ~= S.EvadeResetHumanoid then
+                S.EvadeResetHumanoid = nil
+                return false
+            end
+
+            if (tonumber(Humanoid.Health) or 0) <= 0 then
+                return true
+            end
+
+            Humanoid:Move(Vector3.zero)
+
+            --// The game revived the body somewhere else rather than replacing
+            --// it (a scripted respawn): the reset landed too, and the travel
+            --// starts from where it now stands.
+            local StayedPut = not S.EvadeResetPosition
+                or (RootPart.Position - S.EvadeResetPosition).Magnitude <= RESET_STAY_DISTANCE
+
+            if S.EvadeResetHumanoid and not StayedPut then
+                S.EvadeResetHumanoid = nil
+                return false
+            end
+
+            --// Not asked yet: this is the reset the hold starts with.
+            if not S.EvadeResetHumanoid then
+                S.EvadeResetHumanoid = Humanoid
+                S.EvadeResetAt = Now
+                S.EvadeResetPosition = RootPart.Position
+                --// This reset is the script's own: its death counter bump must
+                --// not restart the stop the route was on.
+                S.OwnDeaths = (S.OwnDeaths or 0) + 1
+                S.OwnDeathAt = Now
+                Humanoid.Health = 0
+                return true
+            end
+
+            --// The same body, still standing there: the game dropped it. Asked
+            --// again a couple of times, then the hold runs where it is rather
+            --// than standing at the corpse of a reset that never happened.
+            if Now - (S.EvadeResetAt or Now) >= EVADE_RESET_RETRY_DELAY
+                and (S.EvadeResetRetries or 0) < RESET_RETRIES
+            then
+                S.EvadeResetRetries = (S.EvadeResetRetries or 0) + 1
+                S.EvadeResetAt = Now
+                Humanoid.Health = 0
+                return true
+            end
+
+            if Now - (S.EvadeSince or Now) >= EVADE_RESET_GIVE_UP then
+                S.EvadeResetHumanoid = nil
+                return false
+            end
+
+            return true
+        end
+
+        --// The travel to the evade spot: the saved prompt first (the door or
+        --// portal the spot is actually behind), then the game's waypoint, and
+        --// neither saved is a hold where the reset left the character. The
+        --// landing is read back the same way a stop's is - a waypoint watched
+        --// for movement, a prompt checked against where it meant to land - so a
+        --// send the game dropped is not taken for one that worked. False means
+        --// the travel is over.
+        local function EvadeTravelStep(Now, Humanoid, RootPart)
+            if S.EvadeSent then
+                --// A prompt landing, read once the drop has settled.
+                if S.EvadePromptCheckAt then
+                    if Now < S.EvadePromptCheckAt then
+                        Humanoid:Move(Vector3.zero)
+                        return true
+                    end
+
+                    S.EvadePromptCheckAt = nil
+
+                    local Target = S.EvadePromptTarget
+                    S.EvadePromptTarget = nil
+                    local Depth = GetFloorOverlap(RootPart)
+
+                    --// Landed inside the floor: lifted out and looked at again
+                    --// once it has dropped back onto the surface.
+                    if Depth and Depth >= FLOOR_BURIED
+                        and LiftFromFloor(Humanoid, RootPart, Depth)
+                    then
+                        S.EvadePromptCheckAt = Now + PROMPT_RECHECK
+                        S.EvadePromptTarget = Target
+                        Humanoid:Move(Vector3.zero)
+                        return true
+                    end
+
+                    local Flat = Target
+                        and AICCombatUtils.GetHorizontalDistance(Target, RootPart.Position)
+                        or 0
+
+                    if Flat > PROMPT_ARRIVAL then
+                        Say("Evasion", string.format(
+                            "Evade prompt landed %.0f studs away; holding here", Flat
+                        ), 4)
+                    end
+
+                    return false
+                end
+
+                --// A waypoint landing, watched for the whole window: the frame
+                --// the body moves the travel is over.
+                if S.EvadeTeleportFrom then
+                    local Window = TELEPORT_LAND_WINDOW
+
+                    if (RootPart.Position - S.EvadeTeleportFrom).Magnitude < TELEPORT_LAND_DISTANCE
+                        and Now - (S.EvadeTeleportAt or Now) < Window
+                    then
+                        Humanoid:Move(Vector3.zero)
+                        return true
+                    end
+
+                    S.EvadeTeleportFrom = nil
+                    S.EvadeTeleportAt = nil
+
+                    --// The landing point can sit under a floor plane: lifted
+                    --// out before the hold, so the character is not standing in
+                    --// the ground for the whole wait.
+                    if FixLandedFloor(Humanoid, RootPart) then
+                        Humanoid:Move(Vector3.zero)
+                        return true
+                    end
+
+                    return false
+                end
+
+                return false
+            end
+
+            --// A body that has just come back needs a moment before the game
+            --// will move it; a teleport fired on the respawn frame is dropped.
+            if not S.EvadeLiveAt then
+                S.EvadeLiveAt = Now
+            end
+
+            if Now - S.EvadeLiveAt < RESPAWN_SETTLE then
+                Humanoid:Move(Vector3.zero)
+                return true
+            end
+
+            S.EvadeSent = true
+
+            --// The teleport is the travel, so nothing is pressed on the prompt
+            --// it lands on - the same mute a prompt travel to a stop sets.
+            if Runtime.MuteInteract then
+                Runtime:MuteInteract(PROMPT_INTERACT_MUTE)
+            end
+
+            local Evade = GetEvadeConfig()
+            local PromptPosition = (Evade.Prompt and Evade.PromptPosition) or nil
+
+            if PromptPosition then
+                if TeleportToPoint(PromptPosition) then
+                    S.EvadePromptTarget = PromptPosition
+                    S.EvadePromptCheckAt = Now + PROMPT_WAIT
+                    SetStatus("EVADING  @" .. S.EvadeName .. "  PROMPT")
+                    return true
+                end
+
+                return false
+            end
+
+            local Waypoint = tonumber(Evade.Waypoint) or 0
+
+            --// Random Evade Waypoint: the number saved is the highest one the
+            --// hold may pick, and a pick is never the same waypoint as the hold
+            --// before it - the point of hiding somewhere else is not to land
+            --// where a stranger last saw the character. Picked once per hold:
+            --// this block runs on the frame the send goes out, which is the
+            --// only frame it runs on (EvadeSent is set above).
+            local PickMax = math.floor(Waypoint)
+
+            if Evade.Random and PickMax > 1 then
+                local Pick = math.random(1, PickMax)
+
+                if Pick == S.EvadePick then
+                    Pick = (Pick % PickMax) + 1
+                end
+
+                S.EvadePick = Pick
+                Waypoint = Pick
+            end
+
+            if Waypoint > 0 then
+                S.EvadeTeleportFrom = RootPart.Position
+                S.EvadeTeleportAt = Now
+
+                if TeleportToWaypoint(Waypoint) then
+                    SetStatus(string.format("EVADING  @%s  WP%d", S.EvadeName, Waypoint))
+                    return true
+                end
+
+                --// Nothing was sent, so there is no landing to watch.
+                S.EvadeTeleportFrom = nil
+                S.EvadeTeleportAt = nil
+            end
+
+            --// Nowhere saved: the reset was the whole evade.
+            return false
+        end
+
+        --// The stranger stayed the whole window: Auto Block's leave reports and
+        --// then closes the game, with the same random pause every other leave
+        --// takes. The ask is repeated on a slow timer - a leave the game
+        --// refuses, or one that never lands, must not end with the character
+        --// parked here while the stranger is still on the server.
+        local function AskToLeave(Now, Stranger)
+            S.EvadeKicked = true
+            S.EvadeKickAt = Now
+            SetStatus("EVADING  @" .. S.EvadeName .. "  STAYED  LEAVING")
+
+            if AICFeature.LeaveGame then
+                AICFeature.LeaveGame("Boss Evasion: a stranger stayed for the whole hold", Stranger)
+            end
+        end
+
+        --// The wait itself. Standing still, out of the fight, counting down;
+        --// the stranger leaving ends it and a stranger still there when the
+        --// window runs out closes the game.
+        local function EvadeHoldStep(Now, Humanoid, RootPart)
+            if Humanoid and RootPart and (tonumber(Humanoid.Health) or 0) > 0 then
+                Humanoid:Move(Vector3.zero)
+                Humanoid.AutoRotate = true
+            end
+
+            local Stranger = FindStranger()
+
+            if not Stranger then
+                EndEvade(Now, true)
+                return true
+            end
+
+            if S.EvadeKicked then
+                if Now - (S.EvadeKickAt or Now) >= EVADE_KICK_RETRY then
+                    AskToLeave(Now, Stranger)
+                end
+
+                return true
+            end
+
+            if not S.EvadeWaitUntil then
+                S.EvadeWaitTotal = math.random(EVADE_WAIT_MIN, EVADE_WAIT_MAX)
+                S.EvadeWaitUntil = Now + S.EvadeWaitTotal
+                Say("Evasion", string.format(
+                    "Holding for @%s: giving them %ds to leave",
+                    S.EvadeName,
+                    S.EvadeWaitTotal
+                ), 5)
+            end
+
+            if Now < S.EvadeWaitUntil then
+                SetStatus(string.format(
+                    "EVADING  @%s  %ds LEFT",
+                    S.EvadeName,
+                    math.ceil(S.EvadeWaitUntil - Now)
+                ))
+                return true
+            end
+
+            --// The whole window went by and they are still here.
+            Say("Evasion", "@" .. S.EvadeName .. " stayed for the whole hold; closing the game", 6)
+            AskToLeave(Now, Stranger)
+
+            return true
+        end
+
+        --// One frame of the hold. True means the frame is the hold's: nothing
+        --// else on the farm may walk, fight or reset while it runs. Gated by
+        --// the section's own toggle and by the route, which is what there is to
+        --// pause - with the route off nothing is paused and nothing restarts.
+        local function EvadeStep(Now)
+            if not IsEnabled() then
+                return false
+            end
+
+            if not (FeatureState.PauseForStrangers
+                and FeatureState.PauseForStrangers.Enabled == true)
+            then
+                --// Switched off from outside the toggle (a profile load sets
+                --// the flag without its callback): the hold is let go rather
+                --// than left parked with the route in its phase.
+                if S.Evading then
+                    EndEvade(Now, true)
+                    return true
+                end
+
+                return false
+            end
+
+            local Stranger = FindStranger()
+
+            if not S.Evading then
+                if not Stranger then
+                    return false
+                end
+
+                --// A route with no stops is not a run: resetting for it would
+                --// cost a death and pause nothing.
+                if not CurrentStop() then
+                    return false
+                end
+
+                BeginEvade(Now, Stranger)
+            end
+
+            local _, Humanoid, RootPart = Runtime:GetCharacter()
+
+            if S.EvadeStage == "Reset" then
+                local Pending = Humanoid ~= nil
+                    and RootPart ~= nil
+                    and (tonumber(Humanoid.Health) or 0) > 0
+                    and EvadeResetStep(Now, Humanoid, RootPart)
+
+                if Pending then
+                    SetStatus("EVADING  @" .. S.EvadeName .. "  RESETTING")
+                    return true
+                end
+
+                S.EvadeStage = "Travel"
+                S.EvadeResetHumanoid = nil
+            end
+
+            --// The reset has landed. A stranger who left while it did is not
+            --// waited for: the run starts again now instead of taking a trip to
+            --// a spot nobody needs it to stand on.
+            if not Stranger then
+                EndEvade(Now, true)
+                return true
+            end
+
+            if not Humanoid or not RootPart or (tonumber(Humanoid.Health) or 0) <= 0 then
+                if S.EvadeStage == "Travel" then
+                    --// A body that never comes back must not park the hold for
+                    --// good: past a normal respawn the countdown starts where
+                    --// it lies, so a stranger who stays still gets the leave
+                    --// the section promises.
+                    if Now - (S.EvadeSince or Now) < EVADE_DEAD_SETTLE then
+                        SetStatus("EVADING  @" .. S.EvadeName .. "  RESPAWNING")
+                        return true
+                    end
+
+                    S.EvadeStage = "Hold"
+                    S.EvadeSent = false
+                end
+
+                return EvadeHoldStep(Now, Humanoid, RootPart)
+            end
+
+            if S.EvadeStage == "Travel" then
+                if EvadeTravelStep(Now, Humanoid, RootPart) then
+                    return true
+                end
+
+                S.EvadeStage = "Hold"
+                S.EvadeSent = false
+            end
+
+            return EvadeHoldStep(Now, Humanoid, RootPart)
+        end
+
         local function Step(Now)
+            --// The hold is checked before everything else: while it runs the
+            --// route does nothing at all, and a stranger who is already there
+            --// stops the run on the frame the toggle is read.
+            if EvadeStep(Now) then
+                return true
+            end
+
             if not IsEnabled() then
                 return false
             end
@@ -3066,6 +3650,13 @@ return {
             return Step(Now)
         end
 
+        --// The hold on its own. Auto Farm calls this high in its frame, above
+        --// the retreat and the Auto Block player check, so a stranger pauses
+        --// the run instead of being blocked or hopped from.
+        AICFeature.BossEvadeStep = function(Now)
+            return EvadeStep(Now)
+        end
+
         --// The stop's boss is down but the route has not acted on it yet: the
         --// kill was stamped, or the target being fought is no longer alive.
         --// Auto Farm's health retreat hands the frame back every frame while
@@ -3098,6 +3689,12 @@ return {
                 return false
             end
 
+            --// The hold runs while the character is down too, and this is the
+            --// only frame it gets while dead or loading.
+            if EvadeStep(Now) then
+                return true
+            end
+
             if WatchDeath(Now) then
                 return true
             end
@@ -3117,6 +3714,10 @@ return {
 
         --// A profile load brings another place's stops with it.
         AICFeature.ResetBossRoute = function()
+            if S.Evading and EndEvade then
+                EndEvade(os.clock(), false)
+            end
+
             EndDodge()
             S.HpAt = nil
             S.HpBase = nil
@@ -3960,6 +4561,228 @@ return {
             PathRemove(self, Label)
             Commit("PATH POINT REMOVED #" .. tostring(Index))
         end
+
+        ------------------------------------------------------------------------
+        --// Evasion: the pause-for-strangers hold
+        ------------------------------------------------------------------------
+
+        --// Auto Block builds the rest of this section - block, leave, the
+        --// whitelist - and this module starts after it, so these rows would land
+        --// at the bottom of a section fifteen rows deep. They read first
+        --// instead: a row is laid out by its LayoutOrder, and a negative one
+        --// sorts above everything already in the section.
+        local EvadeRows = {}
+
+        --// A control is a table with its row in it; a divider is the row itself.
+        --// Read by type, never by indexing: a Row that does not exist on an
+        --// Instance is an error, not a nil.
+        local function EvadeRow(Component)
+            local Row = type(Component) == "table" and Component.Row or Component
+
+            if typeof(Row) == "Instance" then
+                table.insert(EvadeRows, Row)
+            end
+
+            return Component
+        end
+
+        --// The saved spot, as the section reports it. A prompt the button found
+        --// is named; one saved where the player stood says HERE.
+        local function RefreshEvadeUI()
+            local Evade = GetEvadeConfig()
+            local Where = "NONE  (THE RESET IS THE WHOLE EVADE)"
+
+            if Evade.Prompt and Evade.PromptPosition then
+                Where = string.format(
+                    "%s  (%.0f, %.0f, %.0f)",
+                    Evade.PromptName ~= "" and Evade.PromptName or "PROMPT",
+                    Evade.PromptPosition.X,
+                    Evade.PromptPosition.Y,
+                    Evade.PromptPosition.Z
+                )
+            elseif (tonumber(Evade.Waypoint) or 0) > 0 then
+                Where = string.format("WAYPOINT %d", Evade.Waypoint)
+
+                if Evade.Random then
+                    --// The pick itself is on the status line while the hold
+                    --// runs (`EVADING  @name  WP7`); this says the range.
+                    Where = string.format("RANDOM  WP1-%d", Evade.Waypoint)
+                end
+            end
+
+            if UIRef.EvadeSpotLabel then
+                UIRef.EvadeSpotLabel:Set("EVADE SPOT:  " .. Where)
+            end
+
+            if UIRef.EvadeWaypointBox then
+                UIRef.EvadeWaypointBox:Set(tostring(Evade.Waypoint or 0), true)
+            end
+
+            if UIRef.EvadePromptToggle then
+                UIRef.EvadePromptToggle:Set(Evade.Prompt == true, true)
+            end
+
+            if UIRef.EvadeRandomToggle then
+                UIRef.EvadeRandomToggle:Set(Evade.Random == true, true)
+            end
+        end
+
+        if UIRef.BlockSection then
+            local EvadeSection = UIRef.BlockSection
+
+            EvadeRow(EvadeSection:AddDivider())
+
+            UIRef.EvadePauseToggle = AICUI.BindFeatureToggle(
+                "PauseForStrangers",
+                "Pause For Strangers",
+                function(Enabled)
+                    if not Enabled and S.Evading then
+                        --// Switched off in the middle of a hold: the run is
+                        --// let go where it stands, never restarted from here.
+                        EndEvade(os.clock(), false)
+                        SetStatus("PAUSE FOR STRANGERS OFF")
+                        return
+                    end
+
+                    SetStatus(Enabled
+                        and "PAUSE FOR STRANGERS ON"
+                        or "PAUSE FOR STRANGERS OFF")
+                end,
+                EvadeSection
+            )
+            EvadeRow(UIRef.EvadePauseToggle)
+
+            EvadeSection:AddNote("On: a stranger (anyone off the Block Whitelist) stops the run at once - reset, go to the evade spot, and wait 2-3 minutes for them to leave")
+            EvadeSection:AddNote("They leave: the route starts again at stop #1. They stay: the game is closed, the same way Leave Instead Of Block closes it")
+
+            UIRef.EvadeWaypointBox = EvadeSection:AddTextBox{
+                Name = "Evade Waypoint #",
+                Default = "",
+                Inline = true,
+                Callback = function(Value)
+                    local Number = tonumber(Value)
+
+                    if not Number or Number < 0 then
+                        SetStatus("INVALID VALUE")
+                        RefreshEvadeUI()
+                        return
+                    end
+
+                    if not CanEdit("DEFAULT PLACE_CONFIG IS READ-ONLY") then
+                        RefreshEvadeUI()
+                        return
+                    end
+
+                    local Evade = GetEvadeConfig()
+                    Evade.Waypoint = math.clamp(
+                        math.floor(Number), 0, AICConfig.MAX_BOSS_WAYPOINT
+                    )
+                    RefreshEvadeUI()
+                    Commit(string.format("EVADE SPOT:  WAYPOINT %d", Evade.Waypoint))
+                end,
+            }
+            EvadeRow(UIRef.EvadeWaypointBox)
+
+            --// The box above is the highest waypoint this may pick, not the one
+            --// the hold always goes to: randomising over 1..999 would spend most
+            --// holds on waypoints the game does not have.
+            UIRef.EvadeRandomToggle = EvadeSection:AddToggle{
+                Name = "Random Evade Waypoint",
+                Default = false,
+                Callback = function(Value)
+                    if not CanEdit("DEFAULT PLACE_CONFIG IS READ-ONLY") then
+                        RefreshEvadeUI()
+                        return
+                    end
+
+                    local Evade = GetEvadeConfig()
+                    Evade.Random = Value == true
+                    RefreshEvadeUI()
+                    Commit(Evade.Random
+                        and "EVADE SPOT:  RANDOM WAYPOINT"
+                        or "EVADE SPOT:  WAYPOINT")
+                end,
+            }
+            EvadeRow(UIRef.EvadeRandomToggle)
+
+            EvadeSection:AddNote("On: every hold picks its own waypoint from 1 to the number above, never the one the hold before it used, so it never hides where it was last seen")
+
+            --// A saved prompt wins over the waypoint: the button below saves the
+            --// door or portal the character was standing at, which is where the
+            --// game wants it to be after the reset.
+            UIRef.EvadePromptToggle = EvadeSection:AddToggle{
+                Name = "Evade To Prompt",
+                Default = false,
+                Callback = function(Value)
+                    if not CanEdit("DEFAULT PLACE_CONFIG IS READ-ONLY") then
+                        RefreshEvadeUI()
+                        return
+                    end
+
+                    local Evade = GetEvadeConfig()
+                    Evade.Prompt = Value == true
+                    RefreshEvadeUI()
+                    Commit(Evade.Prompt
+                        and "EVADE SPOT:  PROMPT"
+                        or "EVADE SPOT:  WAYPOINT")
+                end,
+            }
+            EvadeRow(UIRef.EvadePromptToggle)
+
+            UIRef.EvadePromptButton = EvadeSection:AddButton{
+                Name = "Save Evade Prompt Here",
+                Callback = function()
+                    local _, _, RootPart = Runtime:GetCharacter()
+
+                    if not RootPart then
+                        SetStatus("CHARACTER NOT READY")
+                        Say("Evasion", "Character not ready", 4)
+                        return
+                    end
+
+                    if not CanEdit("DEFAULT PLACE_CONFIG IS READ-ONLY") then
+                        return
+                    end
+
+                    local Prompt, Nearest = FindNearestPrompt(RootPart.Position, PROMPT_SAVE_RADIUS)
+                    local Position = GetPromptPosition(Prompt)
+                    local Evade = GetEvadeConfig()
+
+                    --// No prompt near: where the player is standing is the
+                    --// spot. The hold only needs somewhere to stand still.
+                    if not Position then
+                        Evade.Prompt = true
+                        Evade.PromptPosition = AICConfig.RoundVector3(RootPart.Position)
+                        Evade.PromptName = "HERE"
+                        RefreshEvadeUI()
+                        Commit("EVADE SPOT:  STOOD HERE, SAVED")
+                        Say("Evasion", string.format(
+                            "No prompt within %d studs%s; saved where you stand",
+                            PROMPT_SAVE_RADIUS,
+                            Nearest and string.format(" (nearest %.0f)", Nearest) or ""
+                        ), 5)
+                        return
+                    end
+
+                    Evade.Prompt = true
+                    Evade.PromptPosition = AICConfig.RoundVector3(Position)
+                    Evade.PromptName = string.sub(tostring(Prompt.Name or ""), 1, 64)
+                    RefreshEvadeUI()
+                    Commit("EVADE SPOT:  PROMPT SAVED")
+                    Say("Evasion", "Evade prompt saved: " .. Evade.PromptName, 4)
+                end,
+            }
+            EvadeRow(UIRef.EvadePromptButton)
+
+            UIRef.EvadeSpotLabel = EvadeSection:AddLabel("EVADE SPOT:  NONE")
+            EvadeRow(UIRef.EvadeSpotLabel)
+
+            for Index, Row in ipairs(EvadeRows) do
+                Row.LayoutOrder = -100 + Index
+            end
+        end
+
+        RefreshEvadeUI()
 
         --// Every control exists now, so fill the edit boxes from the selected
         --// stop instead of leaving them empty until the first edit.

@@ -944,6 +944,10 @@ InputBindableFunction = PlayerGui:FindFirstChild("InputBindableFunction", true) 
 Runtime:SetInputBindableFunction(InputBindableFunction)
 return
 end
+if AICFeature.BossEvadeStep and AICFeature.BossEvadeStep(now) then
+AICFeature.SetFarmState("BOSS EVADE")
+return
+end
 local PlayerStats = Player:FindFirstChild("PlayerStats")
 local Sword = Character:FindFirstChild("Sword")
 if not Sword or not Sword:FindFirstChild("MainWeld", true) or not PlayerStats then

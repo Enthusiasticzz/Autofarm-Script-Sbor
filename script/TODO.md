@@ -2,7 +2,7 @@
 
 Status: `[ ]` not started · `[x]` done or fixed (written, not yet verified in-game)
 
-All 142 items are complete — nothing here is pending. This file is the record of
+All 144 items are complete — nothing here is pending. This file is the record of
 what was asked for and what shipped, oldest work first: `## To Do` lists requested
 features, `## To Fix` lists reported bugs. Every item names the version it shipped
 in, and the note under it explains what actually changed and which tuning constants
@@ -1594,3 +1594,30 @@ were added.
 > - `UI/Utils.lua` `_updateWatermark`: an explicit `User.Name` still wins, otherwise the strip resolves `LocalPlayer.DisplayName` then `LocalPlayer.Name`, and only falls back to the placeholder if there is no local player. The name is read on every refresh, so it is right after a re-execute too.
 > - Docs and the web page name the script `Gilded Archives`: `README.md`, `script/README.md`, `script/AI-WALKTHROUGH.md` (intro and the `TITLE` convention), `script/USAGE.md` (intro and the console line example), and the `<title>`/meta/lede of `web/index.html`.
 > - Checks: `luau-compile` clean on `Init.lua`, `Core/Runtime.lua` and `UI/Utils.lua`; bundle rebuilt (6 parts, 82 modules); `tests/run-bundle-check.ps1` 0 compile failures; `tests/run-boot-probe.ps1` from source passes. Not run in game.
+
+### [x] Pause For Strangers, and an Evasion section for everything about other players
+
+> **Reported:** add an option so that when someone joins, the macro pauses (stops immediately, resets, then teleports to a prompt or waypoint you pick) and waits a random 2-3 minutes for them to leave; if they do not leave it kicks you, and if they do it starts again from the first boss. Also give the Bosses tab a section devoted to leaving and evading, holding all the blocking options and this new one, so it is organised.
+> **Changed (v3.93):**
+> - New section **Evasion** on the Bosses tab (`Core/Runtime.lua`), built before every other section so the block controls had somewhere to move to. `AutoBlock.lua`'s whole block/leave/whitelist UI now builds into it (`UIRef.BlockSection`), and the Farming tab no longer has an Auto Block section. Nothing about Auto Block's behaviour changed: same toggles, same whitelist, same `LeaveGame`.
+> - New saved setting `PauseForStrangers` (`Core/SaveConfig.lua`, default off, per profile) and a **Pause For Strangers** toggle at the top of the section, above a divider that sets it apart from the block controls. `BindFeatureToggle` drives it like every other feature.
+> - The spot is saved on the place config (`BOSS_EVADE`, `AICConfig.NormalizeBossEvade`) rather than the profile, beside the route: **Evade Waypoint #** (0-999, 0 = no waypoint), **Evade To Prompt**, **Save Evade Prompt Here** (nearest prompt within 40 studs, or `HERE` where you stand), and an **EVADE SPOT:** line reporting what is saved.
+> - `Features/BossNavigator.lua` runs the hold as a state machine ahead of everything else in the route's frame (`EvadeStep`), and `Features/AutoFarming.lua` calls it above the retreat, the duel check and Auto Block so a character being healed or backing out of a skill cannot delay it:
+>   - `Reset` - the body is killed once (`S.OwnDeaths` marks it as the script's own, so the death does not restart the stop), retried twice 3 s apart only while the *same* body is still alive and still standing where it was reset (a different or moved body is the reset landing), and given up on after 12 s rather than standing at a corpse forever.
+>   - `Travel` - the same landing rules a stop's teleport uses: a prompt send is checked against the prompt's own position (buried/in-floor landings are lifted, a miss is walked from where it is), a waypoint send is watched for movement and re-asked once. A body that just respawned is given `RESPAWN_SETTLE` first, because the game drops a teleport fired on that frame.
+>   - `Hold` - stands still and counts down a random `EVADE_WAIT_MIN`-`EVADE_WAIT_MAX` (120-180 s) window. The stranger leaving at any point ends it and restarts the route at **stop #1**; a stranger still there when it runs out gets `AICFeature.LeaveGame`, the same close-the-client path Leave Instead Of Block uses, re-asked every `EVADE_KICK_RETRY` (5 s) so a refused kick cannot leave the character parked next to them.
+>   - Gated by the route, which is what there is to pause: Boss Route on and at least one stop, otherwise nothing is reset for. Switching the toggle off mid-hold lets go where it stands instead of restarting, and a profile load that clears the flag is handled too (the flag is read every frame, not only from the callback).
+>   - Statuses: `EVADING  @name  RESETTING`, `…  PROMPT`, `…  WP<n>`, `…  RESPAWNING`, `…  <n>s LEFT`, `…  STAYED  LEAVING`, `EVASION OVER`; `BOSS EVADE` on the farm state line.
+> - Docs: `USAGE.md` - the Auto Block reference block moved from *Farming tab* to the new *Bosses tab -> Evasion* section, with the hold and its spot controls documented above it, and the tab lists updated.
+> - Checks: `luau-compile` clean on `Core/Runtime.lua`, `Core/SaveConfig.lua`, `Features/AutoBlock.lua`, `Features/AutoFarming.lua`, `Features/BossNavigator.lua`; `tests/BootProbe.lua` extended (the section exists, the controls sit above the block rows by `LayoutOrder`, the toggle writes the flag, the waypoint box writes `BOSS_EVADE`, the normalizer keeps its defaults, the hold refuses with the route off or with no stops, starts for a stranger, restarts at `STOP 1/1` when they leave and releases when the toggle goes off); bundle rebuilt; `tests/run-bundle-check.ps1` 0 compile failures; `tests/run-boot-probe.ps1` from source passes. Not run in game, so the reset/kick timings are proven by reading the paths.
+
+### [x] Random waypoint for the hiding hold
+
+> **Reported:** add a toggle to randomise which waypoint the hold goes to when it enters hiding mode.
+> **Changed (v3.93):**
+> - New **Random Evade Waypoint** toggle in *Evasion*, saved beside the rest of the spot (`BOSS_EVADE.Random`). On, **Evade Waypoint #** becomes the *highest* waypoint the hold may pick, and each hold draws its own out of 1 to that number; the draw is never the waypoint the previous hold used (when the range has more than one), so it does not hide where it was last seen.
+> - The draw happens once per hold, in the frame the teleport is decided (`EvadeTravelStep`, which only reaches that block when `EvadeSent` is false), and the status line reports the waypoint actually picked. `S.EvadePick` is deliberately kept across holds; it is the only evade state that is not cleared by `BeginEvade`/`EndEvade`.
+> - Randomising over the game's whole waypoint range would spend most holds on numbers the game does not have, hence the saved number as the bound. A pick the game drops is handled by the same landing watch as a fixed waypoint: re-asked once, then held where the character is. **Evade To Prompt** wins over it, because a saved prompt is one fixed spot by definition.
+> - The **EVADE SPOT:** line reads `RANDOM  WP1-12` with the toggle on, and the status line names the waypoint the running hold actually drew (`EVADING  @name  WP7`) — the label only says the range, so it can never show a pick older than the hold beside it.
+> - Docs: `USAGE.md` *Bosses tab -> Evasion* (the toggle, the bound, and what the label shows).
+> - Checks: `luau-compile` clean on `Core/Runtime.lua` and `Features/BossNavigator.lua`; `tests/BootProbe.lua` extended (toggle exists and defaults off, setting it writes `BOSS_EVADE.Random`, the spot line reports `RANDOM`, the normalizer keeps the flag, and the default is off); bundle rebuilt; `tests/run-bundle-check.ps1` 0 compile failures; `tests/run-boot-probe.ps1` from source passes. Not run in game.

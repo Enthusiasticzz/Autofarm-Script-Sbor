@@ -3921,7 +3921,7 @@ UI = Utils.new{ Title = "GILDED ARCHIVES" }
 end
 UIRef.StatusTab = UI:AddTab{ Name = "Status", Description = "Live readout: farm state, position, money, EXP and timers" }
 UIRef.FarmTab = UI:AddTab{ Name = "Farming", Description = "Waypoints, targets, combat and the rules the farm follows" }
-UIRef.BossTab = UI:AddTab{ Name = "Bosses", Description = "Boss stops, their timers and when a reset is taken" }
+UIRef.BossTab = UI:AddTab{ Name = "Bosses", Description = "Boss stops, their timers, when a reset is taken and how a stranger is evaded" }
 UIRef.EspTab = UI:AddTab{ Name = "ESP", Description = "Outline players, mobs and equipped weapons in the world" }
 UIRef.MineTab = UI:AddTab{ Name = "Mining", Description = "Ore priority and the mine zones Auto Mining works in" }
 UIRef.CraftTab = UI:AddTab{ Name = "Crafting", Description = "Recipe priority, the materials kept in reserve and the tables" }
@@ -3938,7 +3938,7 @@ UIRef.FeatureSection = UIRef.FarmTab:AddSection{ Title = "Core" }
 UIRef.CoreSection = UIRef.FeatureSection
 UIRef.CombatSection = UIRef.FarmTab:AddSection{ Title = "Combat" }
 UIRef.TargetSection = UIRef.FarmTab:AddSection{ Title = "Targeting" }
-UIRef.BlockSection = UIRef.FarmTab:AddSection{ Title = "Auto Block" }
+UIRef.BlockSection = UIRef.BossTab:AddSection{ Title = "Evasion", Side = "Right" }
 UIRef.GatherSection = UIRef.FarmTab:AddSection{ Title = "Mob Gather" }
 UIRef.BoosterSection = UIRef.FarmTab:AddSection{ Title = "Booster Reset" }
 UIRef.StatusSection = UIRef.StatusTab:AddSection{ Title = "Live Status" }
@@ -4418,6 +4418,7 @@ Config.WAYPOINT_ZONES = AICConfig.NormalizeZonePairs(Config.WAYPOINT_ZONES, #Way
 Config.DEADZONES = Deadzones
 Config.MINE_ZONES = AICConfig.CloneZoneList(Config.MINE_ZONES)
 Config.BOSS_ROUTE = AICConfig.NormalizeBossStops(Config.BOSS_ROUTE)
+Config.BOSS_EVADE = AICConfig.NormalizeBossEvade(Config.BOSS_EVADE)
 Config.SMITH_TABLE = Config.SMITH_TABLE ~= nil
 and AICConfig.DecodeVector3(Config.SMITH_TABLE)
 or nil
@@ -4555,6 +4556,28 @@ AICConfig.MAX_WAYPOINT_WAIT
 end
 end
 return Result
+end
+function AICConfig.NormalizeBossEvade(Evade)
+Evade = type(Evade) == "table" and Evade or {}
+local PromptPosition = Evade.PromptPosition
+if typeof(PromptPosition) == "Vector3" then
+PromptPosition = AICConfig.RoundVector3(PromptPosition)
+elseif type(PromptPosition) == "table" then
+PromptPosition = AICConfig.DecodeVector3(PromptPosition)
+else
+PromptPosition = nil
+end
+return {
+Waypoint = math.clamp(
+math.floor(tonumber(Evade.Waypoint) or 0), 0, AICConfig.MAX_BOSS_WAYPOINT
+),
+Prompt = Evade.Prompt == true,
+Random = Evade.Random == true,
+PromptPosition = PromptPosition,
+PromptName = type(Evade.PromptName) == "string"
+and string.sub(Evade.PromptName:gsub("^%s*(.-)%s*$", "%1"), 1, 64)
+or "",
+}
 end
 function AICConfig.RemapWaypointZones(Config, Map)
 local Pairs = Config.WAYPOINT_ZONES or {}
@@ -4755,6 +4778,7 @@ SaveConfig.Features = {
 { Name = "PartySystem",       Default = false, Key = "l" },
 { Name = "WaypointLoop",      Default = false, Key = "m" },
 { Name = "BossRoute",         Default = false, Key = "z" },
+{ Name = "PauseForStrangers", Default = false },
 { Name = "SafeBoosterReset",  Default = false, Key = "n" },
 { Name = "AutoBlockConfirm",  Default = false, Key = "o" },
 { Name = "AutoMining",        Default = false, Key = "p" },

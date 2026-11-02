@@ -40,6 +40,11 @@ return {
             --// fights at each and resets on its own timers. Its stops live on
             --// the place config (BOSS_ROUTE), not in WAYPOINTS.
             { Name = "BossRoute",         Default = false, Key = "z" },
+            --// A stranger on the server pauses the boss run instead of being
+            --// blocked or hopped from: reset, go to the saved evade spot and
+            --// wait them out (BossNavigator, Evasion section). No Key: saved
+            --// in the profile, left out of the exported text.
+            { Name = "PauseForStrangers", Default = false },
             { Name = "SafeBoosterReset",  Default = false, Key = "n" },
             { Name = "AutoBlockConfirm",  Default = false, Key = "o" },
             { Name = "AutoMining",        Default = false, Key = "p" },
