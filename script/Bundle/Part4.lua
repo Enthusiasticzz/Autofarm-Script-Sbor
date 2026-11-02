@@ -2362,9 +2362,12 @@ AICUI.RefreshBossVisuals = RefreshBossVisuals
 Context.Lifetime.OnEnd(ClearBossVisuals)
 UIRef.BossSection = UIRef.BossTab:AddSection{ Title = "Route Controls", Side = "Left" }
 UIRef.BossStopsSection = UIRef.BossTab:AddSection{ Title = "Boss Stops", Side = "Left" }
-UIRef.BossEditorSection = UIRef.BossTab:AddSection{ Title = "Selected Stop", Side = "Right" }
+UIRef.BossEditorSection = UIRef.BossTab:AddSection{ Title = "Selected Stop", Side = "Left" }
 UIRef.BossNamesSection = UIRef.BossTab:AddSection{ Title = "Boss Targets", Side = "Right" }
 UIRef.BossTravelSection = UIRef.BossTab:AddSection{ Title = "Teleport and Prompt", Side = "Right" }
+UIRef.EvadeSection = UIRef.BossTab:AddSection{ Title = "Pause For Strangers", Side = "Right" }
+UIRef.EvadeWaypointSection = UIRef.BossTab:AddSection{ Title = "Evade Waypoint", Side = "Right" }
+UIRef.EvadePromptSection = UIRef.BossTab:AddSection{ Title = "Evade Prompt", Side = "Right" }
 UIRef.BossToggle = AICUI.BindFeatureToggle("BossRoute", "Boss Route", function(Enabled)
 if Enabled then
 S.Index = 1
@@ -2903,14 +2906,6 @@ table.remove(Stop.Path, Index)
 PathRemove(self, Label)
 Commit("PATH POINT REMOVED #" .. tostring(Index))
 end
-local EvadeRows = {}
-local function EvadeRow(Component)
-local Row = type(Component) == "table" and Component.Row or Component
-if typeof(Row) == "Instance" then
-table.insert(EvadeRows, Row)
-end
-return Component
-end
 local function RefreshEvadeUI()
 local Evade = GetEvadeConfig()
 local Where = "NONE  (THE RESET IS THE WHOLE EVADE)"
@@ -2941,9 +2936,10 @@ if UIRef.EvadeRandomToggle then
 UIRef.EvadeRandomToggle:Set(Evade.Random == true, true)
 end
 end
-if UIRef.BlockSection then
-local EvadeSection = UIRef.BlockSection
-EvadeRow(EvadeSection:AddDivider())
+do
+local EvadeSection = UIRef.EvadeSection
+local WaypointSection = UIRef.EvadeWaypointSection
+local PromptSection = UIRef.EvadePromptSection
 UIRef.EvadePauseToggle = AICUI.BindFeatureToggle(
 "PauseForStrangers",
 "Pause For Strangers",
@@ -2959,10 +2955,12 @@ or "PAUSE FOR STRANGERS OFF")
 end,
 EvadeSection
 )
-EvadeRow(UIRef.EvadePauseToggle)
-EvadeSection:AddNote("On: a stranger (anyone off the Block Whitelist) stops the run at once - reset, go to the evade spot, and wait 2-3 minutes for them to leave")
-EvadeSection:AddNote("They leave: the route starts again at stop #1. They stay: the game is closed, the same way Leave Instead Of Block closes it")
-UIRef.EvadeWaypointBox = EvadeSection:AddTextBox{
+UIRef.EvadeSpotLabel = EvadeSection:AddLabel("EVADE SPOT:  NONE")
+EvadeSection:AddNote("When someone who is not on your Block Whitelist shows up, the route stops, your character resets and hides, then waits 2-3 minutes for them to leave")
+EvadeSection:AddNote("They leave: the route starts again at stop #1")
+EvadeSection:AddNote("They stay: the game is closed, like Leave Instead Of Block")
+WaypointSection:AddNote("Type a waypoint number to hide at. 0 means no waypoint: the reset alone is the hide")
+UIRef.EvadeWaypointBox = WaypointSection:AddTextBox{
 Name = "Evade Waypoint #",
 Default = "",
 Inline = true,
@@ -2985,8 +2983,7 @@ RefreshEvadeUI()
 Commit(string.format("EVADE SPOT:  WAYPOINT %d", Evade.Waypoint))
 end,
 }
-EvadeRow(UIRef.EvadeWaypointBox)
-UIRef.EvadeRandomToggle = EvadeSection:AddToggle{
+UIRef.EvadeRandomToggle = WaypointSection:AddToggle{
 Name = "Random Evade Waypoint",
 Default = false,
 Callback = function(Value)
@@ -3002,9 +2999,9 @@ and "EVADE SPOT:  RANDOM WAYPOINT"
 or "EVADE SPOT:  WAYPOINT")
 end,
 }
-EvadeRow(UIRef.EvadeRandomToggle)
-EvadeSection:AddNote("On: every hold picks its own waypoint from 1 to the number above, never the one the hold before it used, so it never hides where it was last seen")
-UIRef.EvadePromptToggle = EvadeSection:AddToggle{
+WaypointSection:AddNote("Random: each hold picks a new waypoint from 1 to the number above, never the same one twice in a row")
+PromptSection:AddNote("Stand at a door or portal, then press the button to save it. A saved prompt is used instead of the waypoint")
+UIRef.EvadePromptToggle = PromptSection:AddToggle{
 Name = "Evade To Prompt",
 Default = false,
 Callback = function(Value)
@@ -3020,8 +3017,7 @@ and "EVADE SPOT:  PROMPT"
 or "EVADE SPOT:  WAYPOINT")
 end,
 }
-EvadeRow(UIRef.EvadePromptToggle)
-UIRef.EvadePromptButton = EvadeSection:AddButton{
+UIRef.EvadePromptButton = PromptSection:AddButton{
 Name = "Save Evade Prompt Here",
 Callback = function()
 local _, _, RootPart = Runtime:GetCharacter()
@@ -3057,12 +3053,6 @@ Commit("EVADE SPOT:  PROMPT SAVED")
 Say("Evasion", "Evade prompt saved: " .. Evade.PromptName, 4)
 end,
 }
-EvadeRow(UIRef.EvadePromptButton)
-UIRef.EvadeSpotLabel = EvadeSection:AddLabel("EVADE SPOT:  NONE")
-EvadeRow(UIRef.EvadeSpotLabel)
-for Index, Row in ipairs(EvadeRows) do
-Row.LayoutOrder = -100 + Index
-end
 end
 RefreshEvadeUI()
 AICUI.RefreshBossRoutePickers()

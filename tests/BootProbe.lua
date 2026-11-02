@@ -311,18 +311,54 @@ slider:Set(30)
 assert(callbacks == 2, "user changes stopped invoking callbacks")
 assert(#SmokeEnv.Errors == 0, "stub captured asynchronous handler errors: " .. table.concat(SmokeEnv.Errors, "; "))
 
---// BossNavigator: the Evasion section is Auto Block's section (it builds its
---// own controls into it), and the pause-for-strangers hold is built into the
---// same section above the rest. Starting the module is what proves those
---// controls construct at boot instead of only compiling.
+--// BossNavigator: the player controls on the Bosses tab live in sections of
+--// their own - the pause-for-strangers hold, its waypoint, its prompt, then
+--// Auto Block and the whitelist - and each must open with its own title.
+--// Starting the module is what proves those controls construct at boot
+--// instead of only compiling.
 local BossNavOk, BossNavErr = xpcall(BossNavigatorModule.Start, debug.traceback, Context)
 
 if not BossNavOk then
     error("BOSSNAVIGATOR START ERROR:\n" .. tostring(BossNavErr))
 end
 
+--// The title of a section is its first row. A control given a negative
+--// LayoutOrder to get above the other rows lands above the title too, which is
+--// exactly what a section split is supposed to avoid.
+local function SectionTitle(Section)
+    local Best, BestOrder
+
+    for _, Child in ipairs(Section.Frame:GetChildren()) do
+        local Order = tonumber(Child.LayoutOrder)
+
+        if Child:IsA("Frame") and Order and (not Best or Order < BestOrder) then
+            Best, BestOrder = Child, Order
+        end
+    end
+
+    if not Best then
+        return ""
+    end
+
+    for _, Child in ipairs(Best:GetChildren()) do
+        if Child:IsA("TextLabel") and Child.Text ~= "" then
+            return Child.Text
+        end
+    end
+
+    return ""
+end
+
 local boss = Context.UIRef
-assert(boss.BlockSection, "evasion section missing")
+assert(boss.BlockSection and boss.WhitelistSection, "auto block sections missing")
+assert(boss.EvadeSection and boss.EvadeWaypointSection and boss.EvadePromptSection, "evade sections missing")
+assert(SectionTitle(boss.EvadeSection) == "Pause For Strangers", "the hold's title is not at the top of its section: " .. SectionTitle(boss.EvadeSection))
+assert(SectionTitle(boss.EvadeWaypointSection) == "Evade Waypoint", "the waypoint section's title is not at the top")
+assert(SectionTitle(boss.EvadePromptSection) == "Evade Prompt", "the prompt section's title is not at the top")
+assert(SectionTitle(boss.BlockSection) == "Auto Block", "the auto block title is not at the top of its section")
+assert(SectionTitle(boss.WhitelistSection) == "Block Whitelist", "the whitelist title is not at the top of its section")
+assert(boss.BlockSection.Frame.LayoutOrder > boss.EvadeSection.Frame.LayoutOrder, "auto block was not placed under the evade sections")
+assert(boss.WhitelistSection.Frame.LayoutOrder > boss.BlockSection.Frame.LayoutOrder, "the whitelist was not placed under auto block")
 assert(boss.EvadePauseToggle, "pause for strangers toggle missing")
 assert(boss.EvadeWaypointBox and boss.EvadePromptToggle, "evade spot controls missing")
 assert(boss.EvadePromptButton, "save evade prompt button missing")
@@ -330,8 +366,12 @@ assert(boss.EvadeRandomToggle, "random evade waypoint toggle missing")
 assert(boss.EvadeSpotLabel, "evade spot label missing")
 assert(boss.EvadeSpotLabel.Instance.Text:find("EVADE SPOT:", 1, true), "evade spot label text missing")
 assert(boss.EvadePauseToggle:Get() == false, "pause for strangers started on")
-assert(boss.EvadePauseToggle.Row.LayoutOrder < 0, "evasion controls were not placed above the block controls")
-assert(boss.EvadeSpotLabel.Row.LayoutOrder < 0, "evade spot label was not placed with its section controls")
+assert(boss.EvadePauseToggle.Row.Parent == boss.EvadeSection.Frame, "the hold's toggle was not placed in its own section")
+assert(boss.EvadeWaypointBox.Row.Parent == boss.EvadeWaypointSection.Frame, "the evade waypoint box was not placed in its own section")
+assert(boss.EvadePromptButton.Row.Parent == boss.EvadePromptSection.Frame, "the evade prompt button was not placed in its own section")
+--// Auto Block's own module is not started here, so only the section it fills
+--// can be checked: it exists, it is titled, and it sits under Auto Block.
+assert(boss.WhitelistSection.Frame.LayoutOrder == boss.BlockSection.Frame.LayoutOrder + 1, "the whitelist section is not directly under auto block")
 
 Context.AICProfile.S.ActiveProfileName = "Saved"
 boss.EvadePauseToggle:Set(true)

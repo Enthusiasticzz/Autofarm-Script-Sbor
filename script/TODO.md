@@ -2,7 +2,7 @@
 
 Status: `[ ]` not started · `[x]` done or fixed (written, not yet verified in-game)
 
-All 144 items are complete — nothing here is pending. This file is the record of
+All 145 items are complete — nothing here is pending. This file is the record of
 what was asked for and what shipped, oldest work first: `## To Do` lists requested
 features, `## To Fix` lists reported bugs. Every item names the version it shipped
 in, and the note under it explains what actually changed and which tuning constants
@@ -1621,3 +1621,15 @@ were added.
 > - The **EVADE SPOT:** line reads `RANDOM  WP1-12` with the toggle on, and the status line names the waypoint the running hold actually drew (`EVADING  @name  WP7`) — the label only says the range, so it can never show a pick older than the hold beside it.
 > - Docs: `USAGE.md` *Bosses tab -> Evasion* (the toggle, the bound, and what the label shows).
 > - Checks: `luau-compile` clean on `Core/Runtime.lua` and `Features/BossNavigator.lua`; `tests/BootProbe.lua` extended (toggle exists and defaults off, setting it writes `BOSS_EVADE.Random`, the spot line reports `RANDOM`, the normalizer keeps the flag, and the default is off); bundle rebuilt; `tests/run-bundle-check.ps1` 0 compile failures; `tests/run-boot-probe.ps1` from source passes. Not run in game.
+### [x] Bosses tab: a section title pushed off the top, and one long list to read
+
+> **Reported:** the title is not at the top; the panel is confusing for a regular person, so split it up more; and move **Selected Stop** to the left side of the panel, with the other two staying on the right.
+> **Cause:** the hold's controls were pushed into Auto Block's section with `LayoutOrder = -100 + Index` so they would read above the block rows. A section's title is its **first row**, created with `LayoutOrder` 1, so every negative row sorted *above* the title — the section opened with a wall of settings and its name appeared partway down, or (with the rows above it) looked like it had no title at all.
+> **Changed (v3.94):**
+> - No control is placed with a negative `LayoutOrder` any more. Each idea gets a section with its own title on top: **Pause For Strangers** (the toggle and the `EVADE SPOT` line), **Evade Waypoint** (the waypoint number and **Random Evade Waypoint**), **Evade Prompt** (**Evade To Prompt** and **Save Evade Prompt Here**), **Auto Block** (Leave Instead Of Block, Auto Block, Auto Confirm Block, Block Delay, Random Leave Delay, Whitelist Skips Safety) and **Block Whitelist** (the list and its buttons).
+> - `UIRef.BlockSection` and the new `UIRef.WhitelistSection` are still made in `Core/Runtime.lua`, so Auto Block finds them whatever order the modules start in; `AutoBlock.lua` now fills the second with the list, its User ID box, and the add/refresh/clear buttons, and its dropdown refresh targets that section. Being made first would put both at the top of the right column, so they carry `LayoutOrder` 91 and 92 and sit under the boss sections.
+> - The three hold sections are made in `BossNavigator.lua` after **Boss Targets** and **Teleport and Prompt**, so the right column reads: Boss Targets, Teleport and Prompt, Pause For Strangers, Evade Waypoint, Evade Prompt, Auto Block, Block Whitelist.
+> - **Selected Stop** moved to the left column (`Side = "Left"`), directly under **Boss Stops**, so editing a stop sits beside the list it came from; **Boss Targets** and **Teleport and Prompt** stay on the right, as asked.
+> - Notes on each section now say what the section is for in plain words ("When someone who is not on your Block Whitelist shows up, the route stops, your character resets and hides, then waits 2-3 minutes for them to leave"), instead of one dense paragraph.
+> - Docs: `USAGE.md` *Bosses tab* now mirrors the panel — separate sections for **Pause For Strangers**, **Evade Waypoint**, **Evade Prompt**, **Auto Block** and **Block Whitelist** — and the Farming/Combat pointers name the new sections; `AI-WALKTHROUGH.md` records the split and the rule that a title is a section's first row, so no control may be given a negative `LayoutOrder`.
+> - Checks: `luau-compile` clean on `Core/Runtime.lua`, `Features/AutoBlock.lua` and `Features/BossNavigator.lua`; `tests/BootProbe.lua` now reads the first row of every one of those five sections and asserts its text is the section's title (which is what would have caught the original bug), plus each control's row parent is its own section, and Auto Block/Whitelist sort under the evade sections; bundle rebuilt; `tests/run-bundle-check.ps1` 0 compile failures; `tests/run-boot-probe.ps1` from source passes; `tests/run-ui-smoke.ps1` 0 failed checks. Not run in game.

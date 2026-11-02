@@ -424,7 +424,7 @@ return {
         end
 
         function AutoBlock:RefreshWhitelistPlayerDropdown()
-            local Section = UIRef.BlockSection
+            local Section = UIRef.WhitelistSection or UIRef.BlockSection
 
             if not Section then
                 return
@@ -490,6 +490,10 @@ return {
 
         function AutoBlock:CreateUI()
             local BlockSection = UIRef.BlockSection
+            --// The list is its own section under the block settings: it is
+            --// long, it is edited far less often, and it is the one part of
+            --// this that is about people rather than behaviour.
+            local WhitelistSection = UIRef.WhitelistSection or BlockSection
 
             if not BlockSection then
                 return
@@ -542,15 +546,16 @@ return {
             BlockSection:AddNote("On: whitelisted players never make Auto Block or Leave On Danger Group leave, even if blocked")
             BlockSection:AddNote("Whitelist and Whitelist Skips Safety are shared by every profile")
 
-            self.WhitelistComponent = BlockSection:AddPriority(
+            self.WhitelistComponent = WhitelistSection:AddPriority(
                 "Block Whitelist",
                 CONFIG.BLOCK_WHITELIST or {}
             )
             UIRef.BlockWhitelistComponent = self.WhitelistComponent
             AICUI.ShowUserNames(self.WhitelistComponent)
+            WhitelistSection:AddNote("Anyone on this list is left alone: no block, no leave, and no hiding from them")
             CONFIG.BLOCK_WHITELIST = self.WhitelistComponent.Priority
 
-            self.WhitelistBox = BlockSection:AddTextBox{
+            self.WhitelistBox = WhitelistSection:AddTextBox{
                 Name = "User ID",
                 Placeholder = "Paste a Roblox UserId",
                 Default = "",
@@ -559,7 +564,7 @@ return {
             UIRef.BlockWhitelistBox = self.WhitelistBox
 
             --// The one action of the group, so it is the one that is coloured.
-            BlockSection:AddButton{
+            WhitelistSection:AddButton{
                 Name = "Add User ID",
                 Primary = true,
                 Callback = function()
@@ -584,14 +589,14 @@ return {
                 end,
             }
 
-            BlockSection:AddButton{
+            WhitelistSection:AddButton{
                 Name = "Refresh Player List",
                 Callback = function()
                     self:RefreshWhitelistPlayerDropdown()
                 end,
             }
 
-            BlockSection:AddButton{
+            WhitelistSection:AddButton{
                 Name = "Add Everyone Here",
                 Callback = function()
                     local Added = 0
@@ -610,7 +615,7 @@ return {
                 end,
             }
 
-            BlockSection:AddButton{
+            WhitelistSection:AddButton{
                 Name = "Clear Whitelist",
                 Callback = function()
                     self.WhitelistComponent:SetPriority({})

@@ -3938,7 +3938,10 @@ UIRef.FeatureSection = UIRef.FarmTab:AddSection{ Title = "Core" }
 UIRef.CoreSection = UIRef.FeatureSection
 UIRef.CombatSection = UIRef.FarmTab:AddSection{ Title = "Combat" }
 UIRef.TargetSection = UIRef.FarmTab:AddSection{ Title = "Targeting" }
-UIRef.BlockSection = UIRef.BossTab:AddSection{ Title = "Evasion", Side = "Right" }
+UIRef.BlockSection = UIRef.BossTab:AddSection{ Title = "Auto Block", Side = "Right" }
+UIRef.WhitelistSection = UIRef.BossTab:AddSection{ Title = "Block Whitelist", Side = "Right" }
+UIRef.BlockSection.Frame.LayoutOrder = 91
+UIRef.WhitelistSection.Frame.LayoutOrder = 92
 UIRef.GatherSection = UIRef.FarmTab:AddSection{ Title = "Mob Gather" }
 UIRef.BoosterSection = UIRef.FarmTab:AddSection{ Title = "Booster Reset" }
 UIRef.StatusSection = UIRef.StatusTab:AddSection{ Title = "Live Status" }
@@ -6116,7 +6119,7 @@ AICFeature.S.BlockCache[UserId] = nil
 end)
 end
 function AutoBlock:RefreshWhitelistPlayerDropdown()
-local Section = UIRef.BlockSection
+local Section = UIRef.WhitelistSection or UIRef.BlockSection
 if not Section then
 return
 end
@@ -6168,6 +6171,7 @@ self:RefreshWhitelistPlayerDropdown()
 end
 function AutoBlock:CreateUI()
 local BlockSection = UIRef.BlockSection
+local WhitelistSection = UIRef.WhitelistSection or BlockSection
 if not BlockSection then
 return
 end
@@ -6200,21 +6204,22 @@ BlockSection:AddNote("On: every leave waits a random 2-4 s first, Follower Guard
 AICUI.BindFeatureToggle("WhitelistSkipsSafety", "Whitelist Skips Safety", nil, BlockSection)
 BlockSection:AddNote("On: whitelisted players never make Auto Block or Leave On Danger Group leave, even if blocked")
 BlockSection:AddNote("Whitelist and Whitelist Skips Safety are shared by every profile")
-self.WhitelistComponent = BlockSection:AddPriority(
+self.WhitelistComponent = WhitelistSection:AddPriority(
 "Block Whitelist",
 CONFIG.BLOCK_WHITELIST or {}
 )
 UIRef.BlockWhitelistComponent = self.WhitelistComponent
 AICUI.ShowUserNames(self.WhitelistComponent)
+WhitelistSection:AddNote("Anyone on this list is left alone: no block, no leave, and no hiding from them")
 CONFIG.BLOCK_WHITELIST = self.WhitelistComponent.Priority
-self.WhitelistBox = BlockSection:AddTextBox{
+self.WhitelistBox = WhitelistSection:AddTextBox{
 Name = "User ID",
 Placeholder = "Paste a Roblox UserId",
 Default = "",
 Callback = function() end,
 }
 UIRef.BlockWhitelistBox = self.WhitelistBox
-BlockSection:AddButton{
+WhitelistSection:AddButton{
 Name = "Add User ID",
 Primary = true,
 Callback = function()
@@ -6235,13 +6240,13 @@ NotifyAction("Whitelist", "Added " .. Id)
 self:RefreshWhitelistPlayerDropdown()
 end,
 }
-BlockSection:AddButton{
+WhitelistSection:AddButton{
 Name = "Refresh Player List",
 Callback = function()
 self:RefreshWhitelistPlayerDropdown()
 end,
 }
-BlockSection:AddButton{
+WhitelistSection:AddButton{
 Name = "Add Everyone Here",
 Callback = function()
 local Added = 0
@@ -6257,7 +6262,7 @@ NotifyAction("Whitelist", "Added " .. tostring(Added) .. " player(s)")
 self:RefreshWhitelistPlayerDropdown()
 end,
 }
-BlockSection:AddButton{
+WhitelistSection:AddButton{
 Name = "Clear Whitelist",
 Callback = function()
 self.WhitelistComponent:SetPriority({})

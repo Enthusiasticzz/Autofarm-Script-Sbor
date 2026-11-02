@@ -121,12 +121,19 @@ return {
         UIRef.CoreSection = UIRef.FeatureSection
         UIRef.CombatSection = UIRef.FarmTab:AddSection{ Title = "Combat" }
         UIRef.TargetSection = UIRef.FarmTab:AddSection{ Title = "Targeting" }
-        --// Evasion: everything about other players, on the Bosses tab rather
-        --// than beside the farming waypoints. Auto Block builds its controls
-        --// (block, leave, whitelist) into it, and BossNavigator adds the
-        --// pause-for-strangers hold at the top of the same section, so every
-        --// way out of a server is in one place.
-        UIRef.BlockSection = UIRef.BossTab:AddSection{ Title = "Evasion", Side = "Right" }
+        --// Everything about other players, on the Bosses tab rather than beside
+        --// the farming waypoints. Two sections here, each with its own title on
+        --// top, and BossNavigator's Pause For Strangers sections beside them:
+        --// what Auto Block does about a stranger, and who it leaves alone.
+        --// Made here rather than in AutoBlock so they exist whatever order the
+        --// modules start in.
+        UIRef.BlockSection = UIRef.BossTab:AddSection{ Title = "Auto Block", Side = "Right" }
+        UIRef.WhitelistSection = UIRef.BossTab:AddSection{ Title = "Block Whitelist", Side = "Right" }
+        --// Being made first would put them at the top of the right column, above
+        --// the boss sections. A section's place is its LayoutOrder, so they are
+        --// given the end of it instead.
+        UIRef.BlockSection.Frame.LayoutOrder = 91
+        UIRef.WhitelistSection.Frame.LayoutOrder = 92
         UIRef.GatherSection = UIRef.FarmTab:AddSection{ Title = "Mob Gather" }
         --// Holds AutoRefill's booster list: which boosters reset the character
         --// when they run out.

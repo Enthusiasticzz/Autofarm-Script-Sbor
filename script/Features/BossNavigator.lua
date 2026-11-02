@@ -3847,9 +3847,14 @@ return {
 
         UIRef.BossSection = UIRef.BossTab:AddSection{ Title = "Route Controls", Side = "Left" }
         UIRef.BossStopsSection = UIRef.BossTab:AddSection{ Title = "Boss Stops", Side = "Left" }
-        UIRef.BossEditorSection = UIRef.BossTab:AddSection{ Title = "Selected Stop", Side = "Right" }
+        UIRef.BossEditorSection = UIRef.BossTab:AddSection{ Title = "Selected Stop", Side = "Left" }
         UIRef.BossNamesSection = UIRef.BossTab:AddSection{ Title = "Boss Targets", Side = "Right" }
         UIRef.BossTravelSection = UIRef.BossTab:AddSection{ Title = "Teleport and Prompt", Side = "Right" }
+        --// Pause For Strangers has sections of its own, each with its title on
+        --// top, instead of rows pushed into the Auto Block section.
+        UIRef.EvadeSection = UIRef.BossTab:AddSection{ Title = "Pause For Strangers", Side = "Right" }
+        UIRef.EvadeWaypointSection = UIRef.BossTab:AddSection{ Title = "Evade Waypoint", Side = "Right" }
+        UIRef.EvadePromptSection = UIRef.BossTab:AddSection{ Title = "Evade Prompt", Side = "Right" }
 
         UIRef.BossToggle = AICUI.BindFeatureToggle("BossRoute", "Boss Route", function(Enabled)
             if Enabled then
@@ -4566,26 +4571,6 @@ return {
         --// Evasion: the pause-for-strangers hold
         ------------------------------------------------------------------------
 
-        --// Auto Block builds the rest of this section - block, leave, the
-        --// whitelist - and this module starts after it, so these rows would land
-        --// at the bottom of a section fifteen rows deep. They read first
-        --// instead: a row is laid out by its LayoutOrder, and a negative one
-        --// sorts above everything already in the section.
-        local EvadeRows = {}
-
-        --// A control is a table with its row in it; a divider is the row itself.
-        --// Read by type, never by indexing: a Row that does not exist on an
-        --// Instance is an error, not a nil.
-        local function EvadeRow(Component)
-            local Row = type(Component) == "table" and Component.Row or Component
-
-            if typeof(Row) == "Instance" then
-                table.insert(EvadeRows, Row)
-            end
-
-            return Component
-        end
-
         --// The saved spot, as the section reports it. A prompt the button found
         --// is named; one saved where the player stood says HERE.
         local function RefreshEvadeUI()
@@ -4627,10 +4612,14 @@ return {
             end
         end
 
-        if UIRef.BlockSection then
-            local EvadeSection = UIRef.BlockSection
+        do
+            local EvadeSection = UIRef.EvadeSection
+            local WaypointSection = UIRef.EvadeWaypointSection
+            local PromptSection = UIRef.EvadePromptSection
 
-            EvadeRow(EvadeSection:AddDivider())
+            ----------------------------------------------------------------
+            --// Pause For Strangers: the switch, what it does, where it hides
+            ----------------------------------------------------------------
 
             UIRef.EvadePauseToggle = AICUI.BindFeatureToggle(
                 "PauseForStrangers",
@@ -4650,12 +4639,20 @@ return {
                 end,
                 EvadeSection
             )
-            EvadeRow(UIRef.EvadePauseToggle)
 
-            EvadeSection:AddNote("On: a stranger (anyone off the Block Whitelist) stops the run at once - reset, go to the evade spot, and wait 2-3 minutes for them to leave")
-            EvadeSection:AddNote("They leave: the route starts again at stop #1. They stay: the game is closed, the same way Leave Instead Of Block closes it")
+            UIRef.EvadeSpotLabel = EvadeSection:AddLabel("EVADE SPOT:  NONE")
 
-            UIRef.EvadeWaypointBox = EvadeSection:AddTextBox{
+            EvadeSection:AddNote("When someone who is not on your Block Whitelist shows up, the route stops, your character resets and hides, then waits 2-3 minutes for them to leave")
+            EvadeSection:AddNote("They leave: the route starts again at stop #1")
+            EvadeSection:AddNote("They stay: the game is closed, like Leave Instead Of Block")
+
+            ----------------------------------------------------------------
+            --// Evade Waypoint: hide at one of the game's waypoints
+            ----------------------------------------------------------------
+
+            WaypointSection:AddNote("Type a waypoint number to hide at. 0 means no waypoint: the reset alone is the hide")
+
+            UIRef.EvadeWaypointBox = WaypointSection:AddTextBox{
                 Name = "Evade Waypoint #",
                 Default = "",
                 Inline = true,
@@ -4681,12 +4678,11 @@ return {
                     Commit(string.format("EVADE SPOT:  WAYPOINT %d", Evade.Waypoint))
                 end,
             }
-            EvadeRow(UIRef.EvadeWaypointBox)
 
             --// The box above is the highest waypoint this may pick, not the one
             --// the hold always goes to: randomising over 1..999 would spend most
             --// holds on waypoints the game does not have.
-            UIRef.EvadeRandomToggle = EvadeSection:AddToggle{
+            UIRef.EvadeRandomToggle = WaypointSection:AddToggle{
                 Name = "Random Evade Waypoint",
                 Default = false,
                 Callback = function(Value)
@@ -4703,14 +4699,19 @@ return {
                         or "EVADE SPOT:  WAYPOINT")
                 end,
             }
-            EvadeRow(UIRef.EvadeRandomToggle)
 
-            EvadeSection:AddNote("On: every hold picks its own waypoint from 1 to the number above, never the one the hold before it used, so it never hides where it was last seen")
+            WaypointSection:AddNote("Random: each hold picks a new waypoint from 1 to the number above, never the same one twice in a row")
+
+            ----------------------------------------------------------------
+            --// Evade Prompt: hide at a saved door or portal
+            ----------------------------------------------------------------
+
+            PromptSection:AddNote("Stand at a door or portal, then press the button to save it. A saved prompt is used instead of the waypoint")
 
             --// A saved prompt wins over the waypoint: the button below saves the
             --// door or portal the character was standing at, which is where the
             --// game wants it to be after the reset.
-            UIRef.EvadePromptToggle = EvadeSection:AddToggle{
+            UIRef.EvadePromptToggle = PromptSection:AddToggle{
                 Name = "Evade To Prompt",
                 Default = false,
                 Callback = function(Value)
@@ -4727,9 +4728,8 @@ return {
                         or "EVADE SPOT:  WAYPOINT")
                 end,
             }
-            EvadeRow(UIRef.EvadePromptToggle)
 
-            UIRef.EvadePromptButton = EvadeSection:AddButton{
+            UIRef.EvadePromptButton = PromptSection:AddButton{
                 Name = "Save Evade Prompt Here",
                 Callback = function()
                     local _, _, RootPart = Runtime:GetCharacter()
@@ -4772,14 +4772,6 @@ return {
                     Say("Evasion", "Evade prompt saved: " .. Evade.PromptName, 4)
                 end,
             }
-            EvadeRow(UIRef.EvadePromptButton)
-
-            UIRef.EvadeSpotLabel = EvadeSection:AddLabel("EVADE SPOT:  NONE")
-            EvadeRow(UIRef.EvadeSpotLabel)
-
-            for Index, Row in ipairs(EvadeRows) do
-                Row.LayoutOrder = -100 + Index
-            end
         end
 
         RefreshEvadeUI()
