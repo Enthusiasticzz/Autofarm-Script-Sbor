@@ -1,6 +1,6 @@
 # AIC usage guide
 
-How to use Gilded Archives (AutoFarmV3, `v3.94`) once it is loaded. The
+How to use Gilded Archives (AutoFarmV3, `v3.95`) once it is loaded. The
 loadstring and what the loader fetches are in [README.md](README.md); this file is
 about the features and about why the farm sometimes appears to do nothing.
 
@@ -402,18 +402,18 @@ teleport) to a boss, fight it, and reset back to spawn before the next one.
 
 #### Pause For Strangers
 
-Everything about other players sits in five short sections on the right of this
-tab, each with its own title, rather than one long list: **Pause For Strangers**
-(the hold), **Evade Waypoint** (where it hides), **Evade Prompt** (a saved door
-instead), **Auto Block** (what happens to the stranger) and **Block Whitelist**
-(who is left alone). The boss sections keep the top of the column, and the left
-side holds the route, its stop list, the selected stop and its path.
+Everything about other players lives in seven short sections on the right of this
+tab, each with its own title, rather than one long list: **Boss Targets**,
+**Teleport and Prompt**, **Pause For Strangers** (the hold), **Hiding Spots**
+(where it may hide), **Add A Hiding Spot**, **Auto Block** (what happens to the
+stranger) and **Block Whitelist** (who is left alone). The left side holds the
+route, its stop list, the selected stop and its path.
 
 - **Pause For Strangers** (off by default, saved in the profile) — the hide. On,
   the moment a player who is not on the **Block Whitelist** is in the server the
   Boss Route stops where it is: the fight is dropped, the character resets
-  (`EVADING  @name  RESETTING`), then goes to the evade spot and stands there
-  while they are given a random **2–3 minutes** to leave
+  (`EVADING  @name  RESETTING`), then hides at one of your **Hiding Spots** and
+  waits there while they are given a random **2–3 minutes** to leave
   (`EVADING  @name  87s LEFT`).
   - They leave inside that window: the route starts again at **stop #1**, from
     wherever the body is standing (`@name left; starting again at stop #1`), and
@@ -427,9 +427,9 @@ side holds the route, its stop list, the selected stop and its path.
   with nothing running nothing is reset for. Switching the toggle off during a
   hold lets go where it stands instead of restarting the run, and a stranger who
   leaves during the reset itself is not waited on at all.
-- **EVADE SPOT:  …** — under the toggle, what the hide will use: the prompt's
-  name and position, `WAYPOINT 12`, `RANDOM  WP1-12`, or
-  `NONE  (THE RESET IS THE WHOLE EVADE)`.
+- **HIDING SPOTS:  …** — under the toggle, what the hide has to choose from:
+  `NONE  (THE RESET IS THE WHOLE EVADE)`, `1  (ALWAYS THIS ONE)`, or
+  `3  (ONE PICKED AT RANDOM)`. With no spots saved the reset is the whole evade.
 - The teleport is read back the same way a stop's is — watched for movement, with
   a prompt landing checked against the prompt's own position — so a send the game
   dropped is retried instead of held at. Statuses: `EVADING  @name  RESETTING`,
@@ -439,29 +439,30 @@ side holds the route, its stop list, the selected stop and its path.
   is its own loop), and it is read before the retreat, the duel check and Auto
   Block.
 
-#### Evade Waypoint
+#### Hiding Spots
 
-- **Evade Waypoint #** (0, 0–30) — the game waypoint the hide teleports to. With
-  **Random Evade Waypoint** on it is the *highest* waypoint that may be picked
-  instead. 0 sends nothing, so the reset is the whole evade. Saved on the place
-  config (`BOSS_EVADE`) beside the route, not in the profile, so it follows the
-  place.
-- **Random Evade Waypoint** (off) — every hide picks its own waypoint out of
-  1 to the number above, so it does not appear in the same place twice; the pick
-  is never the waypoint the hide before it used (when there is more than one to
-  choose from). The spot line shows the range (`RANDOM  WP1-12`) and the status
-  line names the waypoint the running hold picked (`EVADING  @name  WP7`). It does
-  nothing while **Evade To Prompt** is on — a saved prompt is one fixed spot by
-  definition.
+The list the hold picks from, saved on the place config (`BOSS_EVADE.Spots`)
+beside the route. Every hold takes one spot from it **at random**, and never the
+one the hold before it used, so the character does not reappear where a stranger
+last saw it. Keep a single spot to always hide in the same place.
 
-#### Evade Prompt
+- **Hiding Spots** (list) — one row per spot, `#1  WAYPOINT  12` or
+  `#2  PROMPT  Door  (x, y, z)`. ▲▼ reorder the list, `✕` removes a spot, and the
+  header counts how many are saved. Up to **20** can be saved.
+- **Clear Hiding Spots** — empties the list, leaving the reset as the whole evade.
+- A save from before the list existed keeps working: its single waypoint or
+  prompt becomes the first spot the first time the hold reads the list.
 
-- **Evade To Prompt** (off) — use the saved prompt position instead of the
-  waypoint. A spot saved from the button below is the door or portal the character
-  was actually standing at, which is where it has to be after a reset.
-- **Save Evade Prompt Here** — saves the prompt nearest to you (within 40 studs)
-  as the evade spot, with its name. With no prompt that close it saves where you
-  stand and names it `HERE`, so any spot can be the hide's.
+#### Add A Hiding Spot
+
+- **Add Waypoint #** — type a waypoint number (1–999) and press enter. The spot
+  is added as `WAYPOINT  12` and the box clears for the next one. 0 and text are
+  refused with `INVALID VALUE`.
+- **Add Prompt Here** — saves the interaction prompt nearest to you (within
+  40 studs) as a spot, named after the prompt. With none that close it saves the
+  spot you are standing on, named `HERE`, so anywhere can be a hiding place.
+- A spot already on the list is refused (`ALREADY A HIDING SPOT`), and a full
+  list reads `HIDING SPOTS FULL (20)`.
 
 #### Auto Block
 
@@ -1175,7 +1176,7 @@ previous file for a few minutes after a push.
 The first line in the console says which build and which source is running:
 
 ```
-[AIC] GILDED ARCHIVES v3.94  (from https://raw.githubusercontent.com/...)
+[AIC] GILDED ARCHIVES v3.95  (from https://raw.githubusercontent.com/...)
 ```
 
 If a fix looks absent, check that line first, then re-execute. To keep a build

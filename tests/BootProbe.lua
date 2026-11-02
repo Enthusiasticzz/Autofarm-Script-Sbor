@@ -351,24 +351,23 @@ end
 
 local boss = Context.UIRef
 assert(boss.BlockSection and boss.WhitelistSection, "auto block sections missing")
-assert(boss.EvadeSection and boss.EvadeWaypointSection and boss.EvadePromptSection, "evade sections missing")
+assert(boss.EvadeSection and boss.EvadeListSection and boss.EvadeAddSection, "evade sections missing")
 assert(SectionTitle(boss.EvadeSection) == "Pause For Strangers", "the hold's title is not at the top of its section: " .. SectionTitle(boss.EvadeSection))
-assert(SectionTitle(boss.EvadeWaypointSection) == "Evade Waypoint", "the waypoint section's title is not at the top")
-assert(SectionTitle(boss.EvadePromptSection) == "Evade Prompt", "the prompt section's title is not at the top")
+assert(SectionTitle(boss.EvadeListSection) == "Hiding Spots", "the hiding-spot list's title is not at the top")
+assert(SectionTitle(boss.EvadeAddSection) == "Add A Hiding Spot", "the add-a-spot section's title is not at the top")
 assert(SectionTitle(boss.BlockSection) == "Auto Block", "the auto block title is not at the top of its section")
 assert(SectionTitle(boss.WhitelistSection) == "Block Whitelist", "the whitelist title is not at the top of its section")
 assert(boss.BlockSection.Frame.LayoutOrder > boss.EvadeSection.Frame.LayoutOrder, "auto block was not placed under the evade sections")
 assert(boss.WhitelistSection.Frame.LayoutOrder > boss.BlockSection.Frame.LayoutOrder, "the whitelist was not placed under auto block")
 assert(boss.EvadePauseToggle, "pause for strangers toggle missing")
-assert(boss.EvadeWaypointBox and boss.EvadePromptToggle, "evade spot controls missing")
-assert(boss.EvadePromptButton, "save evade prompt button missing")
-assert(boss.EvadeRandomToggle, "random evade waypoint toggle missing")
-assert(boss.EvadeSpotLabel, "evade spot label missing")
-assert(boss.EvadeSpotLabel.Instance.Text:find("EVADE SPOT:", 1, true), "evade spot label text missing")
+assert(boss.EvadeListComponent, "hiding-spot list missing")
+assert(boss.EvadeWaypointBox and boss.EvadePromptButton, "hiding-spot controls missing")
+assert(boss.EvadeSpotLabel, "hiding-spot count label missing")
+assert(boss.EvadeSpotLabel.Instance.Text:find("HIDING SPOTS:", 1, true), "hiding-spot label text missing")
 assert(boss.EvadePauseToggle:Get() == false, "pause for strangers started on")
 assert(boss.EvadePauseToggle.Row.Parent == boss.EvadeSection.Frame, "the hold's toggle was not placed in its own section")
-assert(boss.EvadeWaypointBox.Row.Parent == boss.EvadeWaypointSection.Frame, "the evade waypoint box was not placed in its own section")
-assert(boss.EvadePromptButton.Row.Parent == boss.EvadePromptSection.Frame, "the evade prompt button was not placed in its own section")
+assert(boss.EvadeWaypointBox.Row.Parent == boss.EvadeAddSection.Frame, "the add-waypoint box was not placed in its own section")
+assert(boss.EvadePromptButton.Row.Parent == boss.EvadeAddSection.Frame, "the add-prompt button was not placed in its own section")
 --// Auto Block's own module is not started here, so only the section it fills
 --// can be checked: it exists, it is titled, and it sits under Auto Block.
 assert(boss.WhitelistSection.Frame.LayoutOrder == boss.BlockSection.Frame.LayoutOrder + 1, "the whitelist section is not directly under auto block")
@@ -381,29 +380,40 @@ boss.EvadePauseToggle:Set(false)
 assert(Context.Feature.PauseForStrangers.Enabled == false, "pause toggle did not turn the feature off")
 assert(#SmokeEnv.Errors == 0, "pause toggle raised: " .. table.concat(SmokeEnv.Errors, "; "))
 
---// The spot is saved on the place config, so a reconnect to the same place has
---// it again. A waypoint number written in the box is normalized and stored.
+--// A waypoint number typed into the add box becomes a hiding spot on the
+--// place config, so a reconnect to the same place has it again.
 boss.EvadeWaypointBox:Set("12")
-assert(#SmokeEnv.Errors == 0, "evade waypoint box raised: " .. table.concat(SmokeEnv.Errors, "; "))
+assert(#SmokeEnv.Errors == 0, "add hiding spot raised: " .. table.concat(SmokeEnv.Errors, "; "))
 local livePlace = Context.Runtime:GetPlaceConfig()
-assert(type(livePlace) == "table", "no place config after the evade waypoint was saved")
-assert(livePlace.BOSS_EVADE and livePlace.BOSS_EVADE.Waypoint == 12, "evade waypoint was not saved on the place config")
+assert(type(livePlace) == "table", "no place config after a hiding spot was saved")
+assert(livePlace.BOSS_EVADE and livePlace.BOSS_EVADE.Spots, "the hiding-spot list was not saved on the place config")
+assert(#livePlace.BOSS_EVADE.Spots == 1 and livePlace.BOSS_EVADE.Spots[1].Waypoint == 12, "the waypoint was not saved as a hiding spot")
+assert(boss.EvadeSpotLabel.Instance.Text:find("1", 1, true), "the hiding-spot count was not reported")
 
---// The random pick is saved beside it, and read back by the normalizer.
-boss.EvadeRandomToggle:Set(true)
-assert(#SmokeEnv.Errors == 0, "random evade toggle raised: " .. table.concat(SmokeEnv.Errors, "; "))
-assert(boss.EvadeRandomToggle:Get() == true, "random evade toggle did not stay on")
-assert(livePlace.BOSS_EVADE.Random == true, "random evade waypoint was not saved on the place config")
-assert(boss.EvadeSpotLabel.Instance.Text:find("RANDOM", 1, true), "evade spot label did not report the random pick")
-assert(Context.AICConfig.NormalizeBossEvade(livePlace.BOSS_EVADE).Random == true, "normalizer dropped the random flag")
-boss.EvadeRandomToggle:Set(false)
-assert(livePlace.BOSS_EVADE.Random == false, "random evade waypoint was not switched back off")
-assert(Context.AICConfig.NormalizeBossEvade(nil).Random == false, "random evade default")
-
---// Read it back the way the module does: the live place config's BOSS_EVADE.
+--// The list is read back through the normalizer a profile or place load runs:
+--// that is what used to drop every saved spot, so it is what is asserted here.
 assert(type(Context.AICConfig.NormalizeBossEvade) == "function", "boss evade normalizer missing")
-local normalized = Context.AICConfig.NormalizeBossEvade{ Waypoint = 12, Prompt = true, PromptName = " Door " }
-assert(normalized.Waypoint == 12 and normalized.Prompt == true and normalized.PromptName == "Door", "boss evade normalizer")
+local reloaded = Context.AICConfig.NormalizeBossEvade(livePlace.BOSS_EVADE)
+assert(reloaded.Spots and #reloaded.Spots == 1 and reloaded.Spots[1].Waypoint == 12, "the normalizer dropped the saved hiding spot")
+
+local kept = Context.AICConfig.NormalizeBossEvade{
+    Spots = {
+        { Kind = "Waypoint", Waypoint = 5 },
+        { Kind = "Prompt", Name = "Door", X = 10, Y = 2, Z = -3 },
+        { Kind = "Waypoint", Waypoint = 0 },
+        { Kind = "Prompt", Name = "Bad", X = 0 / 0, Y = 0, Z = 0 },
+        "not a spot",
+    },
+}
+assert(kept.Spots and #kept.Spots == 2, "the normalizer kept spots it should have dropped: " .. tostring(kept.Spots and #kept.Spots))
+assert(kept.Spots[1].Kind == "Waypoint" and kept.Spots[1].Waypoint == 5, "the waypoint spot was not kept")
+assert(kept.Spots[2].Kind == "Prompt" and kept.Spots[2].Name == "Door", "the prompt spot was not kept")
+assert(Context.AICConfig.NormalizeBossEvade(nil).Spots == nil, "a save with no list should stay without one, so the old single spot can migrate")
+assert(#Context.AICConfig.NormalizeBossEvade{ Spots = {} }.Spots == 0, "a list the player cleared came back")
+
+--// The old single spot is still read, so a save from before the list keeps it.
+local legacy = Context.AICConfig.NormalizeBossEvade{ Waypoint = 12, Prompt = true, PromptName = " Door " }
+assert(legacy.Waypoint == 12 and legacy.Prompt == true and legacy.PromptName == "Door", "boss evade normalizer")
 assert(Context.AICConfig.NormalizeBossEvade(nil).Waypoint == 0, "boss evade normalizer default")
 
 --// The hold only acts for a running route with the toggle on, and it lets go

@@ -2,7 +2,7 @@
 
 Status: `[ ]` not started · `[x]` done or fixed (written, not yet verified in-game)
 
-All 145 items are complete — nothing here is pending. This file is the record of
+All 146 items are complete — nothing here is pending. This file is the record of
 what was asked for and what shipped, oldest work first: `## To Do` lists requested
 features, `## To Fix` lists reported bugs. Every item names the version it shipped
 in, and the note under it explains what actually changed and which tuning constants
@@ -1633,3 +1633,12 @@ were added.
 > - Notes on each section now say what the section is for in plain words ("When someone who is not on your Block Whitelist shows up, the route stops, your character resets and hides, then waits 2-3 minutes for them to leave"), instead of one dense paragraph.
 > - Docs: `USAGE.md` *Bosses tab* now mirrors the panel — separate sections for **Pause For Strangers**, **Evade Waypoint**, **Evade Prompt**, **Auto Block** and **Block Whitelist** — and the Farming/Combat pointers name the new sections; `AI-WALKTHROUGH.md` records the split and the rule that a title is a section's first row, so no control may be given a negative `LayoutOrder`.
 > - Checks: `luau-compile` clean on `Core/Runtime.lua`, `Features/AutoBlock.lua` and `Features/BossNavigator.lua`; `tests/BootProbe.lua` now reads the first row of every one of those five sections and asserts its text is the section's title (which is what would have caught the original bug), plus each control's row parent is its own section, and Auto Block/Whitelist sort under the evade sections; bundle rebuilt; `tests/run-bundle-check.ps1` 0 compile failures; `tests/run-boot-probe.ps1` from source passes; `tests/run-ui-smoke.ps1` 0 failed checks. Not run in game.
+### [x] Several hiding spots to pick from, and a normalizer that dropped them
+
+> **Reported:** the hold should choose between several saved hiding spots instead of one waypoint or prompt.
+> **Changed (v3.95):**
+> - `BOSS_EVADE.Spots` is the list the hold picks from: `{ Kind = "Waypoint", Waypoint = 7 }` or `{ Kind = "Prompt", Name = "Door", X, Y, Z }`, up to **20**. Each hold takes one at random and never the same one as the hold before it (`S.EvadePick` is the spot's key, so an edit to the list in between cannot make the pick repeat). A save from before the list migrates its single waypoint or prompt into the first spot, once.
+> - Three sections on the Bosses tab replace the waypoint and prompt ones: **Pause For Strangers** (toggle and the `HIDING SPOTS` line), **Hiding Spots** (the list, ▲▼, `✕`, **Clear Hiding Spots**) and **Add A Hiding Spot** (**Add Waypoint #** and **Add Prompt Here**, both refusing a duplicate or a 21st spot).
+> - **Fixed:** `AICConfig.NormalizeBossEvade` returned a table built from the fields it knew, so `Spots` was stripped every time `NormalizePlaceConfig` ran — which is what a profile or place load does. Every saved hiding spot vanished on reload, even though the list looked fine until then. The normalizer now cleans and keeps `Spots` (`AICConfig.NormalizeBossEvadeSpots`: waypoints 1-999, prompts with finite rounded positions, names cut to 64, 20 max, anything else dropped), keeps `nil` when nothing was ever saved as a list (so the old single spot still migrates), and keeps an **empty** list empty (so spots the player cleared do not come back).
+> - Docs: `USAGE.md` *Bosses tab* — **Hiding Spots** and **Add A Hiding Spot** replace the old **Evade Waypoint** / **Evade Prompt** sections, and the hold's section describes the random pick between them; `AI-WALKTHROUGH.md` lists the new sections.
+> - Checks: `luau-compile` clean on `Core/Runtime.lua` and `Features/BossNavigator.lua`; `tests/BootProbe.lua` now adds a waypoint spot through the box and asserts it lands in `BOSS_EVADE.Spots`, then runs that config back through the normalizer and asserts the spot survives (the exact reload that used to lose it), keeps a waypoint and a prompt spot while dropping a 0 waypoint, a NaN position and a non-table, leaves a never-saved list `nil` and a cleared list empty; section titles and placements checked for the three new sections; bundle rebuilt; `tests/run-bundle-check.ps1` 0 compile failures; `tests/run-boot-probe.ps1` passes from source and from the bundle; `tests/run-ui-smoke.ps1` 0 failed checks. Not run in game.

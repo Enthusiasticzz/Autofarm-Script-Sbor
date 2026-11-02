@@ -1146,9 +1146,62 @@ return {
             return Result
         end
 
-        --// Where the pause-for-strangers hold stands: one of the game's
-        --// waypoints, or the spot an interaction prompt sits on. Both stay
-        --// optional - a hold with neither saved is the reset alone.
+        --// The hiding spots the pause-for-strangers hold picks from, saved as
+        --// BOSS_EVADE.Spots: plain tables of numbers and strings so any saver
+        --// can write them.
+        --//   { Kind = "Waypoint", Waypoint = 7 }
+        --//   { Kind = "Prompt", Name = "Door", X = 1, Y = 2, Z = 3 }
+        --// Cleaned here as well as in BossNavigator on purpose: this is the
+        --// function a profile or place load runs, and a normalizer that only
+        --// rebuilt the fields it knew would drop every saved hiding spot the
+        --// first time the script reloaded.
+        AICConfig.MAX_EVADE_SPOTS = 20
+
+        function AICConfig.NormalizeBossEvadeSpots(Raw)
+            local Clean = {}
+
+            if type(Raw) ~= "table" then
+                return Clean
+            end
+
+            local function IsFiniteNumber(Value)
+                return type(Value) == "number" and Value == Value and math.abs(Value) < math.huge
+            end
+
+            for _, Spot in ipairs(Raw) do
+                if #Clean >= AICConfig.MAX_EVADE_SPOTS then
+                    break
+                end
+
+                if type(Spot) == "table" then
+                    if Spot.Kind == "Waypoint" then
+                        local Number = math.floor(tonumber(Spot.Waypoint) or 0)
+
+                        if Number >= 1 and Number <= AICConfig.MAX_BOSS_WAYPOINT then
+                            table.insert(Clean, { Kind = "Waypoint", Waypoint = Number })
+                        end
+                    elseif Spot.Kind == "Prompt" then
+                        local X, Y, Z = tonumber(Spot.X), tonumber(Spot.Y), tonumber(Spot.Z)
+
+                        if IsFiniteNumber(X) and IsFiniteNumber(Y) and IsFiniteNumber(Z) then
+                            table.insert(Clean, {
+                                Kind = "Prompt",
+                                Name = string.sub(tostring(Spot.Name or ""), 1, 64),
+                                X = AICConfig.RoundNumber(X),
+                                Y = AICConfig.RoundNumber(Y),
+                                Z = AICConfig.RoundNumber(Z),
+                            })
+                        end
+                    end
+                end
+            end
+
+            return Clean
+        end
+
+        --// Where the pause-for-strangers hold stands: the list above, or the
+        --// single waypoint/prompt a save from before the list existed had.
+        --// Both stay optional - a hold with nothing saved is the reset alone.
         function AICConfig.NormalizeBossEvade(Evade)
             Evade = type(Evade) == "table" and Evade or {}
 
@@ -1162,6 +1215,12 @@ return {
                 PromptPosition = nil
             end
 
+            --// nil, not an empty list, when the save had none: a save from
+            --// before the list kept one waypoint or prompt, and BossNavigator
+            --// migrates that into the first spot once. An empty list that was
+            --// saved stays empty, so spots the player cleared do not come back.
+            local Spots = AICConfig.NormalizeBossEvadeSpots(Evade.Spots)
+
             return {
                 --// 0 = no waypoint saved.
                 Waypoint = math.clamp(
@@ -1174,6 +1233,7 @@ return {
                 --// On: each hold picks its own waypoint out of 1..Waypoint
                 --// instead of always going to the one saved below.
                 Random = Evade.Random == true,
+                Spots = (Evade.Spots ~= nil) and Spots or nil,
                 PromptPosition = PromptPosition,
                 PromptName = type(Evade.PromptName) == "string"
                     and string.sub(Evade.PromptName:gsub("^%s*(.-)%s*$", "%1"), 1, 64)

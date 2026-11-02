@@ -456,9 +456,9 @@ return {
                 --// teleport that never went out would leave the character at
                 --// spawn instead of the saved spot.
                 EvadeLiveAt = nil,
-                --// The waypoint the last hold picked with Random Evade Waypoint
-                --// on. Kept across holds on purpose: the next pick steps off it
-                --// rather than hiding in the same place twice.
+                --// The key of the hiding spot the last hold picked. Kept
+                --// across holds on purpose: the next pick steps off it rather
+                --// than hiding in the same place twice.
                 EvadePick = nil,
                 --// The leave was asked for once the window ran out.
                 EvadeKicked = false,
@@ -970,6 +970,11 @@ return {
             end
 
             UIRef.BossListComponent:SetPriority(BuildLabels(), GetResetWaits())
+
+            --// A loaded profile or a commit changes the hiding spots with it.
+            if AICUI.RefreshBossEvadeList then
+                AICUI.RefreshBossEvadeList()
+            end
         end
 
         --// Names of the boss picked in "Edit Boss Stop": a list plus a
@@ -1192,7 +1197,27 @@ return {
         end
 
         local function Commit(StatusText)
-            Runtime:SetPlaceConfig(AICConfig.NormalizePlaceConfig(Runtime:GetPlaceConfig()))
+            --// The hiding-spot list rides on BOSS_EVADE.Spots. The normalizer
+            --// below only keeps the fields it knows, so the list is held
+            --// aside and put back if it was dropped.
+            local Before = Runtime:GetPlaceConfig()
+            local KeptSpots = type(Before) == "table"
+                and type(Before.BOSS_EVADE) == "table"
+                and Before.BOSS_EVADE.Spots
+                or nil
+            local Normalized = AICConfig.NormalizePlaceConfig(Before)
+
+            if KeptSpots and type(Normalized) == "table" then
+                if type(Normalized.BOSS_EVADE) ~= "table" then
+                    Normalized.BOSS_EVADE = AICConfig.NormalizeBossEvade(nil)
+                end
+
+                if Normalized.BOSS_EVADE.Spots == nil then
+                    Normalized.BOSS_EVADE.Spots = KeptSpots
+                end
+            end
+
+            Runtime:SetPlaceConfig(Normalized)
             AICUI.RefreshBossRouteList()
             AICUI.RefreshBossRoutePickers()
             AICUI.RefreshBossPathList()
@@ -3080,7 +3105,7 @@ return {
             local PlaceConfig = Runtime:GetPlaceConfig()
 
             if not PlaceConfig then
-                return { Waypoint = 0, Prompt = false, Random = false, PromptName = "" }
+                return { Waypoint = 0, Prompt = false, Random = false, PromptName = "", Spots = {} }
             end
 
             if type(PlaceConfig.BOSS_EVADE) ~= "table" then
@@ -3088,6 +3113,93 @@ return {
             end
 
             return PlaceConfig.BOSS_EVADE
+        end
+
+        --// The hiding spots: the places the hold may go to, picked from at
+        --// random by the hold. Saved as BOSS_EVADE.Spots, plain tables with
+        --// plain numbers so any saver can write them:
+        --//   { Kind = "Waypoint", Waypoint = 7 }
+        --//   { Kind = "Prompt", Name = "Door", X = 1, Y = 2, Z = 3 }
+        local MAX_EVADE_SPOTS = 20
+
+        --// Whatever was saved, made into a list the hold can trust. Spots
+        --// that are not a waypoint in range or a real position are dropped.
+        local function CleanSpots(Raw)
+            local Clean = {}
+
+            local function IsFiniteNumber(Value)
+                return type(Value) == "number" and Value == Value and math.abs(Value) < math.huge
+            end
+
+            if type(Raw) ~= "table" then
+                return Clean
+            end
+
+            for _, Spot in ipairs(Raw) do
+                if #Clean >= MAX_EVADE_SPOTS then
+                    break
+                end
+
+                if type(Spot) == "table" then
+                    if Spot.Kind == "Waypoint" then
+                        local Number = math.floor(tonumber(Spot.Waypoint) or 0)
+
+                        if Number >= 1 and Number <= AICConfig.MAX_BOSS_WAYPOINT then
+                            table.insert(Clean, { Kind = "Waypoint", Waypoint = Number })
+                        end
+                    elseif Spot.Kind == "Prompt" then
+                        local X, Y, Z = tonumber(Spot.X), tonumber(Spot.Y), tonumber(Spot.Z)
+
+                        if IsFiniteNumber(X) and IsFiniteNumber(Y) and IsFiniteNumber(Z) then
+                            table.insert(Clean, {
+                                Kind = "Prompt",
+                                Name = string.sub(tostring(Spot.Name or ""), 1, 64),
+                                X = X,
+                                Y = Y,
+                                Z = Z,
+                            })
+                        end
+                    end
+                end
+            end
+
+            return Clean
+        end
+
+        --// The list on the config. A save from before the list existed has
+        --// none: its single waypoint or prompt becomes the first spot, once.
+        local function GetEvadeSpots()
+            local Evade = GetEvadeConfig()
+
+            if type(Evade.Spots) ~= "table" then
+                Evade.Spots = {}
+
+                if Evade.Prompt and Evade.PromptPosition then
+                    table.insert(Evade.Spots, {
+                        Kind = "Prompt",
+                        Name = tostring(Evade.PromptName or ""),
+                        X = Evade.PromptPosition.X,
+                        Y = Evade.PromptPosition.Y,
+                        Z = Evade.PromptPosition.Z,
+                    })
+                elseif (tonumber(Evade.Waypoint) or 0) > 0 then
+                    table.insert(Evade.Spots, { Kind = "Waypoint", Waypoint = Evade.Waypoint })
+                end
+            end
+
+            Evade.Spots = CleanSpots(Evade.Spots)
+
+            return Evade.Spots
+        end
+
+        --// A spot's identity, so a hold can avoid the one the hold before it
+        --// used even after the list was edited in between.
+        local function SpotKey(Spot)
+            if Spot.Kind == "Prompt" then
+                return string.format("P%.0f,%.0f,%.0f", Spot.X, Spot.Y, Spot.Z)
+            end
+
+            return "W" .. tostring(Spot.Waypoint)
         end
 
         --// Whether a player is a stranger to the hold: yourself and anyone on
@@ -3356,10 +3468,29 @@ return {
                 Runtime:MuteInteract(PROMPT_INTERACT_MUTE)
             end
 
-            local Evade = GetEvadeConfig()
-            local PromptPosition = (Evade.Prompt and Evade.PromptPosition) or nil
+            --// One spot is picked at random from the hiding-spot list, and
+            --// never the same one as the hold before it - the point of hiding
+            --// somewhere else is not to land where a stranger last saw the
+            --// character. Picked once per hold: this block runs on the frame
+            --// the send goes out, which is the only frame it runs on
+            --// (EvadeSent is set above).
+            local Spots = GetEvadeSpots()
+            local Spot = nil
 
-            if PromptPosition then
+            if #Spots > 0 then
+                local Pick = math.random(1, #Spots)
+
+                if #Spots > 1 and SpotKey(Spots[Pick]) == S.EvadePick then
+                    Pick = (Pick % #Spots) + 1
+                end
+
+                Spot = Spots[Pick]
+                S.EvadePick = SpotKey(Spot)
+            end
+
+            if Spot and Spot.Kind == "Prompt" then
+                local PromptPosition = Vector3.new(Spot.X, Spot.Y, Spot.Z)
+
                 if TeleportToPoint(PromptPosition) then
                     S.EvadePromptTarget = PromptPosition
                     S.EvadePromptCheckAt = Now + PROMPT_WAIT
@@ -3370,26 +3501,7 @@ return {
                 return false
             end
 
-            local Waypoint = tonumber(Evade.Waypoint) or 0
-
-            --// Random Evade Waypoint: the number saved is the highest one the
-            --// hold may pick, and a pick is never the same waypoint as the hold
-            --// before it - the point of hiding somewhere else is not to land
-            --// where a stranger last saw the character. Picked once per hold:
-            --// this block runs on the frame the send goes out, which is the
-            --// only frame it runs on (EvadeSent is set above).
-            local PickMax = math.floor(Waypoint)
-
-            if Evade.Random and PickMax > 1 then
-                local Pick = math.random(1, PickMax)
-
-                if Pick == S.EvadePick then
-                    Pick = (Pick % PickMax) + 1
-                end
-
-                S.EvadePick = Pick
-                Waypoint = Pick
-            end
+            local Waypoint = Spot and Spot.Waypoint or 0
 
             if Waypoint > 0 then
                 S.EvadeTeleportFrom = RootPart.Position
@@ -3851,10 +3963,10 @@ return {
         UIRef.BossNamesSection = UIRef.BossTab:AddSection{ Title = "Boss Targets", Side = "Right" }
         UIRef.BossTravelSection = UIRef.BossTab:AddSection{ Title = "Teleport and Prompt", Side = "Right" }
         --// Pause For Strangers has sections of its own, each with its title on
-        --// top, instead of rows pushed into the Auto Block section.
+        --// top: the switch, the list of hiding spots, and where spots are added.
         UIRef.EvadeSection = UIRef.BossTab:AddSection{ Title = "Pause For Strangers", Side = "Right" }
-        UIRef.EvadeWaypointSection = UIRef.BossTab:AddSection{ Title = "Evade Waypoint", Side = "Right" }
-        UIRef.EvadePromptSection = UIRef.BossTab:AddSection{ Title = "Evade Prompt", Side = "Right" }
+        UIRef.EvadeListSection = UIRef.BossTab:AddSection{ Title = "Hiding Spots", Side = "Right" }
+        UIRef.EvadeAddSection = UIRef.BossTab:AddSection{ Title = "Add A Hiding Spot", Side = "Right" }
 
         UIRef.BossToggle = AICUI.BindFeatureToggle("BossRoute", "Boss Route", function(Enabled)
             if Enabled then
@@ -4571,54 +4683,84 @@ return {
         --// Evasion: the pause-for-strangers hold
         ------------------------------------------------------------------------
 
-        --// The saved spot, as the section reports it. A prompt the button found
-        --// is named; one saved where the player stood says HERE.
-        local function RefreshEvadeUI()
-            local Evade = GetEvadeConfig()
-            local Where = "NONE  (THE RESET IS THE WHOLE EVADE)"
+        --// The hiding spots as list rows. The number keeps every label unique:
+        --// the list finds a spot by its label.
+        local function BuildEvadeLabels()
+            local Labels = {}
 
-            if Evade.Prompt and Evade.PromptPosition then
-                Where = string.format(
-                    "%s  (%.0f, %.0f, %.0f)",
-                    Evade.PromptName ~= "" and Evade.PromptName or "PROMPT",
-                    Evade.PromptPosition.X,
-                    Evade.PromptPosition.Y,
-                    Evade.PromptPosition.Z
-                )
-            elseif (tonumber(Evade.Waypoint) or 0) > 0 then
-                Where = string.format("WAYPOINT %d", Evade.Waypoint)
-
-                if Evade.Random then
-                    --// The pick itself is on the status line while the hold
-                    --// runs (`EVADING  @name  WP7`); this says the range.
-                    Where = string.format("RANDOM  WP1-%d", Evade.Waypoint)
+            for Index, Spot in ipairs(GetEvadeSpots()) do
+                if Spot.Kind == "Prompt" then
+                    Labels[Index] = string.format(
+                        "#%d  PROMPT  %s  (%.0f, %.0f, %.0f)",
+                        Index,
+                        Spot.Name ~= "" and Spot.Name or "HERE",
+                        Spot.X,
+                        Spot.Y,
+                        Spot.Z
+                    )
+                else
+                    Labels[Index] = string.format("#%d  WAYPOINT  %d", Index, Spot.Waypoint)
                 end
             end
 
+            return Labels
+        end
+
+        --// The list and the line above it, from what is saved.
+        local function RefreshEvadeUI()
+            local Count = #GetEvadeSpots()
+
             if UIRef.EvadeSpotLabel then
-                UIRef.EvadeSpotLabel:Set("EVADE SPOT:  " .. Where)
+                UIRef.EvadeSpotLabel:Set(Count == 0
+                    and "HIDING SPOTS:  NONE  (THE RESET IS THE WHOLE EVADE)"
+                    or (Count == 1
+                        and "HIDING SPOTS:  1  (ALWAYS THIS ONE)"
+                        or string.format("HIDING SPOTS:  %d  (ONE PICKED AT RANDOM)", Count)))
             end
 
-            if UIRef.EvadeWaypointBox then
-                UIRef.EvadeWaypointBox:Set(tostring(Evade.Waypoint or 0), true)
+            if UIRef.EvadeListComponent then
+                UIRef.EvadeListComponent:SetPriority(BuildEvadeLabels())
+            end
+        end
+
+        AICUI.RefreshBossEvadeList = RefreshEvadeUI
+
+        --// Adds a spot unless the list already has it. Where it was added
+        --// from decides the message; the list is saved either way.
+        local function AddEvadeSpot(Spot, Message)
+            if not CanEdit("DEFAULT PLACE_CONFIG IS READ-ONLY") then
+                return false
             end
 
-            if UIRef.EvadePromptToggle then
-                UIRef.EvadePromptToggle:Set(Evade.Prompt == true, true)
+            local Spots = GetEvadeSpots()
+
+            if #Spots >= MAX_EVADE_SPOTS then
+                SetStatus(string.format("HIDING SPOTS FULL (%d)", MAX_EVADE_SPOTS))
+                return false
             end
 
-            if UIRef.EvadeRandomToggle then
-                UIRef.EvadeRandomToggle:Set(Evade.Random == true, true)
+            local Key = SpotKey(Spot)
+
+            for _, Other in ipairs(Spots) do
+                if SpotKey(Other) == Key then
+                    SetStatus("ALREADY A HIDING SPOT")
+                    return false
+                end
             end
+
+            table.insert(Spots, Spot)
+            RefreshEvadeUI()
+            Commit(Message)
+            return true
         end
 
         do
             local EvadeSection = UIRef.EvadeSection
-            local WaypointSection = UIRef.EvadeWaypointSection
-            local PromptSection = UIRef.EvadePromptSection
+            local ListSection = UIRef.EvadeListSection
+            local AddSection = UIRef.EvadeAddSection
 
             ----------------------------------------------------------------
-            --// Pause For Strangers: the switch, what it does, where it hides
+            --// Pause For Strangers: the switch and what it does
             ----------------------------------------------------------------
 
             UIRef.EvadePauseToggle = AICUI.BindFeatureToggle(
@@ -4640,97 +4782,118 @@ return {
                 EvadeSection
             )
 
-            UIRef.EvadeSpotLabel = EvadeSection:AddLabel("EVADE SPOT:  NONE")
+            UIRef.EvadeSpotLabel = EvadeSection:AddLabel("HIDING SPOTS:  NONE")
 
-            EvadeSection:AddNote("When someone who is not on your Block Whitelist shows up, the route stops, your character resets and hides, then waits 2-3 minutes for them to leave")
+            EvadeSection:AddNote("When someone who is not on your Block Whitelist shows up, the route stops. Your character resets, hides at one of your Hiding Spots, and waits 2-3 minutes for them to leave")
             EvadeSection:AddNote("They leave: the route starts again at stop #1")
             EvadeSection:AddNote("They stay: the game is closed, like Leave Instead Of Block")
 
             ----------------------------------------------------------------
-            --// Evade Waypoint: hide at one of the game's waypoints
+            --// Hiding Spots: the list the hold picks from
             ----------------------------------------------------------------
 
-            WaypointSection:AddNote("Type a waypoint number to hide at. 0 means no waypoint: the reset alone is the hide")
+            ListSection:AddNote("Every hold picks one spot from this list at random, never the same one twice in a row. Keep one spot to always hide in the same place")
 
-            UIRef.EvadeWaypointBox = WaypointSection:AddTextBox{
-                Name = "Evade Waypoint #",
+            UIRef.EvadeListComponent = ListSection:AddPriority("Hiding Spots", {})
+
+            local ListMoveUp = UIRef.EvadeListComponent.MoveUp
+            local ListMoveDown = UIRef.EvadeListComponent.MoveDown
+            local ListRemove = UIRef.EvadeListComponent.Remove
+
+            local function MoveEvadeSpot(Component, Label, Delta, Original, StatusText)
+                if not CanEdit("DEFAULT PLACE_CONFIG IS READ-ONLY") then
+                    return
+                end
+
+                local Spots = GetEvadeSpots()
+                local Index = table.find(BuildEvadeLabels(), Label)
+                local Other = Index and Index + Delta
+
+                if not Other or Other < 1 or Other > #Spots then
+                    return
+                end
+
+                Spots[Index], Spots[Other] = Spots[Other], Spots[Index]
+                Original(Component, Label)
+                RefreshEvadeUI()
+                Commit(StatusText)
+            end
+
+            function UIRef.EvadeListComponent:MoveUp(Label)
+                MoveEvadeSpot(self, Label, -1, ListMoveUp, "HIDING SPOT MOVED UP")
+            end
+
+            function UIRef.EvadeListComponent:MoveDown(Label)
+                MoveEvadeSpot(self, Label, 1, ListMoveDown, "HIDING SPOT MOVED DOWN")
+            end
+
+            function UIRef.EvadeListComponent:Remove(Label)
+                if not CanEdit("DEFAULT PLACE_CONFIG IS READ-ONLY") then
+                    return
+                end
+
+                local Spots = GetEvadeSpots()
+                local Index = table.find(BuildEvadeLabels(), Label)
+
+                if not Index then
+                    return
+                end
+
+                table.remove(Spots, Index)
+                ListRemove(self, Label)
+                RefreshEvadeUI()
+                Commit("HIDING SPOT REMOVED #" .. tostring(Index))
+            end
+
+            ListSection:AddButton{
+                Name = "Clear Hiding Spots",
+                Callback = function()
+                    if not CanEdit("DEFAULT PLACE_CONFIG IS READ-ONLY") then
+                        return
+                    end
+
+                    table.clear(GetEvadeSpots())
+                    RefreshEvadeUI()
+                    Commit("HIDING SPOTS CLEARED")
+                end,
+            }
+
+            ----------------------------------------------------------------
+            --// Add A Hiding Spot: a waypoint by number, or a prompt by standing
+            ----------------------------------------------------------------
+
+            AddSection:AddNote("Waypoint: type its number and press enter. Prompt: stand at a door or portal and press the button. Away from any prompt, it saves the spot you are standing on")
+
+            UIRef.EvadeWaypointBox = AddSection:AddTextBox{
+                Name = "Add Waypoint #",
                 Default = "",
                 Inline = true,
                 Callback = function(Value)
+                    if tostring(Value or "") == "" then
+                        return
+                    end
+
                     local Number = tonumber(Value)
 
-                    if not Number or Number < 0 then
+                    if not Number or Number < 1 then
                         SetStatus("INVALID VALUE")
-                        RefreshEvadeUI()
+                        UIRef.EvadeWaypointBox:Set("", true)
                         return
                     end
 
-                    if not CanEdit("DEFAULT PLACE_CONFIG IS READ-ONLY") then
-                        RefreshEvadeUI()
-                        return
-                    end
+                    Number = math.clamp(math.floor(Number), 1, AICConfig.MAX_BOSS_WAYPOINT)
 
-                    local Evade = GetEvadeConfig()
-                    Evade.Waypoint = math.clamp(
-                        math.floor(Number), 0, AICConfig.MAX_BOSS_WAYPOINT
+                    AddEvadeSpot(
+                        { Kind = "Waypoint", Waypoint = Number },
+                        string.format("HIDING SPOT ADDED:  WAYPOINT %d", Number)
                     )
-                    RefreshEvadeUI()
-                    Commit(string.format("EVADE SPOT:  WAYPOINT %d", Evade.Waypoint))
+
+                    UIRef.EvadeWaypointBox:Set("", true)
                 end,
             }
 
-            --// The box above is the highest waypoint this may pick, not the one
-            --// the hold always goes to: randomising over 1..999 would spend most
-            --// holds on waypoints the game does not have.
-            UIRef.EvadeRandomToggle = WaypointSection:AddToggle{
-                Name = "Random Evade Waypoint",
-                Default = false,
-                Callback = function(Value)
-                    if not CanEdit("DEFAULT PLACE_CONFIG IS READ-ONLY") then
-                        RefreshEvadeUI()
-                        return
-                    end
-
-                    local Evade = GetEvadeConfig()
-                    Evade.Random = Value == true
-                    RefreshEvadeUI()
-                    Commit(Evade.Random
-                        and "EVADE SPOT:  RANDOM WAYPOINT"
-                        or "EVADE SPOT:  WAYPOINT")
-                end,
-            }
-
-            WaypointSection:AddNote("Random: each hold picks a new waypoint from 1 to the number above, never the same one twice in a row")
-
-            ----------------------------------------------------------------
-            --// Evade Prompt: hide at a saved door or portal
-            ----------------------------------------------------------------
-
-            PromptSection:AddNote("Stand at a door or portal, then press the button to save it. A saved prompt is used instead of the waypoint")
-
-            --// A saved prompt wins over the waypoint: the button below saves the
-            --// door or portal the character was standing at, which is where the
-            --// game wants it to be after the reset.
-            UIRef.EvadePromptToggle = PromptSection:AddToggle{
-                Name = "Evade To Prompt",
-                Default = false,
-                Callback = function(Value)
-                    if not CanEdit("DEFAULT PLACE_CONFIG IS READ-ONLY") then
-                        RefreshEvadeUI()
-                        return
-                    end
-
-                    local Evade = GetEvadeConfig()
-                    Evade.Prompt = Value == true
-                    RefreshEvadeUI()
-                    Commit(Evade.Prompt
-                        and "EVADE SPOT:  PROMPT"
-                        or "EVADE SPOT:  WAYPOINT")
-                end,
-            }
-
-            UIRef.EvadePromptButton = PromptSection:AddButton{
-                Name = "Save Evade Prompt Here",
+            UIRef.EvadePromptButton = AddSection:AddButton{
+                Name = "Add Prompt Here",
                 Callback = function()
                     local _, _, RootPart = Runtime:GetCharacter()
 
@@ -4740,36 +4903,37 @@ return {
                         return
                     end
 
-                    if not CanEdit("DEFAULT PLACE_CONFIG IS READ-ONLY") then
-                        return
-                    end
-
                     local Prompt, Nearest = FindNearestPrompt(RootPart.Position, PROMPT_SAVE_RADIUS)
                     local Position = GetPromptPosition(Prompt)
-                    local Evade = GetEvadeConfig()
 
                     --// No prompt near: where the player is standing is the
                     --// spot. The hold only needs somewhere to stand still.
                     if not Position then
-                        Evade.Prompt = true
-                        Evade.PromptPosition = AICConfig.RoundVector3(RootPart.Position)
-                        Evade.PromptName = "HERE"
-                        RefreshEvadeUI()
-                        Commit("EVADE SPOT:  STOOD HERE, SAVED")
-                        Say("Evasion", string.format(
-                            "No prompt within %d studs%s; saved where you stand",
-                            PROMPT_SAVE_RADIUS,
-                            Nearest and string.format(" (nearest %.0f)", Nearest) or ""
-                        ), 5)
+                        local Here = AICConfig.RoundVector3(RootPart.Position)
+
+                        if AddEvadeSpot(
+                            { Kind = "Prompt", Name = "HERE", X = Here.X, Y = Here.Y, Z = Here.Z },
+                            "HIDING SPOT ADDED:  STOOD HERE"
+                        ) then
+                            Say("Evasion", string.format(
+                                "No prompt within %d studs%s; saved where you stand",
+                                PROMPT_SAVE_RADIUS,
+                                Nearest and string.format(" (nearest %.0f)", Nearest) or ""
+                            ), 5)
+                        end
+
                         return
                     end
 
-                    Evade.Prompt = true
-                    Evade.PromptPosition = AICConfig.RoundVector3(Position)
-                    Evade.PromptName = string.sub(tostring(Prompt.Name or ""), 1, 64)
-                    RefreshEvadeUI()
-                    Commit("EVADE SPOT:  PROMPT SAVED")
-                    Say("Evasion", "Evade prompt saved: " .. Evade.PromptName, 4)
+                    local Rounded = AICConfig.RoundVector3(Position)
+                    local Name = string.sub(tostring(Prompt.Name or ""), 1, 64)
+
+                    if AddEvadeSpot(
+                        { Kind = "Prompt", Name = Name, X = Rounded.X, Y = Rounded.Y, Z = Rounded.Z },
+                        "HIDING SPOT ADDED:  PROMPT"
+                    ) then
+                        Say("Evasion", "Hiding spot added: " .. Name, 4)
+                    end
                 end,
             }
         end

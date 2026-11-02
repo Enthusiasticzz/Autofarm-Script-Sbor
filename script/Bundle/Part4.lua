@@ -463,6 +463,9 @@ if not UIRef.BossListComponent then
 return
 end
 UIRef.BossListComponent:SetPriority(BuildLabels(), GetResetWaits())
+if AICUI.RefreshBossEvadeList then
+AICUI.RefreshBossEvadeList()
+end
 end
 function AICUI.RefreshBossNames()
 local Component = UIRef.BossNamesComponent
@@ -634,7 +637,21 @@ end
 RefreshEditor()
 end
 local function Commit(StatusText)
-Runtime:SetPlaceConfig(AICConfig.NormalizePlaceConfig(Runtime:GetPlaceConfig()))
+local Before = Runtime:GetPlaceConfig()
+local KeptSpots = type(Before) == "table"
+and type(Before.BOSS_EVADE) == "table"
+and Before.BOSS_EVADE.Spots
+or nil
+local Normalized = AICConfig.NormalizePlaceConfig(Before)
+if KeptSpots and type(Normalized) == "table" then
+if type(Normalized.BOSS_EVADE) ~= "table" then
+Normalized.BOSS_EVADE = AICConfig.NormalizeBossEvade(nil)
+end
+if Normalized.BOSS_EVADE.Spots == nil then
+Normalized.BOSS_EVADE.Spots = KeptSpots
+end
+end
+Runtime:SetPlaceConfig(Normalized)
 AICUI.RefreshBossRouteList()
 AICUI.RefreshBossRoutePickers()
 AICUI.RefreshBossPathList()
@@ -1842,12 +1859,72 @@ end
 local function GetEvadeConfig()
 local PlaceConfig = Runtime:GetPlaceConfig()
 if not PlaceConfig then
-return { Waypoint = 0, Prompt = false, Random = false, PromptName = "" }
+return { Waypoint = 0, Prompt = false, Random = false, PromptName = "", Spots = {} }
 end
 if type(PlaceConfig.BOSS_EVADE) ~= "table" then
 PlaceConfig.BOSS_EVADE = AICConfig.NormalizeBossEvade(nil)
 end
 return PlaceConfig.BOSS_EVADE
+end
+local MAX_EVADE_SPOTS = 20
+local function CleanSpots(Raw)
+local Clean = {}
+local function IsFiniteNumber(Value)
+return type(Value) == "number" and Value == Value and math.abs(Value) < math.huge
+end
+if type(Raw) ~= "table" then
+return Clean
+end
+for _, Spot in ipairs(Raw) do
+if #Clean >= MAX_EVADE_SPOTS then
+break
+end
+if type(Spot) == "table" then
+if Spot.Kind == "Waypoint" then
+local Number = math.floor(tonumber(Spot.Waypoint) or 0)
+if Number >= 1 and Number <= AICConfig.MAX_BOSS_WAYPOINT then
+table.insert(Clean, { Kind = "Waypoint", Waypoint = Number })
+end
+elseif Spot.Kind == "Prompt" then
+local X, Y, Z = tonumber(Spot.X), tonumber(Spot.Y), tonumber(Spot.Z)
+if IsFiniteNumber(X) and IsFiniteNumber(Y) and IsFiniteNumber(Z) then
+table.insert(Clean, {
+Kind = "Prompt",
+Name = string.sub(tostring(Spot.Name or ""), 1, 64),
+X = X,
+Y = Y,
+Z = Z,
+})
+end
+end
+end
+end
+return Clean
+end
+local function GetEvadeSpots()
+local Evade = GetEvadeConfig()
+if type(Evade.Spots) ~= "table" then
+Evade.Spots = {}
+if Evade.Prompt and Evade.PromptPosition then
+table.insert(Evade.Spots, {
+Kind = "Prompt",
+Name = tostring(Evade.PromptName or ""),
+X = Evade.PromptPosition.X,
+Y = Evade.PromptPosition.Y,
+Z = Evade.PromptPosition.Z,
+})
+elseif (tonumber(Evade.Waypoint) or 0) > 0 then
+table.insert(Evade.Spots, { Kind = "Waypoint", Waypoint = Evade.Waypoint })
+end
+end
+Evade.Spots = CleanSpots(Evade.Spots)
+return Evade.Spots
+end
+local function SpotKey(Spot)
+if Spot.Kind == "Prompt" then
+return string.format("P%.0f,%.0f,%.0f", Spot.X, Spot.Y, Spot.Z)
+end
+return "W" .. tostring(Spot.Waypoint)
 end
 local function IsStranger(OtherPlayer)
 if not OtherPlayer or OtherPlayer == Player then
@@ -2028,9 +2105,18 @@ S.EvadeSent = true
 if Runtime.MuteInteract then
 Runtime:MuteInteract(PROMPT_INTERACT_MUTE)
 end
-local Evade = GetEvadeConfig()
-local PromptPosition = (Evade.Prompt and Evade.PromptPosition) or nil
-if PromptPosition then
+local Spots = GetEvadeSpots()
+local Spot = nil
+if #Spots > 0 then
+local Pick = math.random(1, #Spots)
+if #Spots > 1 and SpotKey(Spots[Pick]) == S.EvadePick then
+Pick = (Pick % #Spots) + 1
+end
+Spot = Spots[Pick]
+S.EvadePick = SpotKey(Spot)
+end
+if Spot and Spot.Kind == "Prompt" then
+local PromptPosition = Vector3.new(Spot.X, Spot.Y, Spot.Z)
 if TeleportToPoint(PromptPosition) then
 S.EvadePromptTarget = PromptPosition
 S.EvadePromptCheckAt = Now + PROMPT_WAIT
@@ -2039,16 +2125,7 @@ return true
 end
 return false
 end
-local Waypoint = tonumber(Evade.Waypoint) or 0
-local PickMax = math.floor(Waypoint)
-if Evade.Random and PickMax > 1 then
-local Pick = math.random(1, PickMax)
-if Pick == S.EvadePick then
-Pick = (Pick % PickMax) + 1
-end
-S.EvadePick = Pick
-Waypoint = Pick
-end
+local Waypoint = Spot and Spot.Waypoint or 0
 if Waypoint > 0 then
 S.EvadeTeleportFrom = RootPart.Position
 S.EvadeTeleportAt = Now
@@ -2366,8 +2443,8 @@ UIRef.BossEditorSection = UIRef.BossTab:AddSection{ Title = "Selected Stop", Sid
 UIRef.BossNamesSection = UIRef.BossTab:AddSection{ Title = "Boss Targets", Side = "Right" }
 UIRef.BossTravelSection = UIRef.BossTab:AddSection{ Title = "Teleport and Prompt", Side = "Right" }
 UIRef.EvadeSection = UIRef.BossTab:AddSection{ Title = "Pause For Strangers", Side = "Right" }
-UIRef.EvadeWaypointSection = UIRef.BossTab:AddSection{ Title = "Evade Waypoint", Side = "Right" }
-UIRef.EvadePromptSection = UIRef.BossTab:AddSection{ Title = "Evade Prompt", Side = "Right" }
+UIRef.EvadeListSection = UIRef.BossTab:AddSection{ Title = "Hiding Spots", Side = "Right" }
+UIRef.EvadeAddSection = UIRef.BossTab:AddSection{ Title = "Add A Hiding Spot", Side = "Right" }
 UIRef.BossToggle = AICUI.BindFeatureToggle("BossRoute", "Boss Route", function(Enabled)
 if Enabled then
 S.Index = 1
@@ -2906,40 +2983,63 @@ table.remove(Stop.Path, Index)
 PathRemove(self, Label)
 Commit("PATH POINT REMOVED #" .. tostring(Index))
 end
-local function RefreshEvadeUI()
-local Evade = GetEvadeConfig()
-local Where = "NONE  (THE RESET IS THE WHOLE EVADE)"
-if Evade.Prompt and Evade.PromptPosition then
-Where = string.format(
-"%s  (%.0f, %.0f, %.0f)",
-Evade.PromptName ~= "" and Evade.PromptName or "PROMPT",
-Evade.PromptPosition.X,
-Evade.PromptPosition.Y,
-Evade.PromptPosition.Z
+local function BuildEvadeLabels()
+local Labels = {}
+for Index, Spot in ipairs(GetEvadeSpots()) do
+if Spot.Kind == "Prompt" then
+Labels[Index] = string.format(
+"#%d  PROMPT  %s  (%.0f, %.0f, %.0f)",
+Index,
+Spot.Name ~= "" and Spot.Name or "HERE",
+Spot.X,
+Spot.Y,
+Spot.Z
 )
-elseif (tonumber(Evade.Waypoint) or 0) > 0 then
-Where = string.format("WAYPOINT %d", Evade.Waypoint)
-if Evade.Random then
-Where = string.format("RANDOM  WP1-%d", Evade.Waypoint)
+else
+Labels[Index] = string.format("#%d  WAYPOINT  %d", Index, Spot.Waypoint)
 end
 end
+return Labels
+end
+local function RefreshEvadeUI()
+local Count = #GetEvadeSpots()
 if UIRef.EvadeSpotLabel then
-UIRef.EvadeSpotLabel:Set("EVADE SPOT:  " .. Where)
+UIRef.EvadeSpotLabel:Set(Count == 0
+and "HIDING SPOTS:  NONE  (THE RESET IS THE WHOLE EVADE)"
+or (Count == 1
+and "HIDING SPOTS:  1  (ALWAYS THIS ONE)"
+or string.format("HIDING SPOTS:  %d  (ONE PICKED AT RANDOM)", Count)))
 end
-if UIRef.EvadeWaypointBox then
-UIRef.EvadeWaypointBox:Set(tostring(Evade.Waypoint or 0), true)
+if UIRef.EvadeListComponent then
+UIRef.EvadeListComponent:SetPriority(BuildEvadeLabels())
 end
-if UIRef.EvadePromptToggle then
-UIRef.EvadePromptToggle:Set(Evade.Prompt == true, true)
 end
-if UIRef.EvadeRandomToggle then
-UIRef.EvadeRandomToggle:Set(Evade.Random == true, true)
+AICUI.RefreshBossEvadeList = RefreshEvadeUI
+local function AddEvadeSpot(Spot, Message)
+if not CanEdit("DEFAULT PLACE_CONFIG IS READ-ONLY") then
+return false
 end
+local Spots = GetEvadeSpots()
+if #Spots >= MAX_EVADE_SPOTS then
+SetStatus(string.format("HIDING SPOTS FULL (%d)", MAX_EVADE_SPOTS))
+return false
+end
+local Key = SpotKey(Spot)
+for _, Other in ipairs(Spots) do
+if SpotKey(Other) == Key then
+SetStatus("ALREADY A HIDING SPOT")
+return false
+end
+end
+table.insert(Spots, Spot)
+RefreshEvadeUI()
+Commit(Message)
+return true
 end
 do
 local EvadeSection = UIRef.EvadeSection
-local WaypointSection = UIRef.EvadeWaypointSection
-local PromptSection = UIRef.EvadePromptSection
+local ListSection = UIRef.EvadeListSection
+local AddSection = UIRef.EvadeAddSection
 UIRef.EvadePauseToggle = AICUI.BindFeatureToggle(
 "PauseForStrangers",
 "Pause For Strangers",
@@ -2955,70 +3055,86 @@ or "PAUSE FOR STRANGERS OFF")
 end,
 EvadeSection
 )
-UIRef.EvadeSpotLabel = EvadeSection:AddLabel("EVADE SPOT:  NONE")
-EvadeSection:AddNote("When someone who is not on your Block Whitelist shows up, the route stops, your character resets and hides, then waits 2-3 minutes for them to leave")
+UIRef.EvadeSpotLabel = EvadeSection:AddLabel("HIDING SPOTS:  NONE")
+EvadeSection:AddNote("When someone who is not on your Block Whitelist shows up, the route stops. Your character resets, hides at one of your Hiding Spots, and waits 2-3 minutes for them to leave")
 EvadeSection:AddNote("They leave: the route starts again at stop #1")
 EvadeSection:AddNote("They stay: the game is closed, like Leave Instead Of Block")
-WaypointSection:AddNote("Type a waypoint number to hide at. 0 means no waypoint: the reset alone is the hide")
-UIRef.EvadeWaypointBox = WaypointSection:AddTextBox{
-Name = "Evade Waypoint #",
+ListSection:AddNote("Every hold picks one spot from this list at random, never the same one twice in a row. Keep one spot to always hide in the same place")
+UIRef.EvadeListComponent = ListSection:AddPriority("Hiding Spots", {})
+local ListMoveUp = UIRef.EvadeListComponent.MoveUp
+local ListMoveDown = UIRef.EvadeListComponent.MoveDown
+local ListRemove = UIRef.EvadeListComponent.Remove
+local function MoveEvadeSpot(Component, Label, Delta, Original, StatusText)
+if not CanEdit("DEFAULT PLACE_CONFIG IS READ-ONLY") then
+return
+end
+local Spots = GetEvadeSpots()
+local Index = table.find(BuildEvadeLabels(), Label)
+local Other = Index and Index + Delta
+if not Other or Other < 1 or Other > #Spots then
+return
+end
+Spots[Index], Spots[Other] = Spots[Other], Spots[Index]
+Original(Component, Label)
+RefreshEvadeUI()
+Commit(StatusText)
+end
+function UIRef.EvadeListComponent:MoveUp(Label)
+MoveEvadeSpot(self, Label, -1, ListMoveUp, "HIDING SPOT MOVED UP")
+end
+function UIRef.EvadeListComponent:MoveDown(Label)
+MoveEvadeSpot(self, Label, 1, ListMoveDown, "HIDING SPOT MOVED DOWN")
+end
+function UIRef.EvadeListComponent:Remove(Label)
+if not CanEdit("DEFAULT PLACE_CONFIG IS READ-ONLY") then
+return
+end
+local Spots = GetEvadeSpots()
+local Index = table.find(BuildEvadeLabels(), Label)
+if not Index then
+return
+end
+table.remove(Spots, Index)
+ListRemove(self, Label)
+RefreshEvadeUI()
+Commit("HIDING SPOT REMOVED #" .. tostring(Index))
+end
+ListSection:AddButton{
+Name = "Clear Hiding Spots",
+Callback = function()
+if not CanEdit("DEFAULT PLACE_CONFIG IS READ-ONLY") then
+return
+end
+table.clear(GetEvadeSpots())
+RefreshEvadeUI()
+Commit("HIDING SPOTS CLEARED")
+end,
+}
+AddSection:AddNote("Waypoint: type its number and press enter. Prompt: stand at a door or portal and press the button. Away from any prompt, it saves the spot you are standing on")
+UIRef.EvadeWaypointBox = AddSection:AddTextBox{
+Name = "Add Waypoint #",
 Default = "",
 Inline = true,
 Callback = function(Value)
+if tostring(Value or "") == "" then
+return
+end
 local Number = tonumber(Value)
-if not Number or Number < 0 then
+if not Number or Number < 1 then
 SetStatus("INVALID VALUE")
-RefreshEvadeUI()
+UIRef.EvadeWaypointBox:Set("", true)
 return
 end
-if not CanEdit("DEFAULT PLACE_CONFIG IS READ-ONLY") then
-RefreshEvadeUI()
-return
-end
-local Evade = GetEvadeConfig()
-Evade.Waypoint = math.clamp(
-math.floor(Number), 0, AICConfig.MAX_BOSS_WAYPOINT
+Number = math.clamp(math.floor(Number), 1, AICConfig.MAX_BOSS_WAYPOINT)
+AddEvadeSpot(
+{ Kind = "Waypoint", Waypoint = Number },
+string.format("HIDING SPOT ADDED:  WAYPOINT %d", Number)
 )
-RefreshEvadeUI()
-Commit(string.format("EVADE SPOT:  WAYPOINT %d", Evade.Waypoint))
+UIRef.EvadeWaypointBox:Set("", true)
 end,
 }
-UIRef.EvadeRandomToggle = WaypointSection:AddToggle{
-Name = "Random Evade Waypoint",
-Default = false,
-Callback = function(Value)
-if not CanEdit("DEFAULT PLACE_CONFIG IS READ-ONLY") then
-RefreshEvadeUI()
-return
-end
-local Evade = GetEvadeConfig()
-Evade.Random = Value == true
-RefreshEvadeUI()
-Commit(Evade.Random
-and "EVADE SPOT:  RANDOM WAYPOINT"
-or "EVADE SPOT:  WAYPOINT")
-end,
-}
-WaypointSection:AddNote("Random: each hold picks a new waypoint from 1 to the number above, never the same one twice in a row")
-PromptSection:AddNote("Stand at a door or portal, then press the button to save it. A saved prompt is used instead of the waypoint")
-UIRef.EvadePromptToggle = PromptSection:AddToggle{
-Name = "Evade To Prompt",
-Default = false,
-Callback = function(Value)
-if not CanEdit("DEFAULT PLACE_CONFIG IS READ-ONLY") then
-RefreshEvadeUI()
-return
-end
-local Evade = GetEvadeConfig()
-Evade.Prompt = Value == true
-RefreshEvadeUI()
-Commit(Evade.Prompt
-and "EVADE SPOT:  PROMPT"
-or "EVADE SPOT:  WAYPOINT")
-end,
-}
-UIRef.EvadePromptButton = PromptSection:AddButton{
-Name = "Save Evade Prompt Here",
+UIRef.EvadePromptButton = AddSection:AddButton{
+Name = "Add Prompt Here",
 Callback = function()
 local _, _, RootPart = Runtime:GetCharacter()
 if not RootPart then
@@ -3026,31 +3142,30 @@ SetStatus("CHARACTER NOT READY")
 Say("Evasion", "Character not ready", 4)
 return
 end
-if not CanEdit("DEFAULT PLACE_CONFIG IS READ-ONLY") then
-return
-end
 local Prompt, Nearest = FindNearestPrompt(RootPart.Position, PROMPT_SAVE_RADIUS)
 local Position = GetPromptPosition(Prompt)
-local Evade = GetEvadeConfig()
 if not Position then
-Evade.Prompt = true
-Evade.PromptPosition = AICConfig.RoundVector3(RootPart.Position)
-Evade.PromptName = "HERE"
-RefreshEvadeUI()
-Commit("EVADE SPOT:  STOOD HERE, SAVED")
+local Here = AICConfig.RoundVector3(RootPart.Position)
+if AddEvadeSpot(
+{ Kind = "Prompt", Name = "HERE", X = Here.X, Y = Here.Y, Z = Here.Z },
+"HIDING SPOT ADDED:  STOOD HERE"
+) then
 Say("Evasion", string.format(
 "No prompt within %d studs%s; saved where you stand",
 PROMPT_SAVE_RADIUS,
 Nearest and string.format(" (nearest %.0f)", Nearest) or ""
 ), 5)
+end
 return
 end
-Evade.Prompt = true
-Evade.PromptPosition = AICConfig.RoundVector3(Position)
-Evade.PromptName = string.sub(tostring(Prompt.Name or ""), 1, 64)
-RefreshEvadeUI()
-Commit("EVADE SPOT:  PROMPT SAVED")
-Say("Evasion", "Evade prompt saved: " .. Evade.PromptName, 4)
+local Rounded = AICConfig.RoundVector3(Position)
+local Name = string.sub(tostring(Prompt.Name or ""), 1, 64)
+if AddEvadeSpot(
+{ Kind = "Prompt", Name = Name, X = Rounded.X, Y = Rounded.Y, Z = Rounded.Z },
+"HIDING SPOT ADDED:  PROMPT"
+) then
+Say("Evasion", "Hiding spot added: " .. Name, 4)
+end
 end,
 }
 end
@@ -6935,551 +7050,6 @@ end
 UpdatePriorityButton()
 end
 return Detail
-end,
-}
-]======],
-	["Features/MobDictionary.lua"] = [======[
-return {
-Name = "MobDictionary",
-Dependencies = {"Runtime", "ProfileManager"},
-Start = function(Context)
-local Replicated = Context.Services.Replicated
-local HttpService = Context.Services.HttpService
-local AICProfile = Context.AICProfile
-local REMOTE_NAME = "BuildAssets"
-local REMOTE_ARGUMENT = "MobDict"
-local KIND_BY_FOLDER = { Mobs = "Mob", Bosses = "Boss" }
-local HIDDEN_KEYS = { Entity = true, MaxDrops = true }
-local EXACT_GROUPS = { Col = "Rewards", LVL = "Core" }
-local GROUP_WORDS = {
-{ Group = "Rewards", Words = { "xp", "exp", "gold", "coin", "money", "cash", "drop", "loot", "reward", "chance" } },
-{ Group = "Combat", Words = { "damage", "dmg", "attack", "atk", "range", "aggro", "cooldown", "crit", "defense", "armor", "hit", "power", "strength" } },
-}
-local THREAT_WORDS = { "damage", "dmg", "attack", "atk", "power", "strength" }
-local LUCK_DIVISOR = 100
-local DEFAULT_LUCK_CAP = 500
-local ROUNDING_EPSILON = 1e-9
-local MAX_ROUNDS = 1000
-local NO_STATUS = { none = true, ["nil"] = true, ["0"] = true }
-local LOAD_TIMEOUT = 20
-local DROPS_FILE = Context.PROFILE_FOLDER .. "/MobDrops.json"
-local DROPS_FILE_VERSION = 1
-local DROPS_SIGNATURE_FORMAT = "%s:%.10g:%.10g"
-local LIVE_SCAN_INTERVAL = 5
-local AWARD_TYPE_HEALTH_PERCENT = "HealthPercent"
-local AWARD_PARAM_ATTRIBUTE = "AwardParam"
-local AWARD_PARAM_KEY = "Config.AwardParam"
-local AWARD_PARAM_LABEL = "AWARD MIN HEALTH %"
-local Dictionary = {
-Name = "MobDictionary",
-KIND_BY_FOLDER = KIND_BY_FOLDER,
-S = {
-Entries = {},
-ByName = {},
-Scales = {},
-KindScales = {},
-Loading = false,
-Loaded = false,
-Error = nil,
-OnLoaded = nil,
-Live = {},
-Drops = {},
-AwardParams = {},
-SavedSignatures = {},
-CheckedLive = {},
-SavePending = false,
-LuckCap = nil,
-LuckCapRequested = false,
-LoadToken = 0,
-},
-}
-local S = Dictionary.S
-local function HasWord(Text, Words)
-local Lower = string.lower(Text)
-for _, Word in ipairs(Words) do
-if string.find(Lower, Word, 1, true) then
-return true
-end
-end
-return false
-end
-local function GetGroup(Name)
-if EXACT_GROUPS[Name] then
-return EXACT_GROUPS[Name]
-end
-for _, Rule in ipairs(GROUP_WORDS) do
-if HasWord(Name, Rule.Words) then
-return Rule.Group
-end
-end
-return "Other"
-end
-function Dictionary.IsThreatStat(Stat)
-return Stat.Key == "Humanoid.MaxHealth" or HasWord(Stat.Label, THREAT_WORDS)
-end
-function Dictionary.Prettify(Name)
-local Spaced = string.gsub(Name, "(%l)(%u)", "%1 %2")
-Spaced = string.gsub(Spaced, "_", " ")
-return string.upper(Spaced)
-end
-local function Unwrap(Raw)
-if type(Raw) == "table" then
-return Raw.Value
-end
-return Raw
-end
-local function AddStat(Stats, Key, Name, Value, Group)
-if Value == nil or HIDDEN_KEYS[Name] then
-return
-end
-table.insert(Stats, {
-Key = Key,
-Label = Dictionary.Prettify(Name),
-Value = Value,
-Group = Group or GetGroup(Name),
-Numeric = type(Value) == "number",
-})
-end
-local function ReadStatus(Raw)
-if type(Raw) ~= "table" then
-return nil
-end
-local Effect = Raw.Value
-if Effect == nil or Effect == false or Effect == "" or NO_STATUS[string.lower(tostring(Effect))] then
-return nil
-end
-local Status = { Name = tostring(Effect), Props = {} }
-for Name, Child in pairs(Raw) do
-if Name ~= "Value" then
-table.insert(Status.Props, { Label = Dictionary.Prettify(Name), Value = Unwrap(Child) })
-end
-end
-table.sort(Status.Props, function(A, B)
-return A.Label < B.Label
-end)
-return Status
-end
-local function ReadEntry(Name, Raw)
-local Entry = {
-Name = Name,
-Kind = KIND_BY_FOLDER[Raw.Value] or tostring(Raw.Value or "Mob"),
-Stats = {},
-Status = nil,
-}
-local Humanoid = Raw.Humanoid
-if type(Humanoid) == "table" then
-AddStat(Entry.Stats, "Humanoid.MaxHealth", "Health", tonumber(Humanoid.MaxHealth), "Core")
-AddStat(Entry.Stats, "Humanoid.WalkSpeed", "WalkSpeed", tonumber(Humanoid.WalkSpeed), "Core")
-end
-for Key, Child in pairs(Raw) do
-if Key == "Config" and type(Child) == "table" then
-for ConfigKey, ConfigChild in pairs(Child) do
-if ConfigKey == "StatusEffect" then
-Entry.Status = ReadStatus(ConfigChild)
-else
-AddStat(Entry.Stats, "Config." .. ConfigKey, ConfigKey, Unwrap(ConfigChild))
-end
-end
-elseif Key ~= "Value" and Key ~= "Humanoid" then
-AddStat(Entry.Stats, "Value." .. Key, Key, Unwrap(Child))
-end
-end
-table.sort(Entry.Stats, function(A, B)
-if (A.Group == "Core") ~= (B.Group == "Core") then
-return A.Group == "Core"
-end
-return A.Label < B.Label
-end)
-return Entry
-end
-function Dictionary.GetStat(Entry, Key)
-for _, Stat in ipairs(Entry.Stats) do
-if Stat.Key == Key then
-return Stat.Value
-end
-end
-return nil
-end
-local function CollectScales(Entries)
-local Values = {}
-for _, Entry in ipairs(Entries) do
-for _, Stat in ipairs(Entry.Stats) do
-if Stat.Numeric then
-Values[Stat.Key] = Values[Stat.Key] or {}
-table.insert(Values[Stat.Key], Stat.Value)
-end
-end
-end
-local Scales = {}
-for Key, List in pairs(Values) do
-table.sort(List, function(A, B)
-return A > B
-end)
-Scales[Key] = { Max = List[1], Sorted = List }
-end
-return Scales
-end
-local function BuildScales()
-local ByKind = {}
-for _, Entry in ipairs(S.Entries) do
-ByKind[Entry.Kind] = ByKind[Entry.Kind] or {}
-table.insert(ByKind[Entry.Kind], Entry)
-end
-S.Scales = CollectScales(S.Entries)
-S.KindScales = {}
-for Kind, Entries in pairs(ByKind) do
-S.KindScales[Kind] = CollectScales(Entries)
-end
-end
-local function FindScale(Stat, Kind)
-if not Stat.Numeric then
-return nil
-end
-if Kind then
-local Scales = S.KindScales[Kind]
-return Scales and Scales[Stat.Key]
-end
-return S.Scales[Stat.Key]
-end
-function Dictionary.GetScale(Stat, Kind)
-local Scale = FindScale(Stat, Kind)
-if not Scale then
-return 0, nil, 0
-end
-local Fraction = Scale.Max > 0 and math.clamp(Stat.Value / Scale.Max, 0, 1) or 0
-local Rank = table.find(Scale.Sorted, Stat.Value)
-return Fraction, Rank, #Scale.Sorted
-end
-function Dictionary.GetThreat(Entry)
-local Total, Count = 0, 0
-for _, Stat in ipairs(Entry.Stats) do
-if Stat.Numeric and Dictionary.IsThreatStat(Stat) then
-local _, Rank, Size = Dictionary.GetScale(Stat)
-if Rank then
-Total += Size > 1 and (Size - Rank) / (Size - 1) or 1
-Count += 1
-end
-end
-end
-return Count > 0 and Total / Count or 0
-end
-local function ApplyAwardParam(Entry)
-local Param = S.AwardParams[Entry.Name]
-if type(Param) ~= "number" or Dictionary.GetStat(Entry, "Config.AwardType") ~= AWARD_TYPE_HEALTH_PERCENT then
-return false
-end
-for _, Stat in ipairs(Entry.Stats) do
-if Stat.Key == AWARD_PARAM_KEY then
-if Stat.Value == Param then
-return false
-end
-Stat.Value = Param
-return true
-end
-end
-table.insert(Entry.Stats, {
-Key = AWARD_PARAM_KEY,
-Label = AWARD_PARAM_LABEL,
-Value = Param,
-Group = "Rewards",
-Numeric = true,
-})
-return true
-end
-local function Apply(Raw)
-local Entries, ByName = {}, {}
-for Name, Data in pairs(Raw) do
-if type(Name) == "string" and type(Data) == "table" then
-local Entry = ReadEntry(Name, Data)
-ApplyAwardParam(Entry)
-table.insert(Entries, Entry)
-ByName[Name] = Entry
-end
-end
-table.sort(Entries, function(A, B)
-local HealthA = Dictionary.GetStat(A, "Humanoid.MaxHealth") or 0
-local HealthB = Dictionary.GetStat(B, "Humanoid.MaxHealth") or 0
-if HealthA ~= HealthB then
-return HealthA < HealthB
-end
-return A.Name < B.Name
-end)
-S.Entries = Entries
-S.ByName = ByName
-BuildScales()
-end
-local function Finish(ErrorMessage)
-S.Loading = false
-S.Error = ErrorMessage
-if S.OnLoaded then
-S.OnLoaded()
-end
-end
-function Dictionary:Load()
-if S.Loading then
-return
-end
-local Remote = Replicated:FindFirstChild(REMOTE_NAME, true)
-if not Remote or not Remote:IsA("RemoteFunction") then
-Finish("Mob dictionary is not available in this place")
-return
-end
-S.Loading = true
-S.Error = nil
-S.LoadToken += 1
-local Token = S.LoadToken
-task.delay(LOAD_TIMEOUT, function()
-if Context.Lifetime.Alive and S.Loading and S.LoadToken == Token then
-S.LoadToken += 1
-Finish("The server did not answer. Press RELOAD to try again.")
-end
-end)
-task.spawn(function()
-local Ok, Result = pcall(Remote.InvokeServer, Remote, REMOTE_ARGUMENT)
-if not Context.Lifetime.Alive or S.LoadToken ~= Token then
-return
-end
-if not Ok then
-Finish("Could not read the mob dictionary: " .. tostring(Result))
-return
-end
-if type(Result) ~= "table" then
-Finish("The server sent no mob dictionary")
-return
-end
-Apply(Result)
-S.Loaded = true
-Finish(nil)
-end)
-end
-function Dictionary:GetAll()
-return S.Entries
-end
-function Dictionary:Get(Name)
-return S.ByName[Name]
-end
-local function ReadDrops(MaxDrops)
-local Drops = {}
-for _, Item in ipairs(MaxDrops:GetChildren()) do
-local Rarity = Item:FindFirstChild("Rarity")
-local Value = Rarity and Rarity:IsA("ValueBase") and tonumber(Rarity.Value)
-if Value and Value > 0 and Item.Name ~= "" then
-table.insert(Drops, {
-Name = Item.Name,
-Rarity = Value,
-Rounds = Item:IsA("ValueBase") and tonumber(Item.Value) or 0,
-})
-end
-end
-table.sort(Drops, function(A, B)
-if A.Rarity ~= B.Rarity then
-return A.Rarity < B.Rarity
-end
-return A.Name < B.Name
-end)
-return Drops
-end
-local function DropsSignature(Drops)
-local Parts = {}
-for _, Drop in ipairs(Drops) do
-table.insert(Parts, string.format(DROPS_SIGNATURE_FORMAT, Drop.Name, Drop.Rarity, Drop.Rounds))
-end
-return table.concat(Parts, "|")
-end
-local function NormalizeSavedDrops(Raw)
-if type(Raw) ~= "table" then
-return nil
-end
-local Drops = {}
-for _, Drop in ipairs(Raw) do
-local Rarity = type(Drop) == "table" and tonumber(Drop.Rarity)
-if Rarity and Rarity > 0 and type(Drop.Name) == "string" and Drop.Name ~= "" then
-table.insert(Drops, {
-Name = Drop.Name,
-Rarity = Rarity,
-Rounds = tonumber(Drop.Rounds) or 0,
-})
-end
-end
-return Drops
-end
-local function LoadSavedDrops()
-if not AICProfile.CanUseFileStorage() then
-return
-end
-local CheckSuccess, Exists = pcall(isfile, DROPS_FILE)
-if not CheckSuccess or not Exists then
-return
-end
-local Success, Decoded = pcall(function()
-return HttpService:JSONDecode(readfile(DROPS_FILE))
-end)
-if not Success or type(Decoded) ~= "table" or type(Decoded.Mobs) ~= "table" then
-warn("AutoFarm mob drops read failed:", Decoded)
-return
-end
-for Name, Raw in pairs(Decoded.Mobs) do
-local Drops = type(Name) == "string" and NormalizeSavedDrops(Raw)
-if Drops then
-S.Drops[Name] = Drops
-S.SavedSignatures[Name] = DropsSignature(Drops)
-end
-end
-if type(Decoded.AwardParams) == "table" then
-for Name, Param in pairs(Decoded.AwardParams) do
-if type(Name) == "string" and tonumber(Param) then
-S.AwardParams[Name] = tonumber(Param)
-end
-end
-end
-end
-local function WriteSavedDrops()
-if not AICProfile.CanUseFileStorage() then
-return false
-end
-AICProfile.EnsureProfileFolder()
-local Mobs = {}
-for Name, Drops in pairs(S.Drops) do
-if #Drops > 0 then
-Mobs[Name] = Drops
-end
-end
-local Success, Raw = pcall(function()
-return HttpService:JSONEncode({ Version = DROPS_FILE_VERSION, Mobs = Mobs, AwardParams = S.AwardParams })
-end)
-if not Success then
-warn("AutoFarm mob drops encode failed:", Raw)
-return false
-end
-local WriteSuccess, WriteError = pcall(writefile, DROPS_FILE, Raw)
-if not WriteSuccess then
-warn("AutoFarm mob drops save failed:", WriteError)
-return false
-end
-for Name, Drops in pairs(Mobs) do
-S.SavedSignatures[Name] = DropsSignature(Drops)
-end
-return true
-end
-local function RecordLiveDrops(Name, Config)
-if S.CheckedLive[Name] then
-return false, false
-end
-local MaxDrops = Config:FindFirstChild("MaxDrops")
-local Drops = MaxDrops and ReadDrops(MaxDrops) or {}
-if #Drops == 0 then
-if S.Drops[Name] then
-return false, false
-end
-S.Drops[Name] = Drops
-return true, false
-end
-S.CheckedLive[Name] = true
-if S.SavedSignatures[Name] == DropsSignature(Drops) then
-return false, false
-end
-S.Drops[Name] = Drops
-return true, true
-end
-local function RecordLiveAwardParam(Name, Config)
-local AwardType = Config:FindFirstChild("AwardType")
-if not AwardType or not AwardType:IsA("StringValue") or AwardType.Value ~= AWARD_TYPE_HEALTH_PERCENT then
-return false
-end
-local Param = tonumber(AwardType:GetAttribute(AWARD_PARAM_ATTRIBUTE))
-if not Param or S.AwardParams[Name] == Param then
-return false
-end
-S.AwardParams[Name] = Param
-local Entry = S.ByName[Name]
-if Entry and ApplyAwardParam(Entry) then
-BuildScales()
-end
-return true
-end
-function Dictionary:ScanLive()
-local Counts = {}
-local NewDrops = false
-local Folder = workspace:FindFirstChild("Mobs")
-for _, Mob in (Folder and Folder:GetChildren() or {}) do
-local Config = Mob:IsA("Model") and Mob:FindFirstChild("Config")
-local Entity = Config and Config:FindFirstChild("Entity")
-if not Entity or not Entity:IsA("StringValue") or Entity.Value == "" then
-continue
-end
-local Name = Entity.Value
-Counts[Name] = (Counts[Name] or 0) + 1
-local Changed, NeedsSave = RecordLiveDrops(Name, Config)
-local NewAwardParam = RecordLiveAwardParam(Name, Config)
-NewDrops = NewDrops or Changed or NewAwardParam
-S.SavePending = S.SavePending or NeedsSave or NewAwardParam
-end
-S.Live = Counts
-if S.SavePending and WriteSavedDrops() then
-S.SavePending = false
-end
-return NewDrops
-end
-function Dictionary:GetLive(Name)
-return S.Live[Name] or 0
-end
-function Dictionary:GetDrops(Name)
-return S.Drops[Name]
-end
-function Dictionary:GetAwardParam(Name)
-return S.AwardParams[Name]
-end
-local function GetLuckCap()
-if S.LuckCap then
-return S.LuckCap
-end
-if not S.LuckCapRequested then
-S.LuckCapRequested = true
-task.spawn(function()
-local Commons = Replicated:FindFirstChild("CoreCommons")
-local Ok, Module = false, nil
-if Commons and Commons:IsA("ModuleScript") then
-Ok, Module = pcall(require, Commons)
-end
-local Cap = Ok and type(Module) == "table" and tonumber(Module.PHYSICAL_STAT_MAX)
-S.LuckCap = Cap and Cap > 0 and Cap or DEFAULT_LUCK_CAP
-end)
-end
-return S.LuckCap or DEFAULT_LUCK_CAP
-end
-function Dictionary.GetLuck()
-local Stats = Context.Player:FindFirstChild("PlayerStats")
-local Luck = Stats and Stats:FindFirstChild("Luck")
-local Value = Luck and Luck:IsA("ValueBase") and tonumber(Luck.Value) or 0
-local Cap = GetLuckCap()
-return Value, Cap, math.clamp(Value, 0, Cap) / LUCK_DIVISOR
-end
-local function RollChance(Odds)
-return math.clamp(math.floor(Odds + ROUNDING_EPSILON), 0, 100) / 100
-end
-function Dictionary.GetDropOdds(Drop, LuckPercent)
-local Odds = 100 / Drop.Rarity
-local Rounds = math.min(Drop.Rounds, MAX_ROUNDS)
-local Missed, Expected = 1, 0
-local Again = RollChance(Odds + LuckPercent)
-for Round = 1, Rounds do
-local First = RollChance(Odds * Round + LuckPercent)
-Expected += Missed * First + (1 - Missed) * Again
-Missed *= 1 - First
-end
-return 1 - Missed, Expected
-end
-LoadSavedDrops()
-task.spawn(function()
-while Context.Lifetime.Alive do
-local Ok, ScanError = pcall(Dictionary.ScanLive, Dictionary)
-if not Ok then
-warn("AutoFarm mob drops scan failed:", ScanError)
-end
-task.wait(LIVE_SCAN_INTERVAL)
-end
-end)
-return Dictionary
 end,
 }
 ]======],
