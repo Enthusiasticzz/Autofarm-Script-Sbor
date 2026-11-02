@@ -650,6 +650,29 @@ assert(boss.BossStatusLabel.Instance.Text:find("STOP 1/1", 1, true), "hold did n
 assert(Context.AICFeature.BossEvadeStep(now) == false, "hold kept the frame after ending")
 assert(#SmokeEnv.Errors == 0, "hold release raised: " .. table.concat(SmokeEnv.Errors, "; "))
 
+--// The roster the leave report names has to survive the frame they leave on.
+--// The list is refreshed on a half-second tick, and that tick reads the empty
+--// server a moment before the report is built: it used to overwrite the
+--// names with that empty read, so the post said "A Player Left at" with no
+--// one named. The tick only runs once time has moved, so this steps with the
+--// clock past half a second.
+local clearCalls, clearedName = 0, nil
+
+Context.AICFeature.ReportHoldCleared = function(Who, Seconds)
+    clearCalls += 1
+    clearedName = Who[1] and Who[1].Name or nil
+end
+
+players.GetPlayers = function() return { Context.Player, intruder } end
+assert(Context.AICFeature.BossEvadeStep(5) == true, "the hold did not start again for the roster test")
+players.GetPlayers = function() return { Context.Player } end
+assert(Context.AICFeature.BossEvadeStep(6) == true, "the hold did not take the frame it ended on")
+assert(clearCalls == 1, "the hold reported the leave " .. tostring(clearCalls) .. " times")
+assert(clearedName == "Intruder", "the roster tick erased the name of who left")
+Context.AICFeature.BossEvadeStep(7)
+assert(clearCalls == 1, "the same leave was reported again")
+assert(#SmokeEnv.Errors == 0, "the roster test raised: " .. table.concat(SmokeEnv.Errors, "; "))
+
 --// Switched off mid-hold: let go where it stands, never restarted from there.
 players.GetPlayers = function() return { Context.Player, intruder } end
 assert(Context.AICFeature.BossEvadeStep(now) == true, "hold did not start again for a stranger")
@@ -663,5 +686,32 @@ assert(#SmokeEnv.Errors == 0, "hold cancel raised: " .. table.concat(SmokeEnv.Er
 players.GetPlayers = realGetPlayers
 Context.Feature.PauseForStrangers.Enabled = false
 Context.Feature.BossRoute.Enabled = false
+
+--// One report is one post. Several executors answer a webhook call with the
+--// body as a plain string instead of a table, and the request loop used to
+--// fall through to the next function for those, so one hold report arrived
+--// three or four times over. The real Webhook module is started here so the
+--// count is taken from the code that posts.
+local WebhookOk, WebhookErr = xpcall(function()
+    WebhookModule.Start(Context)
+end, debug.traceback)
+
+assert(WebhookOk, "WEBHOOK START ERROR:\n" .. tostring(WebhookErr))
+
+assert(type(Context.AICFeature.ReportHold) == "function", "the webhook did not register the hold report")
+
+local posted = 0
+request = function() posted += 1; return "{\"id\":\"1\"}" end
+http_request = function() posted += 1; return "{\"id\":\"1\"}" end
+
+Context.CONFIG.DISCORD_ENABLED = true
+Context.CONFIG.DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1/probe"
+Context.CONFIG.DISCORD_HOLD_LOG = true
+
+Context.AICFeature.ReportHold({ { Name = "Intruder", UserId = 2 } })
+assert(posted == 1, "one waiting report was posted " .. tostring(posted) .. " times")
+
+request = nil
+http_request = nil
 
 print("BOOT PROBE PASSED")

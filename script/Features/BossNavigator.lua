@@ -3297,6 +3297,7 @@ return {
             S.EvadeKickAt = nil
             S.EvadeStrangers = SnapshotStrangers(FindStrangers())
             S.EvadeStrangersAt = Now
+            S.EvadeClearSent = false
             S.FloorLifts = 0
             S.Phase = "Evade"
             EndDodge()
@@ -3374,6 +3375,15 @@ return {
         --// whether it goes out; the leave for a hold that ran out never is a
         --// setting.
         local function StrangersLeft(Now)
+            if S.EvadeClearSent then
+                --// Already ended: one hold is one report, however many frames
+                --// end up seeing the strangers gone.
+                EndEvade(Now, true)
+                return
+            end
+
+            S.EvadeClearSent = true
+
             local Waited = math.max(0, Now - (S.EvadeSince or Now))
             local Who = S.EvadeStrangers or {}
 
@@ -3721,9 +3731,18 @@ return {
 
             --// Who is still on the server, kept so the report that says they
             --// left can name them once their Player objects are gone. Read on a
-            --// slow tick rather than every frame.
+            --// slow tick rather than every frame, and only refreshed while
+            --// there is someone to name: writing the empty list the tick also
+            --// sees would erase them a frame before the report that needs
+            --// them, which is how a leave came out as "A Player Left at"
+            --// instead of naming who had been there.
             if not S.EvadeStrangersAt or Now - S.EvadeStrangersAt >= 0.5 then
-                S.EvadeStrangers = SnapshotStrangers(FindStrangers())
+                local Live = SnapshotStrangers(FindStrangers())
+
+                if #Live > 0 then
+                    S.EvadeStrangers = Live
+                end
+
                 S.EvadeStrangersAt = Now
             end
 

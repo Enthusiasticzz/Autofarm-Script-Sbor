@@ -6371,7 +6371,11 @@ Body = Body,
 })
 if not Ok then
 LastError = Response
-elseif type(Response) == "table" then
+continue
+end
+if type(Response) ~= "table" then
+return true
+end
 local Status = tonumber(Response.StatusCode)
 or tonumber(Response.statusCode)
 or tonumber(Response.Status)
@@ -6380,14 +6384,12 @@ if Response.Body ~= nil or Response.Success ~= false then
 return true
 end
 LastError = "empty response"
-elseif Status >= 200 and Status < 300 then
+continue
+end
+if Status >= 200 and Status < 300 then
 return true
-else
+end
 return false, "Discord rejected the report (HTTP " .. tostring(Status) .. ")"
-end
-else
-LastError = "empty response"
-end
 end
 local Ok, Response = pcall(function()
 return HttpService:RequestAsync({

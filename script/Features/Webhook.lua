@@ -419,6 +419,13 @@ return {
 
             local LastError
 
+            --// One report is one post. A request that runs and comes back
+            --// without throwing has already been sent, whatever shape the
+            --// answer is: several executors answer with the body as a string
+            --// or with nothing at all, and the old fall-through called the
+            --// next request function for each of those, so one hold report
+            --// arrived several times - the same text, five or six copies.
+            --// Only a call that threw moves on to the next function.
             for _, Request in ipairs(Executors) do
                 local Ok, Response = pcall(Request, {
                     Url = Url,
@@ -429,28 +436,34 @@ return {
 
                 if not Ok then
                     LastError = Response
-                elseif type(Response) == "table" then
-                    local Status = tonumber(Response.StatusCode)
-                        or tonumber(Response.statusCode)
-                        or tonumber(Response.Status)
-
-                    if Status == nil then
-                        --// No code to read: a body or anything short of an
-                        --// explicit failure is as much as this executor
-                        --// says about the call.
-                        if Response.Body ~= nil or Response.Success ~= false then
-                            return true
-                        end
-
-                        LastError = "empty response"
-                    elseif Status >= 200 and Status < 300 then
-                        return true
-                    else
-                        return false, "Discord rejected the report (HTTP " .. tostring(Status) .. ")"
-                    end
-                else
-                    LastError = "empty response"
+                    continue
                 end
+
+                if type(Response) ~= "table" then
+                    return true
+                end
+
+                local Status = tonumber(Response.StatusCode)
+                    or tonumber(Response.statusCode)
+                    or tonumber(Response.Status)
+
+                if Status == nil then
+                    --// No code to read: a body or anything short of an
+                    --// explicit failure is as much as this executor
+                    --// says about the call.
+                    if Response.Body ~= nil or Response.Success ~= false then
+                        return true
+                    end
+
+                    LastError = "empty response"
+                    continue
+                end
+
+                if Status >= 200 and Status < 300 then
+                    return true
+                end
+
+                return false, "Discord rejected the report (HTTP " .. tostring(Status) .. ")"
             end
 
             local Ok, Response = pcall(function()

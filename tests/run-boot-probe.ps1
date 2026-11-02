@@ -53,6 +53,7 @@ $components = Module-Source "UI/Components.lua" "script/UI/Components.lua"
 $bootstrap = Module-Source "Core/Bootstrap.lua" "script/Core/Bootstrap.lua"
 $profileSettings = Module-Source "Features/ProfileSettings.lua" "script/Features/ProfileSettings.lua"
 $profileSerialization = Module-Source "Core/ProfileManager_Serialization.lua" "script/Core/ProfileManager_Serialization.lua"
+$webhook = Module-Source "Features/Webhook.lua" "script/Features/Webhook.lua"
 $bossNavigator = Module-Source "Features/BossNavigator.lua" "script/Features/BossNavigator.lua"
 $probe = Get-Content (Join-Path $PSScriptRoot "BootProbe.lua") -Raw
 
@@ -100,6 +101,7 @@ $combined += "`nlocal ComponentsModule = (function()`n" + $components + "`nend)(
 $combined += "`nlocal BootstrapModule = (function()`n" + $bootstrap + "`nend)()`n"
 $combined += "`nlocal ProfileSettingsModule = (function()`n" + $profileSettings + "`nend)()`n"
 $combined += "`nlocal ProfileSerializationModule = (function()`n" + $profileSerialization + "`nend)()`n"
+$combined += "`nlocal WebhookModule = (function()`n" + $webhook + "`nend)()`n"
 $combined += "`nlocal BossNavigatorModule = (function()`n" + $bossNavigator + "`nend)()`n"
 $combined += "`n" + $probe
 

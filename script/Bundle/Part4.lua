@@ -1988,6 +1988,7 @@ S.EvadeKicked = false
 S.EvadeKickAt = nil
 S.EvadeStrangers = SnapshotStrangers(FindStrangers())
 S.EvadeStrangersAt = Now
+S.EvadeClearSent = false
 S.FloorLifts = 0
 S.Phase = "Evade"
 EndDodge()
@@ -2041,6 +2042,11 @@ Say("Evasion", "@" .. Was .. " left; starting again at stop #1", 5)
 end
 end
 local function StrangersLeft(Now)
+if S.EvadeClearSent then
+EndEvade(Now, true)
+return
+end
+S.EvadeClearSent = true
 local Waited = math.max(0, Now - (S.EvadeSince or Now))
 local Who = S.EvadeStrangers or {}
 S.EvadeStrangers = {}
@@ -2255,7 +2261,10 @@ BeginEvade(Now, Stranger)
 end
 local _, Humanoid, RootPart = Runtime:GetCharacter()
 if not S.EvadeStrangersAt or Now - S.EvadeStrangersAt >= 0.5 then
-S.EvadeStrangers = SnapshotStrangers(FindStrangers())
+local Live = SnapshotStrangers(FindStrangers())
+if #Live > 0 then
+S.EvadeStrangers = Live
+end
 S.EvadeStrangersAt = Now
 end
 if S.EvadeStage == "Reset" then
