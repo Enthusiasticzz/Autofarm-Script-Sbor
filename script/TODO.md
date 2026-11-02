@@ -1584,3 +1584,13 @@ were added.
 > - Interaction: Death Farm beats Always Wait After Kill when both are on (documented), because it is the stricter of the two.
 > - Docs: `USAGE.md` *Boss Route* — the new button, and the tag wait section now states the zero-delay cap.
 > - Checks: `luau-compile` clean on `Features/BossNavigator.lua` and `Core/SaveConfig.lua`; bundle rebuilt (6 parts, 82 modules); `tests/run-bundle-check.ps1` 0 compile failures; `tests/run-boot-probe.ps1` from source passes. Not run in game.
+
+### [x] Rename to Gilded Archives, and a watermark that said "User"
+
+> **Reported:** the script is officially called **Gilded Archives** now, not Automated Industry Complex; and the watermark strip reads `<User>` where the account name should be.
+> **Cause (watermark):** `Library:_updateWatermark` printed `self.User.Name or self.Text.UserFallback`, but the loader builds the window with `Utils.new{ Title = TITLE }` and no `User` table, so `self.User` is `{}` and every account fell through to the `"User"` placeholder. The sidebar header had always resolved the local player itself; the strip did not.
+> **Changed (v3.92):**
+> - `Init.lua` `TITLE` and `Core/Runtime.lua`'s fallback window title are now `GILDED ARCHIVES` (the version goes on `TITLE`: `v3.92`). The `[AIC]` console/log prefix is deliberately unchanged — it is the tag the troubleshooting docs and the `AICBaseURL` override are named after, and renaming it would break every existing instruction.
+> - `UI/Utils.lua` `_updateWatermark`: an explicit `User.Name` still wins, otherwise the strip resolves `LocalPlayer.DisplayName` then `LocalPlayer.Name`, and only falls back to the placeholder if there is no local player. The name is read on every refresh, so it is right after a re-execute too.
+> - Docs and the web page name the script `Gilded Archives`: `README.md`, `script/README.md`, `script/AI-WALKTHROUGH.md` (intro and the `TITLE` convention), `script/USAGE.md` (intro and the console line example), and the `<title>`/meta/lede of `web/index.html`.
+> - Checks: `luau-compile` clean on `Init.lua`, `Core/Runtime.lua` and `UI/Utils.lua`; bundle rebuilt (6 parts, 82 modules); `tests/run-bundle-check.ps1` 0 compile failures; `tests/run-boot-probe.ps1` from source passes. Not run in game.

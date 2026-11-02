@@ -4,7 +4,7 @@ This file provides guidance to LLM's or AI when working with code in this reposi
 
 ## What this is
 
-A Roblox auto-farm script ("Automated Industry Complex", aka AutoFarmV3) written in Luau. Nothing can be run in a real Roblox client from here, so every change is "done but not tested in-game" until the user checks it (`TODO.md` uses `[x]` with that same meaning). There **is** now a local harness: `tests/run-cli.ps1` embeds the stubs and pure-logic tests into one chunk and runs it with the Luau CLI (see `tests/`). `tests/run-ui-smoke.ps1` does the same for the menu itself, building the window and every control against a stubbed Roblox environment.
+A Roblox auto-farm script ("Gilded Archives", aka AutoFarmV3) written in Luau. Nothing can be run in a real Roblox client from here, so every change is "done but not tested in-game" until the user checks it (`TODO.md` uses `[x]` with that same meaning). There **is** now a local harness: `tests/run-cli.ps1` embeds the stubs and pure-logic tests into one chunk and runs it with the Luau CLI (see `tests/`). `tests/run-ui-smoke.ps1` does the same for the menu itself, building the window and every control against a stubbed Roblox environment.
 
 It runs in two ways (`Init.lua`):
 - **Remote (executor):** `Init.lua` downloads every file in parallel from `raw.githubusercontent.com/Enthusiasticzz/Autofarm-Script-Sbor/refs/heads/main/script/` (or from `getgenv().AICBaseURL` when it is set) and `loadstring`s it. **Pushing to `main` ships the change to users.** Runtime reads the same override for the `UI/Utils.lua` it falls back to.
@@ -99,7 +99,7 @@ step to wait to be asked for. Commit and push without being prompted.
 ## Release conventions
 
 Every shipped change bumps the version:
-- `TITLE` in `Init.lua` (`"AUTOMATED INDUSTRY COMPLEX vX.YY"`)
+- `TITLE` in `Init.lua` (`"GILDED ARCHIVES vX.YY"`)
 - the commit subject ends with `(vX.YY)`. Use conventional-commit prefixes (`feat:`/`fix:`) and a body that explains the behavior and names any new tuning constants.
 - `TODO.md` (written in English) gets the request/bug under `## To Do` or `## To Fix` as `### [x] Area: title`, followed by a `> **Done (vX.YY):** ...` / `> **Fixed (vX.YY):** ...` note. Write these notes in English to match.
 

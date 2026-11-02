@@ -1797,7 +1797,12 @@ end
 function Library:_updateWatermark(fps)
 local ping = 0
 pcall(function() ping = math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue()) end)
-self.WatermarkLabel.Text = string.format("%s  |  %s  |  %d fps  |  %d ms  |  %s", self.Title, self.User.Name or self.Text.UserFallback, fps or 0, ping, os.date("%H:%M"))
+local lp = Players.LocalPlayer
+local who = self.User.Name
+if not who and lp then
+who = (lp.DisplayName ~= "" and lp.DisplayName) or lp.Name
+end
+self.WatermarkLabel.Text = string.format("%s  |  %s  |  %d fps  |  %d ms  |  %s", self.Title, who or self.Text.UserFallback, fps or 0, ping, os.date("%H:%M"))
 end
 function Library:_buildKeybindList()
 local f = New("Frame", { AutomaticSize = Enum.AutomaticSize.Y, Size = UDim2.fromOffset(170,0), AnchorPoint = Vector2.new(0,.5), Position = UDim2.new(0,12,.5,0), BorderSizePixel = 0, Visible = false, Parent = self.Gui })

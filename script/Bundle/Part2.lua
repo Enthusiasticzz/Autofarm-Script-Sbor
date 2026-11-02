@@ -3917,7 +3917,7 @@ end
 local UtilsChunk = assert(loadstring(game:HttpGet(Base .. "UI/Utils.lua"), "@Utils.lua"))
 Utils = UtilsChunk()
 end
-UI = Utils.new{ Title = "AUTOMATED INDUSTRY COMPLEX" }
+UI = Utils.new{ Title = "GILDED ARCHIVES" }
 end
 UIRef.StatusTab = UI:AddTab{ Name = "Status", Description = "Live readout: farm state, position, money, EXP and timers" }
 UIRef.FarmTab = UI:AddTab{ Name = "Farming", Description = "Waypoints, targets, combat and the rules the farm follows" }

@@ -1,4 +1,4 @@
-# Automated Industry Complex
+# Gilded Archives
 
 The repository has two parts:
 

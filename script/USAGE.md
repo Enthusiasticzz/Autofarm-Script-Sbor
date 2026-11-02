@@ -1,6 +1,6 @@
 # AIC usage guide
 
-How to use Automated Industry Complex (AutoFarmV3, `v3.41`) once it is loaded. The
+How to use Gilded Archives (AutoFarmV3, `v3.92`) once it is loaded. The
 loadstring and what the loader fetches are in [README.md](README.md); this file is
 about the features and about why the farm sometimes appears to do nothing.
 
@@ -1106,7 +1106,7 @@ previous file for a few minutes after a push.
 The first line in the console says which build and which source is running:
 
 ```
-[AIC] AUTOMATED INDUSTRY COMPLEX v3.91  (from https://raw.githubusercontent.com/...)
+[AIC] GILDED ARCHIVES v3.92  (from https://raw.githubusercontent.com/...)
 ```
 
 If a fix looks absent, check that line first, then re-execute. To keep a build

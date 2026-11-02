@@ -2151,7 +2151,18 @@ end
 function Library:_updateWatermark(fps)
 	local ping = 0
 	pcall(function() ping = math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue()) end)
-	self.WatermarkLabel.Text = string.format("%s  |  %s  |  %d fps  |  %d ms  |  %s", self.Title, self.User.Name or self.Text.UserFallback, fps or 0, ping, os.date("%H:%M"))
+	--// The strip names the person actually running the script. The loader
+	--// builds the window without a User table, so reading only User.Name fell
+	--// straight through to the "User" placeholder for everyone; an explicit
+	--// User.Name from a caller still wins over the local player.
+	local lp = Players.LocalPlayer
+	local who = self.User.Name
+
+	if not who and lp then
+		who = (lp.DisplayName ~= "" and lp.DisplayName) or lp.Name
+	end
+
+	self.WatermarkLabel.Text = string.format("%s  |  %s  |  %d fps  |  %d ms  |  %s", self.Title, who or self.Text.UserFallback, fps or 0, ping, os.date("%H:%M"))
 end
 
 function Library:_buildKeybindList()

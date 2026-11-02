@@ -1,4 +1,4 @@
-# Automated Industry Complex
+# Gilded Archives
 
 A Roblox auto-farm script written in Luau. It plays the game for you — fights
 mobs on your target list, walks your route, mines ore, smiths recipes, and
