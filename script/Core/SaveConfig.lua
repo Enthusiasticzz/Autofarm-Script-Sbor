@@ -196,6 +196,10 @@ return {
             --// the EXP check would have fired at once; off, a reset that costs
             --// no EXP still happens immediately.
             { Key = "BOSS_RESET_ALWAYS_WAIT", Default = false },
+            --// Death Farm: every reset is taken the moment the kill is in,
+            --// whatever Reset (s) says, except the ones that would cost EXP -
+            --// those still wait the stop's own Reset (s).
+            { Key = "BOSS_DEATH_FARM", Default = false },
 
             --// Retreat below this share of health (0 = never), and drink at or below the
             --// heal share.

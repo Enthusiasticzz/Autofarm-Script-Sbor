@@ -1,7 +1,7 @@
 -- AutoFarm bootstrap.
 -- Every module returns {Name, Dependencies, Start(Context)}.
 
-local TITLE = "AUTOMATED INDUSTRY COMPLEX v3.78"
+local TITLE = "AUTOMATED INDUSTRY COMPLEX v3.91"
 local UTILS_PATH = "UI/Utils.lua"
 
 --// A failed download is retried this many times before giving up.
@@ -330,6 +330,13 @@ if Lifetime.Env then
 
     Lifetime.Env.AICSession = Lifetime
 end
+
+--// Which build is running, and where it came from. The script downloads its
+--// modules from the repository every run, so a fix that has not been pushed
+--// (or a download served from the CDN cache) is a bug that looks unfixed: one
+--// line in the console settles which build and which source is actually
+--// running.
+print(string.format("[AIC] %s  (from %s)", TITLE, BASE))
 
 --// ScriptContext.Error is deliberately NOT hooked. An executor runs its own
 --// handler for that signal, and printing from a second one re-enters it: the

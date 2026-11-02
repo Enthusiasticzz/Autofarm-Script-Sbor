@@ -132,6 +132,15 @@ return {
         --// A tag that never clears must not freeze the route: past this many
         --// seconds the hold starts anyway.
         local TAG_WAIT_MAX = 10
+        --// A reset that waits for nothing (Reset (s) set to 0, or a reset the
+        --// EXP check called free) waits this long for that tag at most. The
+        --// game clears the tag a couple of seconds after the last hit, and
+        --// that wait sat in front of every zero-delay reset: the stop was set
+        --// to reset on the spot and still stood at the corpse for two seconds
+        --// with nothing on the status to say why. Long enough for the last hit
+        --// to be awarded, short enough to be a zero delay. Death Farm skips it
+        --// altogether.
+        local TAG_WAIT_FREE = 0.6
         --// A reset whose character never comes back gives up after this.
         local RESPAWN_TIMEOUT = 20
         --// EXP kept after a reset: ten percent of the level's own EXP bar for
@@ -665,6 +674,21 @@ return {
 
             Wait = math.max(0, Wait)
 
+            --// Death Farm is the strict rule and is taken first: a reset that
+            --// costs no EXP happens the moment the kill is in, whatever the
+            --// stop's Reset (s) or Always Wait After Kill says, and a reset
+            --// that would take EXP waits the stop's own number. A cost that
+            --// cannot be read is a loss and is waited out, as everywhere else.
+            if CONFIG.BOSS_DEATH_FARM == true then
+                local FarmLoss = GetResetCost()
+
+                if FarmLoss == nil then
+                    return Wait
+                end
+
+                return FarmLoss < 0 and 0 or Wait
+            end
+
             if CONFIG.BOSS_RESET_ALWAYS_WAIT == true then
                 return Wait
             end
@@ -1055,6 +1079,9 @@ return {
             if UIRef.BossLoopToggle then UIRef.BossLoopToggle:Set(CONFIG.BOSS_ROUTE_LOOP ~= false, true) end
             if UIRef.BossAlwaysWaitToggle then
                 UIRef.BossAlwaysWaitToggle:Set(CONFIG.BOSS_RESET_ALWAYS_WAIT == true, true)
+            end
+            if UIRef.BossDeathFarmToggle then
+                UIRef.BossDeathFarmToggle:Set(CONFIG.BOSS_DEATH_FARM == true, true)
             end
             AICUI.RefreshBossPathList()
         end
@@ -2362,9 +2389,14 @@ return {
                 S.Teleports = (S.Teleports or 0) + 1
                 S.Teleported = false
                 S.TeleportHold = Now + TELEPORT_RETRY_DELAY
+                --// The distance is in the message on purpose: "did not land"
+                --// with no number is what made a landing that had worked look
+                --// like a failure, with no way to tell afterwards what the
+                --// route had measured.
                 Say("Boss Route", string.format(
-                    "Waypoint teleport to stop #%d moved nothing; asking once more (%d/%d)",
+                    "Waypoint teleport to stop #%d moved %.1f studs; asking once more (%d/%d)",
                     S.Index,
+                    (RootPart.Position - From).Magnitude,
                     S.Teleports,
                     TELEPORT_RETRIES
                 ), 4)
@@ -2372,8 +2404,9 @@ return {
             end
 
             Say("Boss Route", string.format(
-                "Waypoint teleport to stop #%d did not take; walking the rest",
-                S.Index
+                "Waypoint teleport to stop #%d moved %.1f studs; walking the rest",
+                S.Index,
+                (RootPart.Position - From).Magnitude
             ), 4)
             S.BestDistance = nil
             S.LastProgressAt = Now
@@ -2847,8 +2880,9 @@ return {
                 --// A reset with nothing to lose is not held at all: one scan
                 --// tick after the kill, not the two-second grace the held
                 --// path uses to see whether a second mob of the stop is still
-                --// standing up.
-                local Grace = Hold > 0 and KILL_GRACE or FREE_RESET_GRACE
+                --// standing up. Death Farm takes even that tick off it.
+                local Grace = Hold > 0 and KILL_GRACE
+                    or (CONFIG.BOSS_DEATH_FARM == true and 0 or FREE_RESET_GRACE)
 
                 --// The pause starts when the game has finished with the kill,
                 --// not when the scan stopped finding the boss: the tag the game
@@ -2858,9 +2892,19 @@ return {
                 --// so it is not held for the tag.
                 if not S.HoldFrom then
                     if Stop.ResetAfterKill and GetDamageTag() then
+                        --// A reset that waits for nothing waits for the tag
+                        --// only TAG_WAIT_FREE, and not at all under Death
+                        --// Farm: the tag is the game's "still settling" mark,
+                        --// and on a zero-delay stop it was the whole delay.
+                        local TagMax = TAG_WAIT_MAX
+
+                        if Hold <= 0 then
+                            TagMax = CONFIG.BOSS_DEATH_FARM == true and 0 or TAG_WAIT_FREE
+                        end
+
                         S.TagWaitAt = S.TagWaitAt or Now
 
-                        if Now - S.TagWaitAt < TAG_WAIT_MAX then
+                        if Now - S.TagWaitAt < TagMax then
                             SetStatus(string.format(
                                 "STOP %d/%d  WAITING  DAMAGE TAG",
                                 S.Index,
@@ -3263,6 +3307,29 @@ return {
                 SetStatus(CONFIG.BOSS_RESET_ALWAYS_WAIT
                     and "ALWAYS WAIT AFTER KILL"
                     or "INSTANT RESET WHEN NOTHING IS AT RISK")
+            end,
+        }
+
+        --// One press, and the route resets the instant a kill is in: no Reset
+        --// (s), no grace, no waiting for the game's damage tag. The one thing
+        --// still waited for is EXP - a reset that would take some holds the
+        --// stop's own Reset (s), which is what makes a farm that dies on the
+        --// spot safe.
+        UIRef.BossDeathFarmToggle = UIRef.BossSection:AddToggle{
+            Name = "Death Farm",
+            Default = CONFIG.BOSS_DEATH_FARM == true,
+            Callback = function(Value)
+                CONFIG.BOSS_DEATH_FARM = Value == true
+
+                if AICProfile.S.ActiveProfileName then
+                    AICProfile.SaveActiveProfile()
+                end
+
+                SetStatus(CONFIG.BOSS_DEATH_FARM
+                    and "DEATH FARM  INSTANT RESET UNLESS EXP IS AT RISK"
+                    or (CONFIG.BOSS_RESET_ALWAYS_WAIT
+                        and "ALWAYS WAIT AFTER KILL"
+                        or "INSTANT RESET WHEN NOTHING IS AT RISK"))
             end,
         }
 

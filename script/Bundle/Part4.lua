@@ -41,6 +41,7 @@ local KILL_GRACE = 2
 local TARGET_KEEP_TIME = 4
 local DAMAGE_TAG_SUFFIX = "MobDamaged"
 local TAG_WAIT_MAX = 10
+local TAG_WAIT_FREE = 0.6
 local RESPAWN_TIMEOUT = 20
 local DEFAULT_RESET_HOLD = 10
 local FREE_RESET_GRACE = 0.2
@@ -285,6 +286,13 @@ if Wait == nil then
 Wait = DEFAULT_RESET_HOLD
 end
 Wait = math.max(0, Wait)
+if CONFIG.BOSS_DEATH_FARM == true then
+local FarmLoss = GetResetCost()
+if FarmLoss == nil then
+return Wait
+end
+return FarmLoss < 0 and 0 or Wait
+end
 if CONFIG.BOSS_RESET_ALWAYS_WAIT == true then
 return Wait
 end
@@ -558,6 +566,9 @@ end
 if UIRef.BossLoopToggle then UIRef.BossLoopToggle:Set(CONFIG.BOSS_ROUTE_LOOP ~= false, true) end
 if UIRef.BossAlwaysWaitToggle then
 UIRef.BossAlwaysWaitToggle:Set(CONFIG.BOSS_RESET_ALWAYS_WAIT == true, true)
+end
+if UIRef.BossDeathFarmToggle then
+UIRef.BossDeathFarmToggle:Set(CONFIG.BOSS_DEATH_FARM == true, true)
 end
 AICUI.RefreshBossPathList()
 end
@@ -1421,16 +1432,18 @@ S.Teleports = (S.Teleports or 0) + 1
 S.Teleported = false
 S.TeleportHold = Now + TELEPORT_RETRY_DELAY
 Say("Boss Route", string.format(
-"Waypoint teleport to stop #%d moved nothing; asking once more (%d/%d)",
+"Waypoint teleport to stop #%d moved %.1f studs; asking once more (%d/%d)",
 S.Index,
+(RootPart.Position - From).Magnitude,
 S.Teleports,
 TELEPORT_RETRIES
 ), 4)
 return true
 end
 Say("Boss Route", string.format(
-"Waypoint teleport to stop #%d did not take; walking the rest",
-S.Index
+"Waypoint teleport to stop #%d moved %.1f studs; walking the rest",
+S.Index,
+(RootPart.Position - From).Magnitude
 ), 4)
 S.BestDistance = nil
 S.LastProgressAt = Now
@@ -1727,11 +1740,16 @@ return
 end
 S.KillAt = S.KillAt or Now
 local Hold = Stop.ResetAfterKill and GetResetHold(Stop) or 0
-local Grace = Hold > 0 and KILL_GRACE or FREE_RESET_GRACE
+local Grace = Hold > 0 and KILL_GRACE
+or (CONFIG.BOSS_DEATH_FARM == true and 0 or FREE_RESET_GRACE)
 if not S.HoldFrom then
 if Stop.ResetAfterKill and GetDamageTag() then
+local TagMax = TAG_WAIT_MAX
+if Hold <= 0 then
+TagMax = CONFIG.BOSS_DEATH_FARM == true and 0 or TAG_WAIT_FREE
+end
 S.TagWaitAt = S.TagWaitAt or Now
-if Now - S.TagWaitAt < TAG_WAIT_MAX then
+if Now - S.TagWaitAt < TagMax then
 SetStatus(string.format(
 "STOP %d/%d  WAITING  DAMAGE TAG",
 S.Index,
@@ -2023,6 +2041,21 @@ end
 SetStatus(CONFIG.BOSS_RESET_ALWAYS_WAIT
 and "ALWAYS WAIT AFTER KILL"
 or "INSTANT RESET WHEN NOTHING IS AT RISK")
+end,
+}
+UIRef.BossDeathFarmToggle = UIRef.BossSection:AddToggle{
+Name = "Death Farm",
+Default = CONFIG.BOSS_DEATH_FARM == true,
+Callback = function(Value)
+CONFIG.BOSS_DEATH_FARM = Value == true
+if AICProfile.S.ActiveProfileName then
+AICProfile.SaveActiveProfile()
+end
+SetStatus(CONFIG.BOSS_DEATH_FARM
+and "DEATH FARM  INSTANT RESET UNLESS EXP IS AT RISK"
+or (CONFIG.BOSS_RESET_ALWAYS_WAIT
+and "ALWAYS WAIT AFTER KILL"
+or "INSTANT RESET WHEN NOTHING IS AT RISK"))
 end,
 }
 UIRef.BossStopsSection:AddButton{
@@ -7302,253 +7335,6 @@ Gather:Reset()
 end
 end
 return Gather
-end,
-}
-]======],
-	["Features/PartySystem.lua"] = [======[
-return {
-Name = "PartySystem",
-IsFeature = true,
-Dependencies = {"Runtime", "ProfileManager", "Components", "AutoBlock"},
-Start = function(Context)
-local Runtime = Context.Runtime
-local Services = Context.Services
-local Players = Services.Players
-local Replicated = Services.Replicated
-local Player = Context.Player
-local CONFIG = Context.CONFIG
-local FeatureState = Context.Feature
-local AICFeature = Context.AICFeature
-local AICProfile = Context.AICProfile
-local AICUI = Context.AICUI
-local UIRef = Context.UIRef
-local NotifyAction = Context.NotifyAction
-local Feature = {
-Name = "PartySystem",
-IsFeature = true,
-}
-AICFeature.S.Party = {
-Holding = false,
-Busy = false,
-CooldownUntil = 0,
-LastCheck = 0,
-AttemptedToFindTeleporter = 0
-}
-local State = AICFeature.S.Party
-local function GetLeader()
-local Leader = CONFIG.PARTY_LEADER
-if type(Leader) == "table" and type(Leader.Name) == "string" and Leader.Name ~= "" then
-return Leader
-end
-return nil
-end
-local function IsActive()
-return FeatureState.PartySystem.Enabled == true and GetLeader() ~= nil
-end
-local function IsLeaderPlayer(OtherPlayer)
-local Leader = GetLeader()
-if not Leader or not OtherPlayer then
-return false
-end
-if Leader.UserId then
-return OtherPlayer.UserId == Leader.UserId
-end
-return OtherPlayer.Name == Leader.Name
-end
-local function IsLeaderInServer()
-for _, OtherPlayer in ipairs(Players:GetPlayers()) do
-if IsLeaderPlayer(OtherPlayer) then
-return true
-end
-end
-return false
-end
-local function SetStatus(Text)
-State.Status = Text
-if UIRef.PartyStatusLabel then
-UIRef.PartyStatusLabel:Set("STATUS:  " .. tostring(Text))
-end
-end
-local function RequestTeleport(LeaderName)
-return pcall(function()
-local ChatEvent = Replicated:FindFirstChild("ChatEvent", true)
-local TeleportEvent = Replicated:FindFirstChild("TeleportEvent", true)
-assert(TeleportEvent, "no TeleportEvent remote")
-TeleportEvent:FireServer(0)
-task.delay(0.5, function()
-assert(ChatEvent, "no ChatEvent remote")
-ChatEvent:FireServer("Party", "tp friend " .. LeaderName)
-end)
-end)
-end
-local function ResetCharacter()
-local _, Humanoid = Runtime:GetCharacter()
-if not Humanoid or Humanoid.Health <= 0 then
-return
-end
-local Respawned = false
-local Connection = Player.CharacterAdded:Connect(function()
-Respawned = true
-end)
-Humanoid.Health = 0
-local Deadline = os.clock() + (tonumber(CONFIG.PARTY_RESPAWN_TIMEOUT) or 10)
-repeat
-task.wait(0.25)
-until Respawned or os.clock() > Deadline
-Connection:Disconnect()
-task.wait(1)
-end
-local function Release(StatusText)
-State.Holding = false
-State.Busy = false
-SetStatus(StatusText)
-end
-local function RunFollow()
-State.Holding = true
-SetStatus("RESETTING")
-ResetCharacter()
-if IsLeaderInServer() then
-Release("WITH LEADER")
-return
-end
-local Leader = GetLeader()
-local Attempts = math.max(1, tonumber(CONFIG.PARTY_TP_ATTEMPTS) or 3)
-local Timeout = tonumber(CONFIG.PARTY_TP_ATTEMPT_TIMEOUT) or 15
-for Attempt = 1, Attempts do
-if not IsActive() then
-Release("IDLE")
-return
-end
-SetStatus(string.format("TP FRIEND %s  (%d/%d)", Leader.Name, Attempt, Attempts))
-if not RequestTeleport(Leader.Name) then
-NotifyAction("Party", "Could not fire ChatEvent")
-end
-local Deadline = os.clock() + Timeout
-repeat
-task.wait(1)
-until IsLeaderInServer() or os.clock() > Deadline or not IsActive()
-if IsLeaderInServer() then
-Release("WITH LEADER")
-return
-end
-end
-State.CooldownUntil = os.clock() + (tonumber(CONFIG.PARTY_FAILED_COOLDOWN) or 60)
-NotifyAction("Party", "Tp to " .. Leader.Name .. " failed after " .. Attempts .. " tries")
-Release("TP FAILED, RETRY LATER")
-end
-function AICFeature.PartyHandlesIntruders()
-return IsActive() and os.clock() >= State.CooldownUntil
-end
-function AICFeature.IsPartyHolding()
-return State.Holding == true
-end
-function Feature:Update()
-local now = os.clock()
-if now - State.LastCheck < (tonumber(CONFIG.PARTY_CHECK_INTERVAL) or 1) then
-return
-end
-State.LastCheck = now
-if State.Busy then
-return
-end
-if not IsActive() then
-if State.Holding then
-Release("IDLE")
-end
-return
-end
-if IsLeaderInServer() then
-if State.Status ~= "WITH LEADER" then
-SetStatus("WITH LEADER")
-end
-return
-end
-if now < State.CooldownUntil then
-return
-end
-State.Busy = true
-task.spawn(RunFollow)
-end
-local Section = UIRef.PartySection
-local LeaderOptions = {}
-local function RefreshLeaderLabel()
-local Leader = GetLeader()
-if UIRef.PartyLeaderLabel then
-UIRef.PartyLeaderLabel:Set("LEADER:  " .. (Leader and Leader.Name or "NONE"))
-end
-end
-local function SetLeader(OtherPlayer)
-if OtherPlayer then
-CONFIG.PARTY_LEADER = { Name = OtherPlayer.Name, UserId = OtherPlayer.UserId }
-NotifyAction("Party", "Leader set to " .. OtherPlayer.Name)
-else
-CONFIG.PARTY_LEADER = {}
-NotifyAction("Party", "Leader cleared")
-end
-State.CooldownUntil = 0
-RefreshLeaderLabel()
-AICProfile.SaveActiveProfile()
-end
-function AICUI.RefreshPartyLeaderDropdown()
-table.clear(LeaderOptions)
-local Options = {}
-for _, OtherPlayer in ipairs(Players:GetPlayers()) do
-if OtherPlayer ~= Player then
-local Label = string.format("%s (@%s)", OtherPlayer.DisplayName, OtherPlayer.Name)
-LeaderOptions[Label] = OtherPlayer
-table.insert(Options, Label)
-end
-end
-table.sort(Options, function(A, B)
-return string.lower(A) < string.lower(B)
-end)
-if #Options == 0 then
-Options = { "No other players" }
-end
-UIRef.PartyLeaderDropdown = AICUI.ReplaceDropdown(UIRef.PartyLeaderDropdown, Section, "Set Leader", Options, function(Value)
-local OtherPlayer = LeaderOptions[Value]
-if OtherPlayer and OtherPlayer.Parent == Players then
-SetLeader(OtherPlayer)
-end
-end)
-end
-function AICUI.RefreshPartyUI()
-RefreshLeaderLabel()
-end
-if Section then
-FeatureState.PartySystem.Button = Section:AddToggle{
-Name = "Party System",
-Default = FeatureState.PartySystem.Enabled,
-Callback = function(Value)
-FeatureState.PartySystem.Enabled = Value
-State.CooldownUntil = 0
-AICProfile.SaveActiveProfile()
-end,
-}
-UIRef.PartyLeaderLabel = Section:AddLabel("LEADER:  NONE")
-UIRef.PartyStatusLabel = Section:AddLabel("STATUS:  IDLE")
-Section:AddButton{
-Name = "Clear Leader",
-Callback = function()
-SetLeader(nil)
-end,
-}
-Section:AddButton{
-Name = "Refresh Player List",
-Callback = function()
-AICUI.RefreshPartyLeaderDropdown()
-end,
-}
-AICUI.RefreshPartyLeaderDropdown()
-RefreshLeaderLabel()
-Context.Connect(Players.PlayerAdded, function()
-AICUI.RefreshPartyLeaderDropdown()
-end)
-Context.Connect(Players.PlayerRemoving, function()
-task.defer(AICUI.RefreshPartyLeaderDropdown)
-end)
-end
-return Feature
 end,
 }
 ]======],

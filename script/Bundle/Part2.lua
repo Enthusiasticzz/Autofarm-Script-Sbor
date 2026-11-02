@@ -4835,6 +4835,7 @@ SaveConfig.Settings = {
 { Key = "AUTOBLOCK", Scope = "Place", Default = false },
 { Key = "BOSS_ROUTE_LOOP", Default = true },
 { Key = "BOSS_RESET_ALWAYS_WAIT", Default = false },
+{ Key = "BOSS_DEATH_FARM", Default = false },
 { Key = "RETREAT_HEALTH_PERCENT", Default = 40, Min = 0, Max = 80 },
 { Key = "AUTO_HEAL_HEALTH_PERCENT", Default = 65, Min = 30, Max = 80 },
 { Key = "SAFE_ENEMY_RANGE", Default = 4, Min = 0, Max = 30 },

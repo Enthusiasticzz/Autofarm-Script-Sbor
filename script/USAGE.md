@@ -442,6 +442,16 @@ teleport) to a boss, fight it, and reset back to spawn before the next one.
   immediately. The EXP check is skipped entirely, so the wait is the same at
   every level. The status shows `CLEARING  10s  ALWAYS WAIT` while it waits.
   The setting is saved with the profile.
+- **Death Farm** (off by default) — sits just under **Always Wait After Kill**.
+  On, every reset is taken **the moment the kill is in**: the stop's
+  **Reset (s)** is ignored, the two-second grace is dropped, and the game's
+  damage tag is not waited for at all. The one exception is EXP — a reset that
+  would take some (the character's EXP sits above the part of the bar the game
+  protects) still waits that stop's own **Reset (s)**, which is what keeps a
+  farm that dies on the spot from throwing the level away. A cost that cannot
+  be read is a loss and is waited out. It is the stricter rule, so with both
+  this and **Always Wait After Kill** on, Death Farm decides. Saved with the
+  profile.
 - **Add Boss Stop Here** — saves a stop at your current position, with an empty
   **Path to Boss**. A new stop starts with **Reset After Kill on**, a 10 s
   **Reset (s)**, **Dodge Skills on**, **Teleport To Prompt off** and a 120-stud
@@ -638,11 +648,21 @@ the route started on the stop are still walked.
    freezing the route, and a stop with **Reset After Kill** off is not held for
    it at all — it is not spending the kill, so it walks on as before.
 
+   **A reset that waits for nothing does not wait for the tag.** When the pause
+   is 0 — the stop's **Reset (s)** set to 0, or a reset the EXP check called
+   free — the tag is waited for `TAG_WAIT_FREE` (0.6 s) at most, which is
+   enough for the last hit to land and short enough to still be a zero delay.
+   Before that cap, a stop set to reset on the spot could stand at the corpse
+   for the couple of seconds the game takes to clear the tag, with a **zero**
+   delay on the row and nothing on the status to explain it. **Death Farm**
+   skips even that 0.6 s.
+
    The pause is the row's **Reset (s)** exactly, with nothing added — **10 s**
    for a stop that has not set one, **4 s** for a stop set to 4 — and
    `CLEARING  7s  LOSE 50 EXP` counts it down. A cost that cannot be read waits
    the same. A **0** that was actually set is taken at its word: that stop
-   resets at the kill grace, and the EXP above the protected part goes with it.
+   resets at the kill grace (and under **Death Farm**, on the same frame), and
+   the EXP above the protected part goes with it.
    During that hold a living mob within **40 studs** is run from: the character
    sprints to a ring 45 studs on the far side of it (further when the stop's
    **Dodge Distance** is larger), and the status adds `RUNNING`. Standing at
@@ -1073,6 +1093,31 @@ clean. If `FARM STATE` is not updating at all:
    that `PlayerStats` exists under your Player.
 3. Confirm the script actually started: the boot window reaching 100% and the tabs
    appearing means `Init.lua` got that far.
+
+### A fix that does not seem to be in the build
+
+Every run downloads its modules — `Init.lua`, the feature files, the bundle
+parts — from the repository (`…/Autofarm-Script-Sbor/refs/heads/main/script/`,
+or `getgenv().AICBaseURL` when set). Nothing is taken from a local copy of the
+repo, so a change has to be **pushed** before the executor can download it, and
+`raw.githubusercontent.com` is served through a CDN that can hand back the
+previous file for a few minutes after a push.
+
+The first line in the console says which build and which source is running:
+
+```
+[AIC] AUTOMATED INDUSTRY COMPLEX v3.91  (from https://raw.githubusercontent.com/...)
+```
+
+If a fix looks absent, check that line first, then re-execute. To keep a build
+pinned while testing, point the loader at a commit instead of `main`:
+
+```lua
+getgenv().AICBaseURL = "https://raw.githubusercontent.com/<user>/<repo>/<commit-sha>/script/"
+```
+
+Messages from a build that is no longer in the repository are the giveaway: if
+the text on screen does not exist in the current source, the run is old.
 
 ### Verbose logging
 
