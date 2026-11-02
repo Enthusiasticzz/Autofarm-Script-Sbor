@@ -442,6 +442,15 @@ return {
                 return type(Value) == "string" and Value:gsub("^%s*(.-)%s*$", "%1") or ""
             end },
             { Key = "DISCORD_FORMAT", Default = "Event Currency", Options = { "Event Currency", "EXP Grind" } },
+            --// The clock the reports are stamped with (Core/TimeZones). The
+            --// names here have to match its zone list.
+            { Key = "DISCORD_TIMEZONE", Default = "US Eastern", Options = {
+                "US Eastern", "US Central", "US Mountain", "US Arizona", "US Pacific",
+                "Alaska", "Hawaii", "UTC", "UK", "Central Europe", "Australia Eastern",
+            } },
+            --// Whether a report goes out when someone joins and the hold is
+            --// hiding. A leave because they stayed reports either way.
+            { Key = "DISCORD_HOLD_LOG", Default = true },
 
             --// Group IDs Leave On Danger Group leaves for.
             { Key = "DANGER_GROUP_IDS", Default = { "5928691" }, Normalize = NormalizeIdList },

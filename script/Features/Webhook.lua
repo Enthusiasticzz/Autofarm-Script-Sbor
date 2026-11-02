@@ -4,7 +4,7 @@
 return {
     Name = "Webhook",
     IsFeature = true,
-    Dependencies = {"Runtime", "SaveConfig", "ProfileManager", "Components"},
+    Dependencies = {"Runtime", "SaveConfig", "ProfileManager", "Components", "TimeZones"},
 
     Start = function(Context)
         local Services = Context.Services
@@ -137,56 +137,22 @@ return {
             return table.concat(Parts, ", ")
         end
 
-        --// United States Eastern time for the header. os.date is the
-        --// machine's own zone, so the UTC clock is shifted instead: UTC-4
-        --// while daylight saving is on, UTC-5 otherwise. DST starts on the
-        --// second Sunday in March and ends on the first Sunday in November.
-        local function Weekday(Year, Month, Day)
-            if Month < 3 then
-                Year -= 1
-                Month += 12
+        --// The clock in the report header, in the zone picked in the section.
+        --// Core/TimeZones owns the offsets and the daylight-saving calendar,
+        --// so the report follows the calendar by itself: US Eastern prints
+        --// EDT in summer and EST after the clocks go back. The date is left
+        --// out: the report is about this session, and "Started at" only needs
+        --// the clock.
+        local TimeZones = Context.TimeZones
+
+        local function ZoneClock()
+            if TimeZones and TimeZones.Stamp then
+                return TimeZones.Stamp(CONFIG.DISCORD_TIMEZONE)
             end
 
-            local K = Year % 100
-            local J = math.floor(Year / 100)
-
-            --// Zeller: 0 = Saturday, 1 = Sunday, ...
-            return (Day + math.floor(13 * (Month + 1) / 5) + K
-                + math.floor(K / 4) + math.floor(J / 4) + 5 * J) % 7
-        end
-
-        local function NthSunday(Year, Month, N)
-            local First = 1 + (7 - Weekday(Year, Month, 1)) % 7
-            return First + (N - 1) * 7
-        end
-
-        local function IsEasternDST(Year, Month, Day)
-            if Month < 3 or Month > 11 then
-                return false
-            end
-
-            if Month == 3 then
-                return Day >= NthSunday(Year, 3, 2)
-            end
-
-            if Month == 11 then
-                return Day < NthSunday(Year, 11, 1)
-            end
-
-            return true
-        end
-
-        --// "03:41 PM EST", or EDT in summer. The date is left out: the
-        --// report is about this session, and "Started at" only needs the
-        --// clock.
-        local function EasternTime()
-            local Now = os.time()
-            local Utc = os.date("!*t", Now)
-            local DST = IsEasternDST(Utc.year, Utc.month, Utc.day)
-            local Offset = DST and 4 or 5
-            local Stamp = os.date("!%I:%M %p", Now - Offset * 3600)
-
-            return Stamp .. (DST and " EDT" or " EST")
+            --// The module did not start (an older bundle): UTC is better than
+            --// a report with no time on it.
+            return os.date("!%I:%M %p") .. " UTC"
         end
 
         --// A UserId, "everyone", or nothing at all. A hand-typed @name is
@@ -247,7 +213,7 @@ return {
         --// the first update that has them.
         function Feature:ResetSession()
             self.S.StartedAt = os.clock()
-            self.S.StartedClock = EasternTime()
+            self.S.StartedClock = ZoneClock()
             self.S.StartCurrency = ReadCurrency()
             self.S.StartLevel = ReadLevel()
             self.S.StartExp = ReadExp()
@@ -272,13 +238,69 @@ return {
             end
         end
 
-        --// The message body, in the order Discord shows it. Leaving says so:
-        --// the report posted on the way out is the one that turns the run off.
-        function Feature:BuildReport(Leaving, OtherPlayer)
+        --// "@name (UserId)" for each player, or "".
+        local function NameList(Names)
+            local Parts = {}
+
+            for _, Who in ipairs(Names or {}) do
+                local OtherName = tostring(Who.Name or "?")
+                local OtherId = tonumber(Who.UserId)
+
+                table.insert(Parts, "@" .. OtherName
+                    .. (OtherId and string.format(" (%d)", OtherId) or ""))
+            end
+
+            return table.concat(Parts, ", ")
+        end
+
+        --// The header keeps to one line: "@a", or "@a and 2 more".
+        local function ShortNames(Names)
+            if #Names == 0 then
+                return ""
+            end
+
+            if #Names == 1 then
+                return "@" .. tostring(Names[1].Name or "?")
+            end
+
+            return string.format("@%s and %d more", tostring(Names[1].Name or "?"), #Names - 1)
+        end
+
+        --// A report takes a list of players. A single Player still works, and
+        --// a caller with nobody to name passes nothing.
+        local function AsList(Value)
+            local List = {}
+
+            if Value == nil then
+                return List
+            end
+
+            if type(Value) == "table" then
+                for _, Who in ipairs(Value) do
+                    if Who ~= nil then
+                        table.insert(List, Who)
+                    end
+                end
+
+                return List
+            end
+
+            table.insert(List, Value)
+            return List
+        end
+
+        --// The message body, in the order Discord shows it. Kind is "Start",
+        --// "End" (a leave, or Auto Farm switched off) or "Waiting" (a stranger
+        --// is on the server and the hold is hiding from them). Names lists the
+        --// players the report is about; a report with nobody to name leaves
+        --// that line out.
+        function Feature:BuildReport(Kind, Names)
             --// A report built before the first update still gets the session's
             --// starting numbers rather than today's.
             self:CaptureStart()
 
+            local Ending = Kind == "End"
+            local Waiting = Kind == "Waiting"
             local Currency = ReadCurrency()
             local Level = ReadLevel()
             local Exp = ReadExp()
@@ -289,28 +311,36 @@ return {
                 Account = Account .. " and " .. Duo
             end
 
-            --// A leaving report says when it is leaving; a running one says
+            Names = Names or {}
+
+            --// A leaving or hiding report says when it is; a running one says
             --// when this session started.
-            local HeaderTime = Leaving
-                and EasternTime()
-                or tostring(self.S.StartedClock or EasternTime())
+            local Head
+
+            if Waiting then
+                local Who = ShortNames(Names)
+
+                Head = "# Waiting For " .. (Who ~= "" and Who or "A Player")
+                    .. " at " .. ZoneClock()
+            elseif Ending then
+                Head = "# Macro Turned off at " .. ZoneClock()
+            else
+                Head = "# Macro Started at " .. tostring(self.S.StartedClock or ZoneClock())
+            end
 
             local Lines = {
-                (Leaving and "# Macro Turned off at " or "# Macro Started at ")
-                    .. HeaderTime,
+                Head,
                 "Account: " .. Account,
                 string.format("Floor: %s (%s)", GetPlaceName(game.PlaceId), tostring(game.PlaceId)),
             }
 
-            --// A leave started because of a player names them, so the log says
-            --// who joined and made us go. A report with no culprit (server
-            --// age, a manual leave) has no such line at all.
-            if OtherPlayer then
-                local OtherName = tostring(OtherPlayer.Name or "?")
-                local OtherId = tonumber(OtherPlayer.UserId)
-
-                table.insert(Lines, "Left because of: @" .. OtherName
-                    .. (OtherId and string.format(" (%d)", OtherId) or ""))
+            --// A leave or a hold caused by a player names them, so the log
+            --// says who was there. A report with nobody to name (server age,
+            --// a manual leave) has no such line at all.
+            if Waiting and #Names > 0 then
+                table.insert(Lines, "Waiting on: " .. NameList(Names))
+            elseif Ending and #Names > 0 then
+                table.insert(Lines, "Left because of: " .. NameList(Names))
             end
 
             --// A running report carries only where the run is now; the
@@ -326,7 +356,7 @@ return {
                     tostring(NeededExp(Level) or 0)
                 ))
 
-                if Leaving then
+                if Ending then
                     local StartLevel = self.S.StartLevel or Level or 0
                     table.insert(Lines, "**Starting Level:** " .. tostring(StartLevel))
                     table.insert(Lines, string.format(
@@ -338,7 +368,7 @@ return {
             else
                 table.insert(Lines, "Current EC: " .. tostring(Currency or 0))
 
-                if Leaving then
+                if Ending then
                     table.insert(
                         Lines,
                         "Starting EC: " .. tostring(self.S.StartCurrency or Currency or 0)
@@ -431,7 +461,7 @@ return {
 
         --// Everything a report needs, or nil and why it cannot be made. The
         --// URL is checked first so an unconfigured hop stays silent.
-        local function BuildPayload(Leaving, OtherPlayer)
+        local function BuildPayload(Kind, Names)
             local Url = Trim(CONFIG.DISCORD_WEBHOOK)
 
             if Url == "" then
@@ -457,7 +487,7 @@ return {
             end
 
             local Prefix = table.concat(Mentions, " ")
-            local Text = Feature:BuildReport(Leaving == true, OtherPlayer)
+            local Text = Feature:BuildReport(Kind, Names)
             local Content = Prefix ~= "" and (Prefix .. "\n" .. Text) or Text
 
             local Ok, Body = pcall(function()
@@ -483,7 +513,7 @@ return {
                 return false
             end
 
-            local Payload, Reason = BuildPayload(false)
+            local Payload, Reason = BuildPayload("Start")
 
             if not Payload then
                 NotifyAction("Webhook", tostring(Reason), 4)
@@ -511,7 +541,7 @@ return {
         --// after it - so only the first one posts.
         local REPORT_DEDUPE = 8
 
-        function Feature:PostReport(Leaving, Force, OtherPlayer)
+        function Feature:PostReport(Kind, Force, Names)
             if CONFIG.DISCORD_ENABLED == false then
                 return false
             end
@@ -532,7 +562,7 @@ return {
 
             self:CaptureStart()
 
-            local Payload = BuildPayload(Leaving == true, OtherPlayer)
+            local Payload = BuildPayload(Kind, Names)
 
             if not Payload then
                 return false
@@ -548,22 +578,23 @@ return {
             self.S.LastReportAt = Now
             NotifyAction(
                 "Webhook",
-                Leaving and "Macro ended report sent" or "Macro started report sent",
+                Kind == "Start" and "Macro started report sent"
+                    or (Kind == "Waiting" and "Waiting report sent" or "Macro ended report sent"),
                 3
             )
             return true
         end
 
         --// The run is over: a leave, or Auto Farm switched off.
-        function Feature:AnnounceEnd(OtherPlayer)
-            return self:PostReport(true, false, OtherPlayer)
+        function Feature:AnnounceEnd(Strangers)
+            return self:PostReport("End", false, AsList(Strangers))
         end
 
         --// A new run: the session clock and its starting numbers restart with
         --// it, so the reports that follow measure this run.
         function Feature:AnnounceStart()
             self:ResetSession()
-            return self:PostReport(false, true)
+            return self:PostReport("Start", true)
         end
 
         --// Auto Block, Server Hop, Danger Group and Follower Guard call this
@@ -571,8 +602,35 @@ return {
         --// departure posts even inside the window: the client is about to go,
         --// a missed end cannot be retried, and the leave that causes it happens
         --// once anyway (AutoBlock's LeaveStarted latch).
-        AICFeature.ReportBeforeLeave = function(OtherPlayer)
-            return Feature:PostReport(true, true, OtherPlayer)
+        AICFeature.ReportBeforeLeave = function(Strangers)
+            return Feature:PostReport("End", true, AsList(Strangers))
+        end
+
+        --// The hold started hiding from strangers (Pause For Strangers). This
+        --// one is a setting: with Log When Hiding off nothing is posted when
+        --// someone joins, while the leave that follows, if they stay, still
+        --// posts.
+        AICFeature.ReportHold = function(Strangers)
+            if CONFIG.DISCORD_HOLD_LOG == false then
+                return false
+            end
+
+            return Feature:PostReport("Waiting", true, AsList(Strangers))
+        end
+
+        --// The hold ran out and the game is being closed because the
+        --// strangers would not leave. This report is not a setting: it names
+        --// everyone who stayed, whether or not Log When Hiding is on. It also
+        --// marks the departure as reported, so the kick that follows does not
+        --// post the same leave again with a single name.
+        AICFeature.ReportHoldLeave = function(Strangers)
+            local Posted = Feature:PostReport("End", true, AsList(Strangers))
+
+            if AICFeature.S ~= nil then
+                AICFeature.S.LeaveStarted = true
+            end
+
+            return Posted
         end
 
         local SessionLabel
@@ -668,6 +726,35 @@ return {
             }
             Section:AddNote("Only used by Event Currency; blank uses the event currency the script tracks")
 
+            --// The clock every report is stamped with. A zone that keeps
+            --// daylight saving follows the calendar on its own, so EDT turns
+            --// into EST when the clocks go back.
+            local ZoneNames = TimeZones and TimeZones.Names or { "US Eastern", "UTC" }
+
+            local ZonePicker = Section:AddDropdown{
+                Name = "Time Zone",
+                Options = ZoneNames,
+                Callback = function(Value)
+                    Save("DISCORD_TIMEZONE", TimeZones and TimeZones.Get(Value).Name or Value)
+                end,
+            }
+
+            local ZoneName = TimeZones and TimeZones.Get(CONFIG.DISCORD_TIMEZONE).Name or "US Eastern"
+            CONFIG.DISCORD_TIMEZONE = ZoneName
+            ZonePicker:Set(ZoneName, true)
+
+            Section:AddNote("Daylight saving follows the calendar: US Eastern reads EDT in summer and EST once the clocks go back")
+
+            Section:AddToggle{
+                Name = "Log When Hiding",
+                Default = CONFIG.DISCORD_HOLD_LOG ~= false,
+                Callback = function(Value)
+                    Save("DISCORD_HOLD_LOG", Value == true)
+                end,
+            }
+
+            Section:AddNote("Posts a report when someone joins and Pause For Strangers is hiding, naming them. Off sends nothing then; a leave because they stayed always reports, with every name")
+
             Section:AddButton{
                 Name = "Send Report",
                 Callback = function()
@@ -717,7 +804,7 @@ return {
                 return self:AnnounceStart()
             end
 
-            return self:PostReport(true, true)
+            return self:PostReport("End", true)
         end
 
         --// The Auto Farm toggle, which knows the moment it was flipped. It

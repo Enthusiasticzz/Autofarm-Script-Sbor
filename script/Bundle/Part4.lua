@@ -1917,8 +1917,13 @@ elseif (tonumber(Evade.Waypoint) or 0) > 0 then
 table.insert(Evade.Spots, { Kind = "Waypoint", Waypoint = Evade.Waypoint })
 end
 end
-Evade.Spots = CleanSpots(Evade.Spots)
-return Evade.Spots
+local Clean = CleanSpots(Evade.Spots)
+local Kept = Evade.Spots
+table.clear(Kept)
+for _, Spot in ipairs(Clean) do
+table.insert(Kept, Spot)
+end
+return Kept
 end
 local function SpotKey(Spot)
 if Spot.Kind == "Prompt" then
@@ -1942,6 +1947,15 @@ return OtherPlayer
 end
 end
 return nil
+end
+local function FindStrangers()
+local List = {}
+for _, OtherPlayer in ipairs(Players:GetPlayers()) do
+if IsStranger(OtherPlayer) then
+table.insert(List, OtherPlayer)
+end
+end
+return List
 end
 local function BeginEvade(Now, OtherPlayer)
 S.Evading = true
@@ -1973,6 +1987,9 @@ ClearKillClock()
 ResetWalk()
 SetStatus("EVADING  @" .. S.EvadeName .. "  RESETTING")
 Say("Evasion", "Pause For Strangers: @" .. S.EvadeName .. " is here; resetting", 5)
+if AICFeature.ReportHold then
+AICFeature.ReportHold(FindStrangers())
+end
 end
 EndEvade = function(Now, Restart)
 if not S.Evading then
@@ -2139,9 +2156,13 @@ end
 return false
 end
 local function AskToLeave(Now, Stranger)
+local FirstAsk = not S.EvadeKicked
 S.EvadeKicked = true
 S.EvadeKickAt = Now
 SetStatus("EVADING  @" .. S.EvadeName .. "  STAYED  LEAVING")
+if FirstAsk and AICFeature.ReportHoldLeave then
+AICFeature.ReportHoldLeave(FindStrangers())
+end
 if AICFeature.LeaveGame then
 AICFeature.LeaveGame("Boss Evasion: a stranger stayed for the whole hold", Stranger)
 end

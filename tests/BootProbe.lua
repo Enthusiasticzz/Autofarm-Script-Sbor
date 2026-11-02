@@ -7,6 +7,7 @@
 --// The real feature and setting lists, so the probe restores the same ~70
 --// toggles a live run builds.
 local SaveConfig = SaveConfigModule.Start()
+local TimeZones = TimeZonesModule.Start({})
 
 local UI = Library.new{ Title = "BOOT PROBE", ManualLoading = true }
 
@@ -349,6 +350,34 @@ local function SectionTitle(Section)
     return ""
 end
 
+--// The time zone picker and the saved setting have to name the same zones: a
+--// saved zone the picker does not list is reset to the default on load.
+local zoneSetting
+
+for _, entry in ipairs(SaveConfig.GlobalSettings) do
+    if entry.Key == "DISCORD_TIMEZONE" then zoneSetting = entry end
+end
+
+assert(zoneSetting, "the saved time zone setting is missing")
+assert(zoneSetting.Default == TimeZones.Default, "the saved time zone default drifted")
+assert(zoneSetting.Options and #zoneSetting.Options == #TimeZones.Names, "the time zone list and the saved setting disagree")
+
+for _, name in ipairs(TimeZones.Names) do
+    assert(table.find(zoneSetting.Options, name), "the saved setting does not list " .. name)
+end
+
+assert(SaveConfig.NormalizeSetting(zoneSetting, "Mars") == TimeZones.Default, "an unknown saved zone was not reset")
+
+--// The stamp follows the calendar by itself: in 2026 the US switch is 8 March
+--// forward and 1 November back, so summer reads EDT and November reads EST.
+assert(TimeZones.Stamp("US Eastern", 1768478400) == "07:00 AM EST", "January was not stamped EST")
+assert(TimeZones.Stamp("US Eastern", 1773144000) == "08:00 AM EDT", "March was not stamped EDT")
+assert(TimeZones.Stamp("US Eastern", 1793361600) == "08:00 AM EDT", "October was not stamped EDT")
+assert(TimeZones.Stamp("US Eastern", 1793620800) == "07:00 AM EST", "November was not stamped EST")
+assert(TimeZones.Stamp("UTC", 0) == "12:00 AM UTC", "UTC was not stamped")
+assert(TimeZones.Stamp("US Arizona", 1782907200) == "05:00 AM MST", "Arizona changed with daylight saving")
+assert(TimeZones.Get("Nowhere").Name == TimeZones.Default, "an unknown zone did not fall back to the default")
+
 local boss = Context.UIRef
 assert(boss.BlockSection and boss.WhitelistSection, "auto block sections missing")
 assert(boss.EvadeSection and boss.EvadeListSection and boss.EvadeAddSection, "evade sections missing")
@@ -388,6 +417,15 @@ local livePlace = Context.Runtime:GetPlaceConfig()
 assert(type(livePlace) == "table", "no place config after a hiding spot was saved")
 assert(livePlace.BOSS_EVADE and livePlace.BOSS_EVADE.Spots, "the hiding-spot list was not saved on the place config")
 assert(#livePlace.BOSS_EVADE.Spots == 1 and livePlace.BOSS_EVADE.Spots[1].Waypoint == 12, "the waypoint was not saved as a hiding spot")
+
+--// Every edit saves through SetPlaceConfig, which hands back a normalized
+--// copy, so what was saved has to be read again after an edit rather than
+--// from the table read before it.
+local function CurrentSpots()
+    local place = Context.Runtime:GetPlaceConfig()
+
+    return place and place.BOSS_EVADE and place.BOSS_EVADE.Spots or {}
+end
 assert(boss.EvadeSpotLabel.Instance.Text:find("1", 1, true), "the hiding-spot count was not reported")
 
 --// The list is read back through the normalizer a profile or place load runs:
@@ -415,6 +453,51 @@ assert(#Context.AICConfig.NormalizeBossEvade{ Spots = {} }.Spots == 0, "a list t
 local legacy = Context.AICConfig.NormalizeBossEvade{ Waypoint = 12, Prompt = true, PromptName = " Door " }
 assert(legacy.Waypoint == 12 and legacy.Prompt == true and legacy.PromptName == "Door", "boss evade normalizer")
 assert(Context.AICConfig.NormalizeBossEvade(nil).Waypoint == 0, "boss evade normalizer default")
+
+--// A spot is removed from the list itself, waypoint or prompt: the X on the
+--// row has to take it out of the saved list, not just off the screen.
+local function FindRowWithText(Text)
+    for _, Child in ipairs(boss.EvadeListComponent.Holder:GetChildren()) do
+        if Child:IsA("Frame") then
+            for _, Node in ipairs(Child:GetChildren()) do
+                if Node:IsA("TextLabel") and Node.Text == Text then
+                    return Child
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
+boss.EvadeWaypointBox:Set("4")
+assert(#CurrentSpots() == 2, "the second hiding spot was not added")
+
+local firstRow = FindRowWithText("#1  WAYPOINT  12")
+assert(firstRow, "the first hiding spot has no row")
+
+local removeButton
+
+for _, Node in ipairs(firstRow:GetChildren()) do
+    if Node:IsA("TextButton") and Node.Text == "X" then
+        removeButton = Node
+    end
+end
+
+assert(removeButton, "the hiding spot row has no X to remove it")
+removeButton.MouseButton1Click:Fire()
+assert(#CurrentSpots() == 1 and CurrentSpots()[1].Waypoint == 4, "the X did not remove the spot from the saved list")
+assert(#boss.EvadeListComponent.Priority == 1, "the removed row stayed in the list")
+
+--// Moving a spot reaches the saved list as well: the same read rebuilt the
+--// list under the edit, so a move used to be lost the same way.
+boss.EvadeWaypointBox:Set("7")
+assert(#CurrentSpots() == 2 and CurrentSpots()[1].Waypoint == 4, "the next spot was not added under the kept one")
+boss.EvadeListComponent:MoveDown("#1  WAYPOINT  4")
+assert(CurrentSpots()[1].Waypoint == 7 and CurrentSpots()[2].Waypoint == 4, "moving a spot down did not reach the saved list")
+boss.EvadeListComponent:MoveUp("#2  WAYPOINT  4")
+assert(CurrentSpots()[1].Waypoint == 4 and CurrentSpots()[2].Waypoint == 7, "moving a spot up did not reach the saved list")
+assert(#SmokeEnv.Errors == 0, "removing a hiding spot raised: " .. table.concat(SmokeEnv.Errors, "; "))
 
 --// The hold only acts for a running route with the toggle on, and it lets go
 --// the frame the stranger does. No character is needed for either: the hold

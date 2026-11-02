@@ -3187,9 +3187,21 @@ return {
                 end
             end
 
-            Evade.Spots = CleanSpots(Evade.Spots)
+            --// Cleaned in place. Every read used to build a new list, so a
+            --// caller that held the one it got back (Remove, MoveUp,
+            --// MoveDown) was editing a table the next read had already
+            --// replaced: the X took the row off the screen and left the spot
+            --// on the list, and a move never reached the config at all.
+            local Clean = CleanSpots(Evade.Spots)
+            local Kept = Evade.Spots
 
-            return Evade.Spots
+            table.clear(Kept)
+
+            for _, Spot in ipairs(Clean) do
+                table.insert(Kept, Spot)
+            end
+
+            return Kept
         end
 
         --// A spot's identity, so a hold can avoid the one the hold before it
@@ -3231,6 +3243,21 @@ return {
             return nil
         end
 
+        --// Everyone the hold is hiding from. FindStranger answers the one that
+        --// stops the run; the reports name all of them, so a leave that the
+        --// hold causes says exactly who was still on the server.
+        local function FindStrangers()
+            local List = {}
+
+            for _, OtherPlayer in ipairs(Players:GetPlayers()) do
+                if IsStranger(OtherPlayer) then
+                    table.insert(List, OtherPlayer)
+                end
+            end
+
+            return List
+        end
+
         --// The hold starts: the route is parked, the fight dropped, and the
         --// reset fired. Nothing is walked or fought until it ends.
         local function BeginEvade(Now, OtherPlayer)
@@ -3263,6 +3290,13 @@ return {
             ResetWalk()
             SetStatus("EVADING  @" .. S.EvadeName .. "  RESETTING")
             Say("Evasion", "Pause For Strangers: @" .. S.EvadeName .. " is here; resetting", 5)
+
+            --// Log When Hiding is on: the report says who joined and stopped
+            --// the run. It names everyone on the server, not only the one the
+            --// hold latched onto.
+            if AICFeature.ReportHold then
+                AICFeature.ReportHold(FindStrangers())
+            end
         end
 
         --// The hold is over: the stranger went (Restart true), or the section
@@ -3527,9 +3561,20 @@ return {
         --// refuses, or one that never lands, must not end with the character
         --// parked here while the stranger is still on the server.
         local function AskToLeave(Now, Stranger)
+            local FirstAsk = not S.EvadeKicked
+
             S.EvadeKicked = true
             S.EvadeKickAt = Now
             SetStatus("EVADING  @" .. S.EvadeName .. "  STAYED  LEAVING")
+
+            --// The leave is logged whether or not Log When Hiding is on: the
+            --// run ends because people would not leave, so the report names
+            --// all of them. Reporting it here is also what names more than
+            --// one; the departure latch it sets keeps the kick's own report
+            --// from repeating the same leave with a single name.
+            if FirstAsk and AICFeature.ReportHoldLeave then
+                AICFeature.ReportHoldLeave(FindStrangers())
+            end
 
             if AICFeature.LeaveGame then
                 AICFeature.LeaveGame("Boss Evasion: a stranger stayed for the whole hold", Stranger)

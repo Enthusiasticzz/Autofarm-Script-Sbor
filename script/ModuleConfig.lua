@@ -25,6 +25,7 @@ return {
         "Core/GuiClick.lua",
         "Core/Runtime.lua",
         "Core/Logger.lua",
+        "Core/TimeZones.lua",
 
         --// UI library and components
         "UI/Descriptions.lua",

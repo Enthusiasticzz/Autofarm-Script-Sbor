@@ -98,6 +98,8 @@ return {
             ["Duo Username"] = "Name reported next to yours; blank when solo",
             ["Report Format"] = "Which report to post: Event Currency or EXP Grind",
             ["EC Item Name"] = "Inventory item counted as EC; blank uses the tracked currency",
+            ["Time Zone"] = "Clock every report is stamped with; it follows daylight saving on its own",
+            ["Log When Hiding"] = "Posts a report when someone joins and Pause For Strangers is hiding; a leave because they stayed always reports",
             ["Send Report"] = "Posts the report for this session now",
             ["Reset Session"] = "Starts a new report: new start time and starting numbers",
 

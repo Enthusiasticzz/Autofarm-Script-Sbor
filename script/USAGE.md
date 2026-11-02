@@ -438,6 +438,9 @@ route, its stop list, the selected stop and its path.
 - The hold is one of the safety checks: Auto Farm off, it still runs (the route
   is its own loop), and it is read before the retreat, the duel check and Auto
   Block.
+- Both ends are in the Discord report: a **waiting** report when the hold starts
+  (with **Log When Hiding** on) and an ended one naming everybody still there if
+  the window runs out (always). See **Webhook** on the Utility tab.
 
 #### Hiding Spots
 
@@ -447,8 +450,9 @@ one the hold before it used, so the character does not reappear where a stranger
 last saw it. Keep a single spot to always hide in the same place.
 
 - **Hiding Spots** (list) — one row per spot, `#1  WAYPOINT  12` or
-  `#2  PROMPT  Door  (x, y, z)`. ▲▼ reorder the list, `✕` removes a spot, and the
-  header counts how many are saved. Up to **20** can be saved.
+  `#2  PROMPT  Door  (x, y, z)`. ▲▼ reorder the list, `✕` removes that spot — a
+  waypoint or a prompt alike — from the saved list straight away, and the header
+  counts how many are saved. Up to **20** can be saved.
 - **Clear Hiding Spots** — empties the list, leaving the reset as the whole evade.
 - A save from before the list existed keeps working: its single waypoint or
   prompt becomes the first spot the first time the hold reads the list.
@@ -1043,6 +1047,9 @@ in `AutoFarmProfiles/Global.json`, so every profile and place reports to the sam
 - **Duo Username** — who you are duoing with. Blank reports only your account; filled in, the Account line reads `You and Them`.
 - **Report Format** — **Event Currency** or **EXP Grind**; it chooses which two numbers the report carries (see below).
 - **EC Item Name** — the inventory item counted as event currency. Blank uses the currency the script already tracks for the current event (`Fallen Camellia` now).
+- **Time Zone** (dropdown, global) — the clock every report is stamped with: **US Eastern** (default), US Central, US Mountain, US Arizona, US Pacific, Alaska, Hawaii, UTC, UK, Central Europe or Australia Eastern. Daylight saving follows the calendar by itself: US Eastern prints `EDT` all summer and goes back to `EST` from the first Sunday in November, Arizona and Hawaii never change, and the southern zones switch the other way round. Only the clock is shown, never the date.
+- **Log When Hiding** (on, global) — posts a **waiting** report when someone joins and **Pause For Strangers** starts hiding, naming everyone who is on the server. Off, nothing is posted when they join.
+- A leave caused by the hold reports whatever **Log When Hiding** says: the run ends because the strangers would not go, so the ended report names all of them (`Left because of: @a (1), @b (2)`).
 - **Send Report** — posts the report for the current session.
 - **Reset Session** — stamps a new start time and takes today's EC/Level as the starting numbers, for a new run or a new floor.
 - The **SESSION STARTED** line under the buttons shows the report's start time and how long it has been going.
@@ -1084,10 +1091,26 @@ Starting EXP: 8110/2394027
 matches the bar on screen. Both the level and the EXP are captured when the session
 starts, so the starting line keeps the numbers it had before levelling up.
 
+A **waiting** report is posted while **Pause For Strangers** is hiding from someone, when
+**Log When Hiding** is on. It names everyone on the server, not only the player who
+stopped the run, and a long list is shortened in the header:
+
+```text
+# Waiting For SneakyGuest and 2 more at 04:02 PM EST
+Account: YourName
+Floor: Floor Name (10299594856)
+Waiting on: @SneakyGuest (12345678), @Alt (87654321), @Third (11223344)
+Time: 1 Hours, 4 Minutes, 7 Seconds
+```
+
+If they stay for the whole hold, the leave that follows is an **ended** report with the same
+names on `Left because of: …` — posted whether or not **Log When Hiding** is on, because the
+run is ending because of those players.
+
 `Time` is spelled out in minutes and seconds — `23 Minutes, 10 Seconds` — with hours
 added in front for a longer run: `2 Hours, 15 Minutes, 42 Seconds`.
 
-- The start time is **US Eastern** (`EST`, or `EDT` while daylight saving is on — the clock is correct either way). Only the clock is shown — no date — so the header stays short. A report posted on the way out (see below) reads `# Macro Turned off at` instead of `# Macro Started at`, so a leave is distinguishable from a manual **Send Report** at a glance.
+- The start time is stamped in the **Time Zone** picked above (`EST` / `EDT` for its default, US Eastern, and the clock follows daylight saving either way). Only the clock is shown — no date — so the header stays short. A report posted on the way out (see below) reads `# Macro Turned off at` instead of `# Macro Started at`, so a leave is distinguishable from a manual **Send Report** at a glance.
 - **Sending does not restart the session**, so repeated reports keep the same start and starting numbers (an ended report prints them) and only the current ones move; press **Reset Session** to start a new one. Because the shape follows the header, **Send Report** reads like a started message: current numbers only.
 - **The macro reports its own start and end.** A report headed `# Macro Started at` goes out when Auto Farm comes on — at the first load where the saved profile has it on, and every time the toggle is switched on — and the session clock and starting EC/level restart with it. A report headed `# Macro Turned off at` goes out when Auto Farm is switched off, and on every leave below. So a hop produces an ended report, and the next server's load produces a started one.
 - **The toggle reports the moment it is clicked**, not on the next frame: the Auto Farm toggle tells the Webhook which way it went, so switching the farm off posts the ended report even though the farm loop has already stopped, and the heartbeat that follows does not post it a second time. A profile load still reports through the flag, so the same pair appears whichever way the farm was switched.

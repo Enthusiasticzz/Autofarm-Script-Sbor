@@ -48,6 +48,7 @@ $stub = Get-Content (Join-Path $PSScriptRoot "UiStub.lua") -Raw
 $library = Module-Source "UI/Utils.lua" "script/UI/Utils.lua"
 $runtime = Module-Source "Core/Runtime.lua" "script/Core/Runtime.lua"
 $saveConfig = Module-Source "Core/SaveConfig.lua" "script/Core/SaveConfig.lua"
+$timeZones = Module-Source "Core/TimeZones.lua" "script/Core/TimeZones.lua"
 $components = Module-Source "UI/Components.lua" "script/UI/Components.lua"
 $bootstrap = Module-Source "Core/Bootstrap.lua" "script/Core/Bootstrap.lua"
 $profileSettings = Module-Source "Features/ProfileSettings.lua" "script/Features/ProfileSettings.lua"
@@ -92,6 +93,7 @@ CFrame = {
 $combined = $stub + "`n" + $bridge
 $combined += "`nlocal Library = (function()`n" + $library + "`nend)()`n"
 $combined += "`nlocal SaveConfigModule = (function()`n" + $saveConfig + "`nend)()`n"
+$combined += "`nlocal TimeZonesModule = (function()`n" + $timeZones + "`nend)()`n"
 $combined += "`nlocal RuntimeModule = (function()`n" + $runtime + "`nend)()`n"
 $combined += "`nlocal ComponentsModule = (function()`n" + $components + "`nend)()`n"
 $combined += "`nlocal BootstrapModule = (function()`n" + $bootstrap + "`nend)()`n"

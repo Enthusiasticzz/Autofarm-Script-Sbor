@@ -6081,7 +6081,7 @@ end,
 return {
 Name = "Webhook",
 IsFeature = true,
-Dependencies = {"Runtime", "SaveConfig", "ProfileManager", "Components"},
+Dependencies = {"Runtime", "SaveConfig", "ProfileManager", "Components", "TimeZones"},
 Start = function(Context)
 local Services = Context.Services
 local HttpService = Services.HttpService
@@ -6172,39 +6172,12 @@ end
 Add(Rest, "Second", "Seconds")
 return table.concat(Parts, ", ")
 end
-local function Weekday(Year, Month, Day)
-if Month < 3 then
-Year -= 1
-Month += 12
+local TimeZones = Context.TimeZones
+local function ZoneClock()
+if TimeZones and TimeZones.Stamp then
+return TimeZones.Stamp(CONFIG.DISCORD_TIMEZONE)
 end
-local K = Year % 100
-local J = math.floor(Year / 100)
-return (Day + math.floor(13 * (Month + 1) / 5) + K
-+ math.floor(K / 4) + math.floor(J / 4) + 5 * J) % 7
-end
-local function NthSunday(Year, Month, N)
-local First = 1 + (7 - Weekday(Year, Month, 1)) % 7
-return First + (N - 1) * 7
-end
-local function IsEasternDST(Year, Month, Day)
-if Month < 3 or Month > 11 then
-return false
-end
-if Month == 3 then
-return Day >= NthSunday(Year, 3, 2)
-end
-if Month == 11 then
-return Day < NthSunday(Year, 11, 1)
-end
-return true
-end
-local function EasternTime()
-local Now = os.time()
-local Utc = os.date("!*t", Now)
-local DST = IsEasternDST(Utc.year, Utc.month, Utc.day)
-local Offset = DST and 4 or 5
-local Stamp = os.date("!%I:%M %p", Now - Offset * 3600)
-return Stamp .. (DST and " EDT" or " EST")
+return os.date("!%I:%M %p") .. " UTC"
 end
 local function FormatPing(Value)
 local Text = Trim(Value)
@@ -6242,7 +6215,7 @@ return Fallback
 end
 function Feature:ResetSession()
 self.S.StartedAt = os.clock()
-self.S.StartedClock = EasternTime()
+self.S.StartedClock = ZoneClock()
 self.S.StartCurrency = ReadCurrency()
 self.S.StartLevel = ReadLevel()
 self.S.StartExp = ReadExp()
@@ -6262,8 +6235,45 @@ if self.S.StartExp == nil then
 self.S.StartExp = ReadExp()
 end
 end
-function Feature:BuildReport(Leaving, OtherPlayer)
+local function NameList(Names)
+local Parts = {}
+for _, Who in ipairs(Names or {}) do
+local OtherName = tostring(Who.Name or "?")
+local OtherId = tonumber(Who.UserId)
+table.insert(Parts, "@" .. OtherName
+.. (OtherId and string.format(" (%d)", OtherId) or ""))
+end
+return table.concat(Parts, ", ")
+end
+local function ShortNames(Names)
+if #Names == 0 then
+return ""
+end
+if #Names == 1 then
+return "@" .. tostring(Names[1].Name or "?")
+end
+return string.format("@%s and %d more", tostring(Names[1].Name or "?"), #Names - 1)
+end
+local function AsList(Value)
+local List = {}
+if Value == nil then
+return List
+end
+if type(Value) == "table" then
+for _, Who in ipairs(Value) do
+if Who ~= nil then
+table.insert(List, Who)
+end
+end
+return List
+end
+table.insert(List, Value)
+return List
+end
+function Feature:BuildReport(Kind, Names)
 self:CaptureStart()
+local Ending = Kind == "End"
+local Waiting = Kind == "Waiting"
 local Currency = ReadCurrency()
 local Level = ReadLevel()
 local Exp = ReadExp()
@@ -6272,20 +6282,26 @@ local Account = Player.Name
 if Duo ~= "" then
 Account = Account .. " and " .. Duo
 end
-local HeaderTime = Leaving
-and EasternTime()
-or tostring(self.S.StartedClock or EasternTime())
+Names = Names or {}
+local Head
+if Waiting then
+local Who = ShortNames(Names)
+Head = "# Waiting For " .. (Who ~= "" and Who or "A Player")
+.. " at " .. ZoneClock()
+elseif Ending then
+Head = "# Macro Turned off at " .. ZoneClock()
+else
+Head = "# Macro Started at " .. tostring(self.S.StartedClock or ZoneClock())
+end
 local Lines = {
-(Leaving and "# Macro Turned off at " or "# Macro Started at ")
-.. HeaderTime,
+Head,
 "Account: " .. Account,
 string.format("Floor: %s (%s)", GetPlaceName(game.PlaceId), tostring(game.PlaceId)),
 }
-if OtherPlayer then
-local OtherName = tostring(OtherPlayer.Name or "?")
-local OtherId = tonumber(OtherPlayer.UserId)
-table.insert(Lines, "Left because of: @" .. OtherName
-.. (OtherId and string.format(" (%d)", OtherId) or ""))
+if Waiting and #Names > 0 then
+table.insert(Lines, "Waiting on: " .. NameList(Names))
+elseif Ending and #Names > 0 then
+table.insert(Lines, "Left because of: " .. NameList(Names))
 end
 if CONFIG.DISCORD_FORMAT == FORMAT_EXP then
 table.insert(Lines, "**Current Level:** " .. tostring(Level or 0))
@@ -6294,7 +6310,7 @@ table.insert(Lines, string.format(
 tostring(Exp or 0),
 tostring(NeededExp(Level) or 0)
 ))
-if Leaving then
+if Ending then
 local StartLevel = self.S.StartLevel or Level or 0
 table.insert(Lines, "**Starting Level:** " .. tostring(StartLevel))
 table.insert(Lines, string.format(
@@ -6305,7 +6321,7 @@ tostring(NeededExp(StartLevel) or 0)
 end
 else
 table.insert(Lines, "Current EC: " .. tostring(Currency or 0))
-if Leaving then
+if Ending then
 table.insert(
 Lines,
 "Starting EC: " .. tostring(self.S.StartCurrency or Currency or 0)
@@ -6372,7 +6388,7 @@ return false, "Discord rejected the report (HTTP " .. tostring(Status) .. ")"
 end
 return false, "Request failed: " .. tostring(LastError or Response)
 end
-local function BuildPayload(Leaving, OtherPlayer)
+local function BuildPayload(Kind, Names)
 local Url = Trim(CONFIG.DISCORD_WEBHOOK)
 if Url == "" then
 return nil, "Paste a Discord webhook URL first"
@@ -6390,7 +6406,7 @@ if DuoPing ~= "" and DuoPing ~= Ping then
 table.insert(Mentions, DuoPing)
 end
 local Prefix = table.concat(Mentions, " ")
-local Text = Feature:BuildReport(Leaving == true, OtherPlayer)
+local Text = Feature:BuildReport(Kind, Names)
 local Content = Prefix ~= "" and (Prefix .. "\n" .. Text) or Text
 local Ok, Body = pcall(function()
 return HttpService:JSONEncode({
@@ -6408,7 +6424,7 @@ if CONFIG.DISCORD_ENABLED == false then
 NotifyAction("Webhook", "Discord logging is off", 4)
 return false
 end
-local Payload, Reason = BuildPayload(false)
+local Payload, Reason = BuildPayload("Start")
 if not Payload then
 NotifyAction("Webhook", tostring(Reason), 4)
 return false
@@ -6424,7 +6440,7 @@ end)
 return true
 end
 local REPORT_DEDUPE = 8
-function Feature:PostReport(Leaving, Force, OtherPlayer)
+function Feature:PostReport(Kind, Force, Names)
 if CONFIG.DISCORD_ENABLED == false then
 return false
 end
@@ -6439,7 +6455,7 @@ then
 return false
 end
 self:CaptureStart()
-local Payload = BuildPayload(Leaving == true, OtherPlayer)
+local Payload = BuildPayload(Kind, Names)
 if not Payload then
 return false
 end
@@ -6451,20 +6467,34 @@ end
 self.S.LastReportAt = Now
 NotifyAction(
 "Webhook",
-Leaving and "Macro ended report sent" or "Macro started report sent",
+Kind == "Start" and "Macro started report sent"
+or (Kind == "Waiting" and "Waiting report sent" or "Macro ended report sent"),
 3
 )
 return true
 end
-function Feature:AnnounceEnd(OtherPlayer)
-return self:PostReport(true, false, OtherPlayer)
+function Feature:AnnounceEnd(Strangers)
+return self:PostReport("End", false, AsList(Strangers))
 end
 function Feature:AnnounceStart()
 self:ResetSession()
-return self:PostReport(false, true)
+return self:PostReport("Start", true)
 end
-AICFeature.ReportBeforeLeave = function(OtherPlayer)
-return Feature:PostReport(true, true, OtherPlayer)
+AICFeature.ReportBeforeLeave = function(Strangers)
+return Feature:PostReport("End", true, AsList(Strangers))
+end
+AICFeature.ReportHold = function(Strangers)
+if CONFIG.DISCORD_HOLD_LOG == false then
+return false
+end
+return Feature:PostReport("Waiting", true, AsList(Strangers))
+end
+AICFeature.ReportHoldLeave = function(Strangers)
+local Posted = Feature:PostReport("End", true, AsList(Strangers))
+if AICFeature.S ~= nil then
+AICFeature.S.LeaveStarted = true
+end
+return Posted
 end
 local SessionLabel
 local function Save(Key, Value)
@@ -6542,6 +6572,26 @@ Save("DISCORD_EC_ITEM", Trim(Value))
 end,
 }
 Section:AddNote("Only used by Event Currency; blank uses the event currency the script tracks")
+local ZoneNames = TimeZones and TimeZones.Names or { "US Eastern", "UTC" }
+local ZonePicker = Section:AddDropdown{
+Name = "Time Zone",
+Options = ZoneNames,
+Callback = function(Value)
+Save("DISCORD_TIMEZONE", TimeZones and TimeZones.Get(Value).Name or Value)
+end,
+}
+local ZoneName = TimeZones and TimeZones.Get(CONFIG.DISCORD_TIMEZONE).Name or "US Eastern"
+CONFIG.DISCORD_TIMEZONE = ZoneName
+ZonePicker:Set(ZoneName, true)
+Section:AddNote("Daylight saving follows the calendar: US Eastern reads EDT in summer and EST once the clocks go back")
+Section:AddToggle{
+Name = "Log When Hiding",
+Default = CONFIG.DISCORD_HOLD_LOG ~= false,
+Callback = function(Value)
+Save("DISCORD_HOLD_LOG", Value == true)
+end,
+}
+Section:AddNote("Posts a report when someone joins and Pause For Strangers is hiding, naming them. Off sends nothing then; a leave because they stayed always reports, with every name")
 Section:AddButton{
 Name = "Send Report",
 Callback = function()
@@ -6571,7 +6621,7 @@ FarmingWas = Farming
 if Farming then
 return self:AnnounceStart()
 end
-return self:PostReport(true, true)
+return self:PostReport("End", true)
 end
 AICFeature.NotifyAutoFarmChanged = function(Value)
 return Feature:SetFarming(Value)
@@ -6633,6 +6683,7 @@ START_ORDER = {
 "Core/GuiClick.lua",
 "Core/Runtime.lua",
 "Core/Logger.lua",
+"Core/TimeZones.lua",
 "UI/Descriptions.lua",
 "Core/ProfileManager_Storage.lua",
 "Core/ProfileManager_Global.lua",
@@ -6793,330 +6844,6 @@ return self.FINALIZE_MODULES[Path] == true
 end,
 IsNonSpec = function(self, Path)
 return self.NON_SPEC_MODULES[Path] == true
-end,
-}
-]======],
-	["UI/BrowserShell.lua"] = [======[
-return {
-Name = "BrowserShell",
-Dependencies = {"Runtime", "Floating"},
-Start = function(Context)
-local UI = Context.UI
-local Floating = Context.Floating
-local New, Stroke = Floating.New, Floating.Stroke
-local Label, Button, ClearChildren = Floating.Label, Floating.Button, Floating.ClearChildren
-local LIST_WIDTH_SCALE = 0.42
-local ROW_HEIGHT = 52
-local BAR_HEIGHT = 36
-local CHIP_HEIGHT = 30
-local RELOAD_WIDTH = 112
-local FOOTER_HEIGHT = 30
-local FOOTER_GAP = 8
-local ROW_TEXT_X = 12
-local ROW_TEXT_GAP = 4
-local ROW_TEXT_PAD_Y = 10
-local ROW_NAME_SIZE = 12
-local ROW_INFO_SIZE = 10
-local Shell = { Name = "BrowserShell" }
-local function DefaultSearch(Item, Query)
-return string.find(string.lower(Item.Name), Query, 1, true) ~= nil
-end
-function Shell.New(Options)
-local Browser = {
-Built = false,
-Opened = false,
-ChipKey = nil,
-ChipSignature = nil,
-Chips = {},
-Rows = {},
-DetailScroll = nil,
-}
-local Theme, Window, SearchBox, ChipScroll, ListScroll, EmptyLabel
-local MatchesSearch = Options.MatchesSearch or DefaultSearch
-local function StyleChip(Chip, Active)
-Chip.TextColor3 = Active and Theme.Cyan or Theme.TextMuted
-Chip.BackgroundColor3 = Active and Theme.PanelHover or Theme.Element
-Chip.AutoButtonColor = false
-end
-local function RefreshChips(Items)
-local Chips = Options.GetChips(Items)
-local Parts, Known = {}, {}
-for _, Chip in ipairs(Chips) do
-table.insert(Parts, Chip.Key .. "=" .. Chip.Text)
-Known[Chip.Key] = true
-end
-if not Known[Browser.ChipKey] then
-Browser.ChipKey = Chips[1] and Chips[1].Key or nil
-end
-local Signature = table.concat(Parts, "|")
-if Signature ~= Browser.ChipSignature then
-Browser.ChipSignature = Signature
-ClearChildren(ChipScroll)
-table.clear(Browser.Chips)
-for Index, Chip in ipairs(Chips) do
-local Object = Button(ChipScroll, Chip.Text, Theme.TextMuted, {
-Size = UDim2.fromOffset(0, CHIP_HEIGHT),
-AutomaticSize = Enum.AutomaticSize.X,
-TextSize = 12,
-LayoutOrder = Index,
-})
-New("UIPadding", { Parent = Object, PaddingLeft = UDim.new(0, 13), PaddingRight = UDim.new(0, 13) })
-UI:_Connect(Object.Activated, function()
-Browser.ChipKey = Chip.Key
-Browser:RefreshList()
-end)
-Browser.Chips[Chip.Key] = Object
-end
-end
-for Key, Object in pairs(Browser.Chips) do
-StyleChip(Object, Key == Browser.ChipKey)
-end
-end
-local function CreateRow(Item)
-local Name = Item.Name
-local Row = New("TextButton", {
-Parent = ListScroll,
-Size = UDim2.new(1, -6, 0, ROW_HEIGHT),
-BackgroundColor3 = Theme.Element,
-BackgroundTransparency = 0,
-BorderSizePixel = 0,
-Text = "",
-AutoButtonColor = false,
-})
-Floating.Hover(Row)
-local Accent = New("Frame", {
-Parent = Row,
-Position = UDim2.fromOffset(0, 6),
-Size = UDim2.new(0, 3, 1, -12),
-BorderSizePixel = 0,
-})
-local TextStack = New("Frame", {
-Parent = Row,
-BackgroundTransparency = 1,
-AnchorPoint = Vector2.new(0, 0.5),
-Position = UDim2.new(0, ROW_TEXT_X, 0.5, 0),
-Size = UDim2.new(1, -(ROW_TEXT_X + 8), 0, 0),
-AutomaticSize = Enum.AutomaticSize.Y,
-})
-New("UIListLayout", {
-Parent = TextStack,
-SortOrder = Enum.SortOrder.LayoutOrder,
-Padding = UDim.new(0, ROW_TEXT_GAP),
-})
-local NameLabel = Label(TextStack, string.upper(Name), ROW_NAME_SIZE, {
-Size = UDim2.new(1, 0, 0, 0),
-AutomaticSize = Enum.AutomaticSize.Y,
-Font = Floating.Fonts.Bold,
-LayoutOrder = 1,
-})
-local InfoLabel = Label(TextStack, "", ROW_INFO_SIZE, {
-Size = UDim2.new(1, 0, 0, 0),
-AutomaticSize = Enum.AutomaticSize.Y,
-TextColor3 = Theme.TextMuted,
-LayoutOrder = 2,
-})
-local function FitRow()
-local Needed = NameLabel.TextSize + InfoLabel.TextSize + ROW_TEXT_GAP + ROW_TEXT_PAD_Y * 2
-Row.Size = UDim2.new(1, -6, 0, math.max(ROW_HEIGHT, Needed))
-end
-NameLabel:GetPropertyChangedSignal("TextSize"):Connect(FitRow)
-InfoLabel:GetPropertyChangedSignal("TextSize"):Connect(FitRow)
-FitRow()
-local Bar = New("Frame", {
-Parent = Row,
-Position = UDim2.new(0, 10, 1, -4),
-Size = UDim2.new(0, 0, 0, 2),
-BorderSizePixel = 0,
-})
-UI:_Connect(Row.Activated, function()
-Options.OnSelect(Name)
-end)
-return { Button = Row, Accent = Accent, NameLabel = NameLabel, InfoLabel = InfoLabel, Bar = Bar }
-end
-local function UpdateRow(Row, Item)
-local Look = Options.DescribeRow(Item)
-local Selected = Options.GetSelected() == Item.Name
-local Share = math.clamp(Look.Bar or 0, 0, 1)
-Row.InfoLabel.Text = Look.Info or ""
-Row.InfoLabel.TextColor3 = Look.InfoColor or Theme.TextMuted
-Row.Accent.BackgroundColor3 = Look.Accent or Theme.BorderDim
-Row.Bar.Visible = Share > 0
-Row.Bar.Size = UDim2.new(Share, -28 * Share, 0, 3)
-Row.Bar.BackgroundColor3 = Look.BarColor or Theme.Cyan
-Row.NameLabel.TextColor3 = Selected and Theme.Cyan or Theme.Text
-Row.Button.BackgroundColor3 = Selected and Theme.PanelHover or Theme.Element
-end
-function Browser:RefreshList()
-if not Browser.Built then
-return
-end
-local Query = string.lower(SearchBox.Text or "")
-local Items = Options.GetItems()
-local Seen = {}
-local Shown = 0
-RefreshChips(Items)
-for Index, Item in ipairs(Items) do
-Seen[Item.Name] = true
-local Row = Browser.Rows[Item.Name]
-if not Row then
-Row = CreateRow(Item)
-Browser.Rows[Item.Name] = Row
-end
-local Visible = Options.MatchesChip(Item, Browser.ChipKey)
-and (Query == "" or MatchesSearch(Item, Query))
-Row.Button.Visible = Visible
-Row.Button.LayoutOrder = Index
-if Visible then
-Shown += 1
-UpdateRow(Row, Item)
-end
-end
-for Name, Row in pairs(Browser.Rows) do
-if not Seen[Name] then
-Row.Button:Destroy()
-Browser.Rows[Name] = nil
-end
-end
-EmptyLabel.Text = Options.GetEmptyText(#Items)
-EmptyLabel.Visible = Shown == 0
-end
-function Browser:ResetRows()
-for _, Row in pairs(Browser.Rows) do
-Row.Button:Destroy()
-end
-table.clear(Browser.Rows)
-end
-local function BuildFilterBar(Body)
-local HasReload = Options.ReloadText ~= nil
-SearchBox = New("TextBox", {
-Parent = Body,
-Size = UDim2.new(1, HasReload and -(RELOAD_WIDTH + 8) or 0, 0, BAR_HEIGHT),
-BackgroundColor3 = Theme.Element,
-BorderSizePixel = 0,
-Text = "",
-PlaceholderText = Options.SearchPlaceholder or "SEARCH...",
-PlaceholderColor3 = Theme.TextMuted,
-TextColor3 = Theme.Text,
-TextSize = 10,
-Font = Floating.Fonts.Regular,
-TextXAlignment = Enum.TextXAlignment.Left,
-ClearTextOnFocus = false,
-})
-Floating.Hover(SearchBox, Stroke(SearchBox, Theme.BorderDim, 0.15))
-New("UIPadding", { Parent = SearchBox, PaddingLeft = UDim.new(0, 14), PaddingRight = UDim.new(0, 14) })
-UI:_Connect(SearchBox:GetPropertyChangedSignal("Text"), function()
-Browser:RefreshList()
-end)
-if HasReload then
-local Reload = Button(Body, Options.ReloadText, Theme.TextMuted, {
-AnchorPoint = Vector2.new(1, 0),
-Position = UDim2.new(1, 0, 0, 0),
-Size = UDim2.fromOffset(RELOAD_WIDTH, BAR_HEIGHT),
-})
-UI:_Connect(Reload.Activated, function()
-Options.OnReload()
-end)
-end
-ChipScroll = New("ScrollingFrame", {
-Parent = Body,
-Position = UDim2.fromOffset(0, BAR_HEIGHT + 6),
-Size = UDim2.new(1, 0, 0, CHIP_HEIGHT + 6),
-BackgroundTransparency = 1,
-BorderSizePixel = 0,
-CanvasSize = UDim2.new(),
-AutomaticCanvasSize = Enum.AutomaticSize.X,
-ScrollBarThickness = 3,
-ScrollBarImageColor3 = Theme.Border,
-ScrollingDirection = Enum.ScrollingDirection.X,
-})
-New("UIListLayout", {
-Parent = ChipScroll,
-FillDirection = Enum.FillDirection.Horizontal,
-SortOrder = Enum.SortOrder.LayoutOrder,
-Padding = UDim.new(0, 6),
-})
-end
-local function Build()
-Theme = UI.Theme
-Window = Floating.CreateWindow({
-Title = Options.Title,
-Subtitle = Options.Subtitle,
-Width = Options.Width,
-Height = Options.Height,
-MinWidth = Options.MinWidth,
-MinHeight = Options.MinHeight,
-OnClose = function()
-Browser.Opened = false
-if Options.OnClose then
-Options.OnClose()
-end
-end,
-})
-BuildFilterBar(Window.Body)
-local HasFooter = type(Options.FooterText) == "string" and Options.FooterText ~= ""
-local FooterHeight = HasFooter and (FOOTER_HEIGHT + FOOTER_GAP) or 0
-local Top = BAR_HEIGHT + CHIP_HEIGHT + 24
-local Lists = New("Frame", {
-Parent = Window.Body,
-BackgroundTransparency = 1,
-Position = UDim2.fromOffset(0, Top),
-Size = UDim2.new(1, 0, 1, -(Top + FooterHeight)),
-})
-ListScroll = Floating.Scroller(Lists, UDim2.new(), UDim2.new(LIST_WIDTH_SCALE, -6, 1, 0), 6, 6)
-EmptyLabel = Label(ListScroll, "", 10, {
-TextColor3 = Theme.TextMuted,
-Visible = false,
-LayoutOrder = -1,
-})
-local Divider = New("Frame", {
-Parent = Lists,
-Position = UDim2.new(LIST_WIDTH_SCALE, 0, 0, 0),
-Size = UDim2.new(0, 1, 1, 0),
-BackgroundColor3 = Theme.BorderDim,
-BorderSizePixel = 0,
-})
-Browser.DetailScroll = Floating.Scroller(
-Lists,
-UDim2.new(LIST_WIDTH_SCALE, 4, 0, 0),
-UDim2.new(1 - LIST_WIDTH_SCALE, -4, 1, 0),
-10, 10, 10
-)
-if HasFooter then
-local Footer = Button(Window.Body, Options.FooterText, Theme.Cyan, {
-AnchorPoint = Vector2.new(0, 1),
-Position = UDim2.new(0, 0, 1, 0),
-Size = UDim2.new(1, 0, 0, FOOTER_HEIGHT),
-})
-UI:_Connect(Footer.Activated, function()
-if Options.OnFooter then
-Options.OnFooter()
-end
-end)
-end
-Browser.Built = true
-end
-function Browser:Open()
-if not Floating.Available() then
-return false
-end
-if not Browser.Built then
-Build()
-end
-Browser.Opened = true
-Window:Open()
-return true
-end
-function Browser:Close()
-if Window then
-Window:Close()
-end
-end
-function Browser:IsOpen()
-return Browser.Opened
-end
-return Browser
-end
-return Shell
 end,
 }
 ]======],
