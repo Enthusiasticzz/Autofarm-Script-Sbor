@@ -569,6 +569,47 @@ return {
         --// after it - so only the first one posts.
         local REPORT_DEDUPE = 8
 
+        --// getgenv outlives a run of the script, so the last hold report is
+        --// kept there: a copy of the script the re-execution guard could not
+        --// stop posts through its own Webhook module, and only something
+        --// shared by both runs can stop it repeating what the other said.
+        local function SharedEnv()
+            local Ok, Env = pcall(function()
+                return type(getgenv) == "function" and getgenv() or nil
+            end)
+
+            if Ok and type(Env) == "table" then
+                return Env
+            end
+
+            return nil
+        end
+
+        --// What one hold report says, without the time it was built at: the
+        --// two copies of a flood differ by frames, not by what they name.
+        --// The wait is whole seconds so a copy a frame later still matches.
+        local function HoldKey(Kind, Names, Waited)
+            local Parts = {}
+
+            for _, Who in ipairs(Names or {}) do
+                table.insert(Parts, tostring(Who.Name or "?") .. "#" .. tostring(Who.UserId or 0))
+            end
+
+            return table.concat({
+                Kind,
+                tostring(game.PlaceId),
+                table.concat(Parts, ","),
+                tostring(math.floor(tonumber(Waited) or 0)),
+            }, "|")
+        end
+
+        --// A left report says a hold is over, so a copy of it is another run
+        --// or another frame saying what has already been said. A waiting
+        --// report can honestly happen twice (the same player rejoining), so
+        --// its window is a few seconds rather than half a minute.
+        local HOLD_REPORT_WINDOW = 30
+        local WAITING_REPORT_WINDOW = 8
+
         function Feature:PostReport(Kind, Force, Names, Waited)
             if CONFIG.DISCORD_ENABLED == false then
                 return false
@@ -580,6 +621,38 @@ return {
             end
 
             local Now = os.clock()
+            local List = AsList(Names)
+            local Hold = Kind == "Left" or Kind == "Waiting"
+            local Key = Hold and HoldKey(Kind, List, Waited) or nil
+
+            --// A hold report with nobody to name lost the list it was built
+            --// from, and it can only come out as "A Player Left" - the
+            --// header that used to arrive several times beside the real
+            --// report. The hold names who was there, so an empty list here is
+            --// a caller that could not, not a leave by nobody.
+            if Hold and #List == 0 then
+                return false
+            end
+
+            if Key then
+                local Window = Kind == "Waiting" and WAITING_REPORT_WINDOW or HOLD_REPORT_WINDOW
+                local Env = SharedEnv()
+                local Shared = Env and Env.AICHoldReport or nil
+
+                if type(Shared) == "table"
+                    and Shared.Key == Key
+                    and Now - (tonumber(Shared.At) or 0) < Window
+                then
+                    return false
+                end
+
+                if self.S.LastHoldKey == Key
+                    and self.S.LastHoldAt
+                    and Now - self.S.LastHoldAt < Window
+                then
+                    return false
+                end
+            end
 
             if not Force
                 and self.S.LastReportAt
@@ -590,7 +663,9 @@ return {
 
             self:CaptureStart()
 
-            local Payload = BuildPayload(Kind, Names, Waited)
+            --// The list, not what the caller passed: a single Player handed in
+            --// by an older hook is counted as one entry here.
+            local Payload = BuildPayload(Kind, List, Waited)
 
             if not Payload then
                 return false
@@ -604,6 +679,18 @@ return {
             end
 
             self.S.LastReportAt = Now
+
+            if Key then
+                self.S.LastHoldKey = Key
+                self.S.LastHoldAt = Now
+
+                local Env = SharedEnv()
+
+                if Env then
+                    Env.AICHoldReport = { Key = Key, At = Now }
+                end
+            end
+
             NotifyAction(
                 "Webhook",
                 Kind == "Start" and "Macro started report sent"

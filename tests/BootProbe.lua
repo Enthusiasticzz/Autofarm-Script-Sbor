@@ -711,6 +711,16 @@ Context.CONFIG.DISCORD_HOLD_LOG = true
 Context.AICFeature.ReportHold({ { Name = "Intruder", UserId = 2 } })
 assert(posted == 1, "one waiting report was posted " .. tostring(posted) .. " times")
 
+--// One hold is one left report. The same report asked for again is the same
+--// event seen by another frame or another run, and a left report with nobody
+--// to name is the "A Player Left at" header those copies used to arrive as.
+Context.AICFeature.ReportHoldCleared({ { Name = "Intruder", UserId = 2 } }, 35)
+assert(posted == 2, "the left report was not posted: " .. tostring(posted))
+Context.AICFeature.ReportHoldCleared({ { Name = "Intruder", UserId = 2 } }, 35)
+assert(posted == 2, "the same left report was posted twice")
+Context.AICFeature.ReportHoldCleared({}, 35)
+assert(posted == 2, "a left report with nobody to name was posted")
+
 request = nil
 http_request = nil
 

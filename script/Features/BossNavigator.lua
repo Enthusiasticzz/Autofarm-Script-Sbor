@@ -3279,6 +3279,9 @@ return {
         local function BeginEvade(Now, OtherPlayer)
             S.Evading = true
             S.EvadeName = tostring(OtherPlayer.Name)
+            --// Kept beside the name so a report always has someone to name,
+            --// even if the snapshot below is ever empty.
+            S.EvadeId = tonumber(OtherPlayer.UserId)
             S.EvadeStage = "Reset"
             S.EvadeSince = Now
             S.EvadeWaitUntil = nil
@@ -3314,7 +3317,7 @@ return {
             --// the run. It names everyone on the server, not only the one the
             --// hold latched onto.
             if AICFeature.ReportHold then
-                AICFeature.ReportHold(FindStrangers())
+                AICFeature.ReportHold(S.EvadeStrangers)
             end
         end
 
@@ -3331,6 +3334,7 @@ return {
 
             S.Evading = false
             S.EvadeName = ""
+            S.EvadeId = nil
             S.EvadeStage = nil
             S.EvadeSince = nil
             S.EvadeWaitUntil = nil
@@ -3386,6 +3390,12 @@ return {
 
             local Waited = math.max(0, Now - (S.EvadeSince or Now))
             local Who = S.EvadeStrangers or {}
+
+            --// Nobody left in the snapshot: name the one the hold latched
+            --// onto rather than posting a report that says "A Player Left".
+            if #Who == 0 and S.EvadeName ~= "" then
+                Who = { { Name = S.EvadeName, UserId = S.EvadeId } }
+            end
 
             S.EvadeStrangers = {}
 

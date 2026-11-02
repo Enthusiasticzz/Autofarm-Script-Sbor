@@ -1970,6 +1970,7 @@ end
 local function BeginEvade(Now, OtherPlayer)
 S.Evading = true
 S.EvadeName = tostring(OtherPlayer.Name)
+S.EvadeId = tonumber(OtherPlayer.UserId)
 S.EvadeStage = "Reset"
 S.EvadeSince = Now
 S.EvadeWaitUntil = nil
@@ -2001,7 +2002,7 @@ ResetWalk()
 SetStatus("EVADING  @" .. S.EvadeName .. "  RESETTING")
 Say("Evasion", "Pause For Strangers: @" .. S.EvadeName .. " is here; resetting", 5)
 if AICFeature.ReportHold then
-AICFeature.ReportHold(FindStrangers())
+AICFeature.ReportHold(S.EvadeStrangers)
 end
 end
 EndEvade = function(Now, Restart)
@@ -2011,6 +2012,7 @@ end
 local Was = S.EvadeName
 S.Evading = false
 S.EvadeName = ""
+S.EvadeId = nil
 S.EvadeStage = nil
 S.EvadeSince = nil
 S.EvadeWaitUntil = nil
@@ -2049,6 +2051,9 @@ end
 S.EvadeClearSent = true
 local Waited = math.max(0, Now - (S.EvadeSince or Now))
 local Who = S.EvadeStrangers or {}
+if #Who == 0 and S.EvadeName ~= "" then
+Who = { { Name = S.EvadeName, UserId = S.EvadeId } }
+end
 S.EvadeStrangers = {}
 if AICFeature.ReportHoldCleared then
 AICFeature.ReportHoldCleared(Who, Waited)

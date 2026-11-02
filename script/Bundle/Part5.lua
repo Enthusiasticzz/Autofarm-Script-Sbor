@@ -6460,6 +6460,29 @@ end)
 return true
 end
 local REPORT_DEDUPE = 8
+local function SharedEnv()
+local Ok, Env = pcall(function()
+return type(getgenv) == "function" and getgenv() or nil
+end)
+if Ok and type(Env) == "table" then
+return Env
+end
+return nil
+end
+local function HoldKey(Kind, Names, Waited)
+local Parts = {}
+for _, Who in ipairs(Names or {}) do
+table.insert(Parts, tostring(Who.Name or "?") .. "#" .. tostring(Who.UserId or 0))
+end
+return table.concat({
+Kind,
+tostring(game.PlaceId),
+table.concat(Parts, ","),
+tostring(math.floor(tonumber(Waited) or 0)),
+}, "|")
+end
+local HOLD_REPORT_WINDOW = 30
+local WAITING_REPORT_WINDOW = 8
 function Feature:PostReport(Kind, Force, Names, Waited)
 if CONFIG.DISCORD_ENABLED == false then
 return false
@@ -6468,6 +6491,29 @@ if Trim(CONFIG.DISCORD_WEBHOOK) == "" then
 return false
 end
 local Now = os.clock()
+local List = AsList(Names)
+local Hold = Kind == "Left" or Kind == "Waiting"
+local Key = Hold and HoldKey(Kind, List, Waited) or nil
+if Hold and #List == 0 then
+return false
+end
+if Key then
+local Window = Kind == "Waiting" and WAITING_REPORT_WINDOW or HOLD_REPORT_WINDOW
+local Env = SharedEnv()
+local Shared = Env and Env.AICHoldReport or nil
+if type(Shared) == "table"
+and Shared.Key == Key
+and Now - (tonumber(Shared.At) or 0) < Window
+then
+return false
+end
+if self.S.LastHoldKey == Key
+and self.S.LastHoldAt
+and Now - self.S.LastHoldAt < Window
+then
+return false
+end
+end
 if not Force
 and self.S.LastReportAt
 and Now - self.S.LastReportAt < REPORT_DEDUPE
@@ -6475,7 +6521,7 @@ then
 return false
 end
 self:CaptureStart()
-local Payload = BuildPayload(Kind, Names, Waited)
+local Payload = BuildPayload(Kind, List, Waited)
 if not Payload then
 return false
 end
@@ -6485,6 +6531,14 @@ NotifyAction("Webhook", tostring(Reason), 6)
 return false
 end
 self.S.LastReportAt = Now
+if Key then
+self.S.LastHoldKey = Key
+self.S.LastHoldAt = Now
+local Env = SharedEnv()
+if Env then
+Env.AICHoldReport = { Key = Key, At = Now }
+end
+end
 NotifyAction(
 "Webhook",
 Kind == "Start" and "Macro started report sent"
