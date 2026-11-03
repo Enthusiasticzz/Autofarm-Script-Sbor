@@ -6850,6 +6850,7 @@ START_ORDER = {
 "Features/RespawnTimers.lua",
 "Features/WaypointLoop.lua",
 "Features/BossNavigator.lua",
+"Features/BossNavigator_Evade.lua",
 "Features/Esp.lua",
 "Core/Bootstrap.lua",
 "Core/Heartbeat.lua",

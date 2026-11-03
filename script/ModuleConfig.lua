@@ -107,6 +107,7 @@ return {
         "Features/RespawnTimers.lua",
         "Features/WaypointLoop.lua",
         "Features/BossNavigator.lua",
+        "Features/BossNavigator_Evade.lua",
         "Features/Esp.lua",
 
         --// Lifecycle modules (started last)

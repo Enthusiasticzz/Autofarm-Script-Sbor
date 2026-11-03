@@ -51,6 +51,8 @@ local RESET_RETRIES = 2
 local RESET_STAY_DISTANCE = 30
 local HOLD_FLEE_DISTANCE = 40
 local HOLD_FLEE_RING = 45
+local FLEE_RANGE_MARGIN = 8
+local FLEE_RING_MAX = 120
 local PROMPT_WAIT = 0.6
 local PROMPT_ARRIVAL = 12
 local PROMPT_FALL_DEPTH = 12
@@ -994,6 +996,42 @@ end
 local Name = AICCombat.GetTargetEntityName(Mob)
 return Name == nil or table.find(Stop.Targets, Name) ~= nil
 end
+local function MobName(Mob)
+return AICCombat.GetTargetEntityName(Mob) or (Mob and Mob.Name) or nil
+end
+local function EachMob(Fn)
+local MobFolder = workspace:FindFirstChild("Mobs")
+if not MobFolder then
+return
+end
+for _, Node in ipairs(MobFolder:GetChildren()) do
+if Node:IsA("Model") then
+Fn(Node)
+elseif Node:IsA("Folder") then
+for _, Nested in ipairs(Node:GetChildren()) do
+if Nested:IsA("Model") then
+Fn(Nested)
+end
+end
+end
+end
+end
+local function FindLivingTarget(Stop)
+local Found = nil
+EachMob(function(Mob)
+if Found then
+return
+end
+local MobHumanoid = Mob:FindFirstChildOfClass("Humanoid")
+if MobHumanoid and (tonumber(MobHumanoid.Health) or 0) > 0 then
+local Name = MobName(Mob)
+if Name and (#Stop.Targets == 0 or table.find(Stop.Targets, Name)) then
+Found = Mob
+end
+end
+end)
+return Found
+end
 local function FindTarget(Stop, Now)
 local Key = string.format(
 "%d|%s|%s",
@@ -1006,15 +1044,13 @@ ScanAt = Now
 ScanKey = Key
 ScanDone = true
 local Best, BestDistance = nil, math.huge
-local MobFolder = workspace:FindFirstChild("Mobs")
-for _, Mob in ipairs(MobFolder and MobFolder:GetChildren() or {}) do
-if Mob:IsA("Model") then
+EachMob(function(Mob)
 local MobHumanoid = Mob:FindFirstChildOfClass("Humanoid")
 local MobRoot = Mob:FindFirstChild("HumanoidRootPart")
 if MobHumanoid and MobRoot and MobHumanoid.Health > 0 then
 local Distance = (MobRoot.Position - Stop.Position).Magnitude
 if Distance <= Stop.Radius and Distance < BestDistance then
-local Name = AICCombat.GetTargetEntityName(Mob)
+local Name = MobName(Mob)
 local Match = Name ~= nil
 and (#Stop.Targets == 0 or table.find(Stop.Targets, Name) ~= nil)
 if Match then
@@ -1022,8 +1058,7 @@ Best, BestDistance = Mob, Distance
 end
 end
 end
-end
-end
+end)
 ScanResult = Best
 end
 if IsStopTargetAlive(ScanResult) then
@@ -1032,23 +1067,24 @@ end
 return nil
 end
 local function FindDeadStopTarget(Stop)
-local MobFolder = workspace:FindFirstChild("Mobs")
 local Radius = tonumber(Stop.Radius) or 0
-for _, Mob in ipairs(MobFolder and MobFolder:GetChildren() or {}) do
-if Mob:IsA("Model") then
+local Found = nil
+EachMob(function(Mob)
+if Found then
+return
+end
 local MobHumanoid = Mob:FindFirstChildOfClass("Humanoid")
 local MobRoot = Mob:FindFirstChild("HumanoidRootPart")
 if MobHumanoid and MobRoot and MobHumanoid.Health <= 0
 and AICCombatUtils.GetHorizontalDistance(Stop.Position, MobRoot.Position) <= Radius
 then
-local Name = AICCombat.GetTargetEntityName(Mob)
+local Name = MobName(Mob)
 if Name and (#Stop.Targets == 0 or table.find(Stop.Targets, Name)) then
-return Mob
+Found = Mob
 end
 end
-end
-end
-return nil
+end)
+return Found
 end
 local function RequireWeapon(Now)
 if not AICFeature.EnsureWeaponDrawn then
@@ -1166,6 +1202,18 @@ end
 end
 return BestRoot
 end
+local function MobDetectionRange(Mob)
+local Config = Mob and Mob:FindFirstChild("Config")
+if not Config then
+return nil
+end
+local Value = Config:FindFirstChild("DetectionRange")
+local Range = (Value and tonumber(Value.Value)) or tonumber(Config:GetAttribute("DetectionRange"))
+if Range and Range > 0 then
+return Range
+end
+return nil
+end
 local function FleeStep(Humanoid, RootPart, Stop)
 local MobRoot = GetNearestMob(RootPart.Position, HOLD_FLEE_DISTANCE)
 if not MobRoot then
@@ -1179,6 +1227,10 @@ if Speed < RunSpeed then
 Humanoid.WalkSpeed = RunSpeed
 end
 local Distance = HOLD_FLEE_RING
+local Detected = MobDetectionRange(MobRoot.Parent)
+if Detected then
+Distance = math.min(math.max(Distance, Detected + FLEE_RANGE_MARGIN), FLEE_RING_MAX)
+end
 if Stop and tonumber(Stop.DodgeDistance) then
 Distance = math.max(Distance, tonumber(Stop.DodgeDistance))
 end
@@ -1567,9 +1619,13 @@ S.Index,
 ))
 return true
 end
-local RETURN_KILL_MISS_SECONDS = 1
+local RETURN_KILL_MISS_SECONDS = 3
 local function CheckReturnKill(Stop, Now)
 if FindTarget(Stop, Now) then
+S.ReturnMissAt = nil
+return false
+end
+if FindLivingTarget(Stop) then
 S.ReturnMissAt = nil
 return false
 end
@@ -1932,7 +1988,7 @@ end
 return
 end
 local Dead = FindDeadStopTarget(Stop)
-if Dead and not S.SeenTarget then
+if Dead and not S.SeenTarget and not FindLivingTarget(Stop) then
 S.SeenTarget = true
 S.FoughtThisVisit = true
 S.KillAt = Now
@@ -2023,491 +2079,15 @@ return string.format("P%.0f,%.0f,%.0f", Spot.X, Spot.Y, Spot.Z)
 end
 return "W" .. tostring(Spot.Waypoint)
 end
-local function IsStranger(OtherPlayer)
-if not OtherPlayer or OtherPlayer == Player then
-return false
-end
-if AICFeature.IsWhitelisted and AICFeature.IsWhitelisted(OtherPlayer.UserId) then
-return false
-end
-return true
-end
-local function FindStranger()
-for _, OtherPlayer in ipairs(Players:GetPlayers()) do
-if IsStranger(OtherPlayer) then
-return OtherPlayer
-end
-end
-return nil
-end
-local function FindStrangers()
-local List = {}
-for _, OtherPlayer in ipairs(Players:GetPlayers()) do
-if IsStranger(OtherPlayer) then
-table.insert(List, OtherPlayer)
-end
-end
-return List
-end
-local function SnapshotStrangers(List)
-local Copy = {}
-for _, OtherPlayer in ipairs(List or {}) do
-table.insert(Copy, {
-Name = tostring(OtherPlayer.Name or "?"),
-UserId = tonumber(OtherPlayer.UserId),
-})
-end
-return Copy
-end
-local function BeginEvade(Now, OtherPlayer)
-S.Evading = true
-S.EvadeName = tostring(OtherPlayer.Name)
-S.EvadeId = tonumber(OtherPlayer.UserId)
-S.EvadeStage = "Reset"
-S.EvadeSince = Now
-S.EvadeWaitUntil = nil
-S.EvadeWaitTotal = 0
-S.EvadeResetHumanoid = nil
-S.EvadeResetAt = nil
-S.EvadeResetRetries = 0
-S.EvadeResetPosition = nil
-S.EvadeSent = false
-S.EvadeTeleportFrom = nil
-S.EvadeTeleportAt = nil
-S.EvadePromptCheckAt = nil
-S.EvadePromptTarget = nil
-S.EvadeLiveAt = nil
-S.EvadeKicked = false
-S.EvadeKickAt = nil
-S.EvadeStrangers = SnapshotStrangers(FindStrangers())
-S.EvadeStrangersAt = Now
-S.EvadeClearSent = false
-S.FloorLifts = 0
-S.Phase = "Evade"
-EndDodge()
-StopFlee()
-AICCombat.S.ClosestTarget = nil
-S.LastTarget = nil
-S.TargetSeenAt = nil
-ClearKillClock()
-ResetWalk()
-SetStatus("EVADING  @" .. S.EvadeName .. "  RESETTING")
-Say("Evasion", "Pause For Strangers: @" .. S.EvadeName .. " is here; resetting", 5)
-if AICFeature.ReportHold then
-AICFeature.ReportHold(S.EvadeStrangers)
-end
-end
 EndEvade = function(Now, Restart)
-if not S.Evading then
-return
+if AICFeature.BossEvadeReady == true and type(AICFeature.BossEvadeEnd) == "function" then
+AICFeature.BossEvadeEnd(Now, Restart)
 end
-local Was = S.EvadeName
-S.Evading = false
-S.EvadeName = ""
-S.EvadeId = nil
-S.EvadeStage = nil
-S.EvadeSince = nil
-S.EvadeWaitUntil = nil
-S.EvadeWaitTotal = 0
-S.EvadeResetHumanoid = nil
-S.EvadeResetAt = nil
-S.EvadeResetRetries = 0
-S.EvadeResetPosition = nil
-S.EvadeSent = false
-S.EvadeTeleportFrom = nil
-S.EvadeTeleportAt = nil
-S.EvadePromptCheckAt = nil
-S.EvadePromptTarget = nil
-S.EvadeLiveAt = nil
-S.EvadeKicked = false
-S.EvadeKickAt = nil
-S.EvadeStrangers = nil
-S.EvadeStrangersAt = nil
-S.Phase = "Idle"
-SyncDeathMark()
-if not (Restart and IsEnabled() and CurrentStop()) then
-SetStatus("EVASION OVER")
-return
-end
-S.Index = 1
-BeginStop(Now)
-if Was ~= "" then
-Say("Evasion", "@" .. Was .. " left; starting again at stop #1", 5)
-end
-end
-local function StrangersLeft(Now)
-if S.EvadeClearSent then
-EndEvade(Now, true)
-return
-end
-S.EvadeClearSent = true
-local Waited = math.max(0, Now - (S.EvadeSince or Now))
-local Who = S.EvadeStrangers or {}
-if #Who == 0 and S.EvadeName ~= "" then
-Who = { { Name = S.EvadeName, UserId = S.EvadeId } }
-end
-S.EvadeStrangers = {}
-if AICFeature.ReportHoldCleared then
-AICFeature.ReportHoldCleared(Who, Waited)
-end
-EndEvade(Now, true)
-end
-local function EvadeResetStep(Now, Humanoid, RootPart)
-if S.EvadeResetHumanoid and Humanoid ~= S.EvadeResetHumanoid then
-S.EvadeResetHumanoid = nil
-return false
-end
-if (tonumber(Humanoid.Health) or 0) <= 0 then
-return true
-end
-Humanoid:Move(Vector3.zero)
-local StayedPut = not S.EvadeResetPosition
-or (RootPart.Position - S.EvadeResetPosition).Magnitude <= RESET_STAY_DISTANCE
-if S.EvadeResetHumanoid and not StayedPut then
-S.EvadeResetHumanoid = nil
-return false
-end
-if not S.EvadeResetHumanoid then
-S.EvadeResetHumanoid = Humanoid
-S.EvadeResetAt = Now
-S.EvadeResetPosition = RootPart.Position
-S.OwnDeaths = (S.OwnDeaths or 0) + 1
-S.OwnDeathAt = Now
-Humanoid.Health = 0
-return true
-end
-if Now - (S.EvadeResetAt or Now) >= EVADE_RESET_RETRY_DELAY
-and (S.EvadeResetRetries or 0) < RESET_RETRIES
-then
-S.EvadeResetRetries = (S.EvadeResetRetries or 0) + 1
-S.EvadeResetAt = Now
-Humanoid.Health = 0
-return true
-end
-if Now - (S.EvadeSince or Now) >= EVADE_RESET_GIVE_UP then
-S.EvadeResetHumanoid = nil
-return false
-end
-return true
-end
-local function EvadeTravelStep(Now, Humanoid, RootPart)
-if S.EvadeSent then
-if S.EvadePromptCheckAt then
-if Now < S.EvadePromptCheckAt then
-Humanoid:Move(Vector3.zero)
-return true
-end
-S.EvadePromptCheckAt = nil
-local Target = S.EvadePromptTarget
-S.EvadePromptTarget = nil
-local Depth = GetFloorOverlap(RootPart)
-if Depth and Depth >= FLOOR_BURIED
-and LiftFromFloor(Humanoid, RootPart, Depth)
-then
-S.EvadePromptCheckAt = Now + PROMPT_RECHECK
-S.EvadePromptTarget = Target
-Humanoid:Move(Vector3.zero)
-return true
-end
-local Flat = Target
-and AICCombatUtils.GetHorizontalDistance(Target, RootPart.Position)
-or 0
-if Flat > PROMPT_ARRIVAL then
-Say("Evasion", string.format(
-"Evade prompt landed %.0f studs away; holding here", Flat
-), 4)
-end
-return false
-end
-if S.EvadeTeleportFrom then
-local Window = TELEPORT_LAND_WINDOW
-if (RootPart.Position - S.EvadeTeleportFrom).Magnitude < TELEPORT_LAND_DISTANCE
-and Now - (S.EvadeTeleportAt or Now) < Window
-then
-Humanoid:Move(Vector3.zero)
-return true
-end
-S.EvadeTeleportFrom = nil
-S.EvadeTeleportAt = nil
-if FixLandedFloor(Humanoid, RootPart) then
-Humanoid:Move(Vector3.zero)
-return true
-end
-return false
-end
-return false
-end
-if not S.EvadeLiveAt then
-S.EvadeLiveAt = Now
-end
-if Now - S.EvadeLiveAt < RESPAWN_SETTLE then
-Humanoid:Move(Vector3.zero)
-return true
-end
-S.EvadeSent = true
-if Runtime.MuteInteract then
-Runtime:MuteInteract(PROMPT_INTERACT_MUTE)
-end
-local Spots = GetEvadeSpots()
-local Spot = nil
-if #Spots > 0 then
-local Pick = math.random(1, #Spots)
-if #Spots > 1 and SpotKey(Spots[Pick]) == S.EvadePick then
-Pick = (Pick % #Spots) + 1
-end
-Spot = Spots[Pick]
-S.EvadePick = SpotKey(Spot)
-end
-if Spot and Spot.Kind == "Prompt" then
-local PromptPosition = Vector3.new(Spot.X, Spot.Y, Spot.Z)
-if TeleportToPoint(PromptPosition) then
-S.EvadePromptTarget = PromptPosition
-S.EvadePromptCheckAt = Now + PROMPT_WAIT
-SetStatus("EVADING  @" .. S.EvadeName .. "  PROMPT")
-return true
-end
-return false
-end
-local Waypoint = Spot and Spot.Waypoint or 0
-if Waypoint > 0 then
-S.EvadeTeleportFrom = RootPart.Position
-S.EvadeTeleportAt = Now
-if TeleportToWaypoint(Waypoint) then
-SetStatus(string.format("EVADING  @%s  WP%d", S.EvadeName, Waypoint))
-return true
-end
-S.EvadeTeleportFrom = nil
-S.EvadeTeleportAt = nil
-end
-return false
-end
-local function AskToLeave(Now, Stranger)
-local FirstAsk = not S.EvadeKicked
-S.EvadeKicked = true
-S.EvadeKickAt = Now
-SetStatus("EVADING  @" .. S.EvadeName .. "  STAYED  LEAVING")
-if FirstAsk and AICFeature.ReportHoldLeave then
-AICFeature.ReportHoldLeave(FindStrangers())
-end
-if AICFeature.LeaveGame then
-AICFeature.LeaveGame("Boss Evasion: a stranger stayed for the whole hold", Stranger)
-end
-end
-local function EvadeHoldStep(Now, Humanoid, RootPart)
-if Humanoid and RootPart and (tonumber(Humanoid.Health) or 0) > 0 then
-Humanoid:Move(Vector3.zero)
-Humanoid.AutoRotate = true
-end
-local Stranger = FindStranger()
-if not Stranger then
-if S.EvadeKicked then
-return true
-end
-StrangersLeft(Now)
-return true
-end
-if S.EvadeKicked then
-if Now - (S.EvadeKickAt or Now) >= EVADE_KICK_RETRY then
-AskToLeave(Now, Stranger)
-end
-return true
-end
-if not S.EvadeWaitUntil then
-S.EvadeWaitTotal = math.random(EVADE_WAIT_MIN, EVADE_WAIT_MAX)
-S.EvadeWaitUntil = Now + S.EvadeWaitTotal
-Say("Evasion", string.format(
-"Holding for @%s: giving them %ds to leave",
-S.EvadeName,
-S.EvadeWaitTotal
-), 5)
-end
-if Now < S.EvadeWaitUntil then
-SetStatus(string.format(
-"EVADING  @%s  %ds LEFT",
-S.EvadeName,
-math.ceil(S.EvadeWaitUntil - Now)
-))
-return true
-end
-Say("Evasion", "@" .. S.EvadeName .. " stayed for the whole hold; closing the game", 6)
-AskToLeave(Now, Stranger)
-return true
 end
 local function EvadeStep(Now)
-if not IsEnabled() then
-return false
-end
-if not (FeatureState.PauseForStrangers
-and FeatureState.PauseForStrangers.Enabled == true)
-then
-if S.Evading then
-EndEvade(Now, true)
-return true
-end
-return false
-end
-local Stranger = FindStranger()
-if not S.Evading then
-if not Stranger then
-return false
-end
-if not CurrentStop() then
-return false
-end
-BeginEvade(Now, Stranger)
-end
-local _, Humanoid, RootPart = Runtime:GetCharacter()
-if not S.EvadeStrangersAt or Now - S.EvadeStrangersAt >= 0.5 then
-local Live = SnapshotStrangers(FindStrangers())
-if #Live > 0 then
-S.EvadeStrangers = Live
-end
-S.EvadeStrangersAt = Now
-end
-if S.EvadeStage == "Reset" then
-local Pending = Humanoid ~= nil
-and RootPart ~= nil
-and (tonumber(Humanoid.Health) or 0) > 0
-and EvadeResetStep(Now, Humanoid, RootPart)
-if Pending then
-SetStatus("EVADING  @" .. S.EvadeName .. "  RESETTING")
-return true
-end
-S.EvadeStage = "Travel"
-S.EvadeResetHumanoid = nil
-end
-if not Stranger then
-StrangersLeft(Now)
-return true
-end
-if not Humanoid or not RootPart or (tonumber(Humanoid.Health) or 0) <= 0 then
-if S.EvadeStage == "Travel" then
-if Now - (S.EvadeSince or Now) < EVADE_DEAD_SETTLE then
-SetStatus("EVADING  @" .. S.EvadeName .. "  RESPAWNING")
-return true
-end
-S.EvadeStage = "Hold"
-S.EvadeSent = false
-end
-return EvadeHoldStep(Now, Humanoid, RootPart)
-end
-if S.EvadeStage == "Travel" then
-if EvadeTravelStep(Now, Humanoid, RootPart) then
-return true
-end
-S.EvadeStage = "Hold"
-S.EvadeSent = false
-end
-return EvadeHoldStep(Now, Humanoid, RootPart)
-end
-local function Step(Now)
-if EvadeStep(Now) then
-return true
-end
-if not IsEnabled() then
-return false
-end
-if WatchDeath(Now) then
-return true
-end
-if S.Phase == "Recover" then
-return RecoverStep(Now)
-end
-local Stops = GetStops()
-if #Stops == 0 then
-S.Phase = "Idle"
-SetStatus("ADD A BOSS STOP")
-return true
-end
-if S.Index > #Stops then
-S.Index = 1
-end
-if S.Phase == "Idle" then
-BeginStop(Now)
-end
-local _, Humanoid, RootPart = Runtime:GetCharacter()
-if not Humanoid or not RootPart or Humanoid.Health <= 0 then
-if S.Phase ~= "Recover" then
-BeginRecover(Now, "DIED", true)
-end
-return true
-end
-local Stop = CurrentStop()
-if not Stop then
-S.Phase = "Idle"
-SetStatus("ADD A BOSS STOP")
-return true
-end
-if S.Phase == "Approach" then
-ApproachStep(Stop, Now)
-return true
-end
-if S.Phase == "Fight" then
-FightStep(Stop, Now)
-return true
-end
-if S.Phase == "Done" then
-return true
-end
-BeginStop(Now)
-return true
-end
-AICFeature.BossStep = function(Now)
-return Step(Now)
-end
-AICFeature.BossEvadeStep = function(Now)
-return EvadeStep(Now)
-end
-AICFeature.BossKillPending = function()
-if not IsEnabled() or S.Phase ~= "Fight" then
-return false
-end
-if S.KillAt then
-return true
-end
-return S.SeenTarget == true
-and S.LastTarget ~= nil
-and not IsMobAlive(S.LastTarget)
-end
-AICFeature.BossRecoverStep = function(Now)
-if not IsEnabled() then
-return false
-end
-if EvadeStep(Now) then
-return true
-end
-if WatchDeath(Now) then
-return true
-end
-if S.Phase ~= "Recover" then
-BeginRecover(Now, "DIED", true)
-end
-return RecoverStep(Now)
-end
-AICFeature.StopBossRoute = function()
-StopRoute("OFF")
-end
-AICFeature.ResetBossRoute = function()
-if S.Evading and EndEvade then
-EndEvade(os.clock(), false)
-end
-EndDodge()
-S.HpAt = nil
-S.HpBase = nil
-S.Index = 1
-S.Phase = "Idle"
-S.SeenTarget = false
-S.LastTarget = nil
-S.TargetSeenAt = nil
-ClearKillClock()
-S.WaitUntil = nil
-S.SpotWaitUntil = nil
-SetBlocking(false)
-S.WalkStart = nil
-S.SkipSpotWait = false
-S.SkipSpotWaitNext = false
-SyncDeathMark()
-ResetWalk()
+return AICFeature.BossEvadeReady == true
+and type(AICFeature.BossEvadeTick) == "function"
+and AICFeature.BossEvadeTick(Now) == true
 end
 local VisualFolder
 local ColorSaveQueued = false
@@ -3330,9 +2910,636 @@ end
 RefreshEvadeUI()
 AICUI.RefreshBossRoutePickers()
 AICUI.RefreshBossPathList()
+AICFeature.BossNav = {
+S = S,
+SetStatus = SetStatus,
+Say = Say,
+IsEnabled = IsEnabled,
+CurrentStop = CurrentStop,
+GetStops = GetStops,
+BeginStop = BeginStop,
+ResetWalk = ResetWalk,
+EndDodge = EndDodge,
+StopFlee = StopFlee,
+ClearKillClock = ClearKillClock,
+SyncDeathMark = SyncDeathMark,
+GetFloorOverlap = GetFloorOverlap,
+LiftFromFloor = LiftFromFloor,
+FixLandedFloor = FixLandedFloor,
+TeleportToPoint = TeleportToPoint,
+TeleportToWaypoint = TeleportToWaypoint,
+FightStep = FightStep,
+ApproachStep = ApproachStep,
+RecoverStep = RecoverStep,
+BeginRecover = BeginRecover,
+IsMobAlive = IsMobAlive,
+SetBlocking = SetBlocking,
+StopRoute = StopRoute,
+WatchDeath = WatchDeath,
+GetEvadeConfig = GetEvadeConfig,
+CleanSpots = CleanSpots,
+GetEvadeSpots = GetEvadeSpots,
+SpotKey = SpotKey,
+MAX_EVADE_SPOTS = MAX_EVADE_SPOTS,
+EVADE_WAIT_MIN = EVADE_WAIT_MIN,
+EVADE_WAIT_MAX = EVADE_WAIT_MAX,
+EVADE_KICK_RETRY = EVADE_KICK_RETRY,
+EVADE_DEAD_SETTLE = EVADE_DEAD_SETTLE,
+EVADE_RESET_RETRY_DELAY = EVADE_RESET_RETRY_DELAY,
+EVADE_RESET_GIVE_UP = EVADE_RESET_GIVE_UP,
+RESET_RETRIES = RESET_RETRIES,
+RESET_STAY_DISTANCE = RESET_STAY_DISTANCE,
+PROMPT_WAIT = PROMPT_WAIT,
+PROMPT_ARRIVAL = PROMPT_ARRIVAL,
+PROMPT_RECHECK = PROMPT_RECHECK,
+PROMPT_INTERACT_MUTE = PROMPT_INTERACT_MUTE,
+TELEPORT_LAND_WINDOW = TELEPORT_LAND_WINDOW,
+TELEPORT_LAND_DISTANCE = TELEPORT_LAND_DISTANCE,
+RESPAWN_SETTLE = RESPAWN_SETTLE,
+FLOOR_BURIED = FLOOR_BURIED,
+}
 RefreshBossVisuals()
 SetStatus("IDLE")
 return Feature
+end,
+}
+]======],
+	["Features/BossNavigator_Evade.lua"] = [======[
+return {
+Name = "BossNavigator_Evade",
+Dependencies = {"BossNavigator", "AutoBlock", "Webhook", "Logger"},
+Start = function(Context)
+local Runtime = Context.Runtime
+local Player = Context.Player
+local Players = Context.Services.Players
+local AICConfig = Context.AICConfig
+local AICCombat = Context.AICCombat
+local AICCombatUtils = Context.AICCombatUtils
+local AICFeature = Context.AICFeature
+local FeatureState = Context.FeatureState
+local Boss = AICFeature.BossNav
+assert(type(Boss) == "table", "BossNavigator_Evade: BossNavigator did not publish BossNav")
+local REQUIRED = {
+"S", "SetStatus", "Say", "IsEnabled", "CurrentStop", "GetStops",
+"BeginStop", "ResetWalk", "EndDodge", "StopFlee", "ClearKillClock",
+"SyncDeathMark", "GetFloorOverlap", "LiftFromFloor", "FixLandedFloor",
+"TeleportToPoint", "TeleportToWaypoint", "FightStep", "ApproachStep",
+"RecoverStep", "BeginRecover", "IsMobAlive", "SetBlocking", "StopRoute",
+"WatchDeath", "GetEvadeConfig", "CleanSpots", "GetEvadeSpots", "SpotKey",
+"MAX_EVADE_SPOTS",
+"EVADE_WAIT_MIN", "EVADE_WAIT_MAX", "EVADE_KICK_RETRY",
+"EVADE_DEAD_SETTLE", "EVADE_RESET_RETRY_DELAY", "EVADE_RESET_GIVE_UP",
+"RESET_RETRIES", "RESET_STAY_DISTANCE", "PROMPT_WAIT", "PROMPT_ARRIVAL",
+"PROMPT_RECHECK", "PROMPT_INTERACT_MUTE", "TELEPORT_LAND_WINDOW",
+"TELEPORT_LAND_DISTANCE", "RESPAWN_SETTLE", "FLOOR_BURIED",
+}
+for _, Key in ipairs(REQUIRED) do
+assert(Boss[Key] ~= nil, "BossNavigator_Evade: BossNav." .. Key .. " is missing")
+end
+local S = Boss.S
+local SetStatus = Boss.SetStatus
+local Say = Boss.Say
+local IsEnabled = Boss.IsEnabled
+local CurrentStop = Boss.CurrentStop
+local GetStops = Boss.GetStops
+local BeginStop = Boss.BeginStop
+local ResetWalk = Boss.ResetWalk
+local EndDodge = Boss.EndDodge
+local StopFlee = Boss.StopFlee
+local ClearKillClock = Boss.ClearKillClock
+local SyncDeathMark = Boss.SyncDeathMark
+local GetFloorOverlap = Boss.GetFloorOverlap
+local LiftFromFloor = Boss.LiftFromFloor
+local FixLandedFloor = Boss.FixLandedFloor
+local TeleportToPoint = Boss.TeleportToPoint
+local TeleportToWaypoint = Boss.TeleportToWaypoint
+local FightStep = Boss.FightStep
+local ApproachStep = Boss.ApproachStep
+local RecoverStep = Boss.RecoverStep
+local BeginRecover = Boss.BeginRecover
+local IsMobAlive = Boss.IsMobAlive
+local SetBlocking = Boss.SetBlocking
+local StopRoute = Boss.StopRoute
+local WatchDeath = Boss.WatchDeath
+local GetEvadeConfig = Boss.GetEvadeConfig
+local CleanSpots = Boss.CleanSpots
+local GetEvadeSpots = Boss.GetEvadeSpots
+local SpotKey = Boss.SpotKey
+local MAX_EVADE_SPOTS = Boss.MAX_EVADE_SPOTS
+local EVADE_WAIT_MIN = Boss.EVADE_WAIT_MIN
+local EVADE_WAIT_MAX = Boss.EVADE_WAIT_MAX
+local EVADE_KICK_RETRY = Boss.EVADE_KICK_RETRY
+local EVADE_DEAD_SETTLE = Boss.EVADE_DEAD_SETTLE
+local EVADE_RESET_RETRY_DELAY = Boss.EVADE_RESET_RETRY_DELAY
+local EVADE_RESET_GIVE_UP = Boss.EVADE_RESET_GIVE_UP
+local RESET_RETRIES = Boss.RESET_RETRIES
+local RESET_STAY_DISTANCE = Boss.RESET_STAY_DISTANCE
+local PROMPT_WAIT = Boss.PROMPT_WAIT
+local PROMPT_ARRIVAL = Boss.PROMPT_ARRIVAL
+local PROMPT_RECHECK = Boss.PROMPT_RECHECK
+local PROMPT_INTERACT_MUTE = Boss.PROMPT_INTERACT_MUTE
+local TELEPORT_LAND_WINDOW = Boss.TELEPORT_LAND_WINDOW
+local TELEPORT_LAND_DISTANCE = Boss.TELEPORT_LAND_DISTANCE
+local RESPAWN_SETTLE = Boss.RESPAWN_SETTLE
+local FLOOR_BURIED = Boss.FLOOR_BURIED
+local EndEvade
+local function IsStranger(OtherPlayer)
+if not OtherPlayer or OtherPlayer == Player then
+return false
+end
+if AICFeature.IsWhitelisted and AICFeature.IsWhitelisted(OtherPlayer.UserId) then
+return false
+end
+return true
+end
+local function FindStranger()
+for _, OtherPlayer in ipairs(Players:GetPlayers()) do
+if IsStranger(OtherPlayer) then
+return OtherPlayer
+end
+end
+return nil
+end
+local function FindStrangers()
+local List = {}
+for _, OtherPlayer in ipairs(Players:GetPlayers()) do
+if IsStranger(OtherPlayer) then
+table.insert(List, OtherPlayer)
+end
+end
+return List
+end
+local function SnapshotStrangers(List)
+local Copy = {}
+for _, OtherPlayer in ipairs(List or {}) do
+table.insert(Copy, {
+Name = tostring(OtherPlayer.Name or "?"),
+UserId = tonumber(OtherPlayer.UserId),
+})
+end
+return Copy
+end
+local function BeginEvade(Now, OtherPlayer)
+S.Evading = true
+S.EvadeName = tostring(OtherPlayer.Name)
+S.EvadeId = tonumber(OtherPlayer.UserId)
+S.EvadeStage = "Reset"
+S.EvadeSince = Now
+S.EvadeWaitUntil = nil
+S.EvadeWaitTotal = 0
+S.EvadeResetHumanoid = nil
+S.EvadeResetAt = nil
+S.EvadeResetRetries = 0
+S.EvadeResetPosition = nil
+S.EvadeSent = false
+S.EvadeTeleportFrom = nil
+S.EvadeTeleportAt = nil
+S.EvadePromptCheckAt = nil
+S.EvadePromptTarget = nil
+S.EvadeLiveAt = nil
+S.EvadeKicked = false
+S.EvadeKickAt = nil
+S.EvadeStrangers = SnapshotStrangers(FindStrangers())
+S.EvadeStrangersAt = Now
+S.EvadeClearSent = false
+S.FloorLifts = 0
+S.Phase = "Evade"
+EndDodge()
+StopFlee()
+AICCombat.S.ClosestTarget = nil
+S.LastTarget = nil
+S.TargetSeenAt = nil
+ClearKillClock()
+ResetWalk()
+SetStatus("EVADING  @" .. S.EvadeName .. "  RESETTING")
+Say("Evasion", "Pause For Strangers: @" .. S.EvadeName .. " is here; resetting", 5)
+if AICFeature.ReportHold then
+AICFeature.ReportHold(S.EvadeStrangers)
+end
+end
+EndEvade = function(Now, Restart)
+if not S.Evading then
+return
+end
+local Was = S.EvadeName
+S.Evading = false
+S.EvadeName = ""
+S.EvadeId = nil
+S.EvadeStage = nil
+S.EvadeSince = nil
+S.EvadeWaitUntil = nil
+S.EvadeWaitTotal = 0
+S.EvadeResetHumanoid = nil
+S.EvadeResetAt = nil
+S.EvadeResetRetries = 0
+S.EvadeResetPosition = nil
+S.EvadeSent = false
+S.EvadeTeleportFrom = nil
+S.EvadeTeleportAt = nil
+S.EvadePromptCheckAt = nil
+S.EvadePromptTarget = nil
+S.EvadeLiveAt = nil
+S.EvadeKicked = false
+S.EvadeKickAt = nil
+S.EvadeStrangers = nil
+S.EvadeStrangersAt = nil
+S.Phase = "Idle"
+SyncDeathMark()
+if not (Restart and IsEnabled() and CurrentStop()) then
+SetStatus("EVASION OVER")
+return
+end
+S.Index = 1
+BeginStop(Now)
+if Was ~= "" then
+Say("Evasion", "@" .. Was .. " left; starting again at stop #1", 5)
+end
+end
+local function StrangersLeft(Now)
+if S.EvadeClearSent then
+EndEvade(Now, true)
+return
+end
+S.EvadeClearSent = true
+local Waited = math.max(0, Now - (S.EvadeSince or Now))
+local Who = S.EvadeStrangers or {}
+if #Who == 0 and S.EvadeName ~= "" then
+Who = { { Name = S.EvadeName, UserId = S.EvadeId } }
+end
+S.EvadeStrangers = {}
+if AICFeature.ReportHoldCleared then
+AICFeature.ReportHoldCleared(Who, Waited)
+end
+EndEvade(Now, true)
+end
+local function EvadeResetStep(Now, Humanoid, RootPart)
+if S.EvadeResetHumanoid and Humanoid ~= S.EvadeResetHumanoid then
+S.EvadeResetHumanoid = nil
+return false
+end
+if (tonumber(Humanoid.Health) or 0) <= 0 then
+return true
+end
+Humanoid:Move(Vector3.zero)
+local StayedPut = not S.EvadeResetPosition
+or (RootPart.Position - S.EvadeResetPosition).Magnitude <= RESET_STAY_DISTANCE
+if S.EvadeResetHumanoid and not StayedPut then
+S.EvadeResetHumanoid = nil
+return false
+end
+if not S.EvadeResetHumanoid then
+S.EvadeResetHumanoid = Humanoid
+S.EvadeResetAt = Now
+S.EvadeResetPosition = RootPart.Position
+S.OwnDeaths = (S.OwnDeaths or 0) + 1
+S.OwnDeathAt = Now
+Humanoid.Health = 0
+return true
+end
+if Now - (S.EvadeResetAt or Now) >= EVADE_RESET_RETRY_DELAY
+and (S.EvadeResetRetries or 0) < RESET_RETRIES
+then
+S.EvadeResetRetries = (S.EvadeResetRetries or 0) + 1
+S.EvadeResetAt = Now
+Humanoid.Health = 0
+return true
+end
+if Now - (S.EvadeSince or Now) >= EVADE_RESET_GIVE_UP then
+S.EvadeResetHumanoid = nil
+return false
+end
+return true
+end
+local function EvadeTravelStep(Now, Humanoid, RootPart)
+if S.EvadeSent then
+if S.EvadePromptCheckAt then
+if Now < S.EvadePromptCheckAt then
+Humanoid:Move(Vector3.zero)
+return true
+end
+S.EvadePromptCheckAt = nil
+local Target = S.EvadePromptTarget
+S.EvadePromptTarget = nil
+local Depth = GetFloorOverlap(RootPart)
+if Depth and Depth >= FLOOR_BURIED
+and LiftFromFloor(Humanoid, RootPart, Depth)
+then
+S.EvadePromptCheckAt = Now + PROMPT_RECHECK
+S.EvadePromptTarget = Target
+Humanoid:Move(Vector3.zero)
+return true
+end
+local Flat = Target
+and AICCombatUtils.GetHorizontalDistance(Target, RootPart.Position)
+or 0
+if Flat > PROMPT_ARRIVAL then
+Say("Evasion", string.format(
+"Evade prompt landed %.0f studs away; holding here", Flat
+), 4)
+end
+return false
+end
+if S.EvadeTeleportFrom then
+local Window = TELEPORT_LAND_WINDOW
+if (RootPart.Position - S.EvadeTeleportFrom).Magnitude < TELEPORT_LAND_DISTANCE
+and Now - (S.EvadeTeleportAt or Now) < Window
+then
+Humanoid:Move(Vector3.zero)
+return true
+end
+S.EvadeTeleportFrom = nil
+S.EvadeTeleportAt = nil
+if FixLandedFloor(Humanoid, RootPart) then
+Humanoid:Move(Vector3.zero)
+return true
+end
+return false
+end
+return false
+end
+if not S.EvadeLiveAt then
+S.EvadeLiveAt = Now
+end
+if Now - S.EvadeLiveAt < RESPAWN_SETTLE then
+Humanoid:Move(Vector3.zero)
+return true
+end
+S.EvadeSent = true
+if Runtime.MuteInteract then
+Runtime:MuteInteract(PROMPT_INTERACT_MUTE)
+end
+local Spots = GetEvadeSpots()
+local Spot = nil
+if #Spots > 0 then
+local Pick = math.random(1, #Spots)
+if #Spots > 1 and SpotKey(Spots[Pick]) == S.EvadePick then
+Pick = (Pick % #Spots) + 1
+end
+Spot = Spots[Pick]
+S.EvadePick = SpotKey(Spot)
+end
+if Spot and Spot.Kind == "Prompt" then
+local PromptPosition = Vector3.new(Spot.X, Spot.Y, Spot.Z)
+if TeleportToPoint(PromptPosition) then
+S.EvadePromptTarget = PromptPosition
+S.EvadePromptCheckAt = Now + PROMPT_WAIT
+SetStatus("EVADING  @" .. S.EvadeName .. "  PROMPT")
+return true
+end
+return false
+end
+local Waypoint = Spot and Spot.Waypoint or 0
+if Waypoint > 0 then
+S.EvadeTeleportFrom = RootPart.Position
+S.EvadeTeleportAt = Now
+if TeleportToWaypoint(Waypoint) then
+SetStatus(string.format("EVADING  @%s  WP%d", S.EvadeName, Waypoint))
+return true
+end
+S.EvadeTeleportFrom = nil
+S.EvadeTeleportAt = nil
+end
+return false
+end
+local function AskToLeave(Now, Stranger)
+local FirstAsk = not S.EvadeKicked
+S.EvadeKicked = true
+S.EvadeKickAt = Now
+SetStatus("EVADING  @" .. S.EvadeName .. "  STAYED  LEAVING")
+if FirstAsk and AICFeature.ReportHoldLeave then
+AICFeature.ReportHoldLeave(FindStrangers())
+end
+if AICFeature.LeaveGame then
+AICFeature.LeaveGame("Boss Evasion: a stranger stayed for the whole hold", Stranger)
+end
+end
+local function EvadeHoldStep(Now, Humanoid, RootPart)
+if Humanoid and RootPart and (tonumber(Humanoid.Health) or 0) > 0 then
+Humanoid:Move(Vector3.zero)
+Humanoid.AutoRotate = true
+end
+local Stranger = FindStranger()
+if not Stranger then
+if S.EvadeKicked then
+return true
+end
+StrangersLeft(Now)
+return true
+end
+if S.EvadeKicked then
+if Now - (S.EvadeKickAt or Now) >= EVADE_KICK_RETRY then
+AskToLeave(Now, Stranger)
+end
+return true
+end
+if not S.EvadeWaitUntil then
+S.EvadeWaitTotal = math.random(EVADE_WAIT_MIN, EVADE_WAIT_MAX)
+S.EvadeWaitUntil = Now + S.EvadeWaitTotal
+Say("Evasion", string.format(
+"Holding for @%s: giving them %ds to leave",
+S.EvadeName,
+S.EvadeWaitTotal
+), 5)
+end
+if Now < S.EvadeWaitUntil then
+SetStatus(string.format(
+"EVADING  @%s  %ds LEFT",
+S.EvadeName,
+math.ceil(S.EvadeWaitUntil - Now)
+))
+return true
+end
+Say("Evasion", "@" .. S.EvadeName .. " stayed for the whole hold; closing the game", 6)
+AskToLeave(Now, Stranger)
+return true
+end
+local function EvadeStep(Now)
+if not IsEnabled() then
+return false
+end
+if not (FeatureState.PauseForStrangers
+and FeatureState.PauseForStrangers.Enabled == true)
+then
+if S.Evading then
+EndEvade(Now, true)
+return true
+end
+return false
+end
+local Stranger = FindStranger()
+if not S.Evading then
+if not Stranger then
+return false
+end
+if not CurrentStop() then
+return false
+end
+BeginEvade(Now, Stranger)
+end
+local _, Humanoid, RootPart = Runtime:GetCharacter()
+if not S.EvadeStrangersAt or Now - S.EvadeStrangersAt >= 0.5 then
+local Live = SnapshotStrangers(FindStrangers())
+if #Live > 0 then
+S.EvadeStrangers = Live
+end
+S.EvadeStrangersAt = Now
+end
+if S.EvadeStage == "Reset" then
+local Pending = Humanoid ~= nil
+and RootPart ~= nil
+and (tonumber(Humanoid.Health) or 0) > 0
+and EvadeResetStep(Now, Humanoid, RootPart)
+if Pending then
+SetStatus("EVADING  @" .. S.EvadeName .. "  RESETTING")
+return true
+end
+S.EvadeStage = "Travel"
+S.EvadeResetHumanoid = nil
+end
+if not Stranger then
+StrangersLeft(Now)
+return true
+end
+if not Humanoid or not RootPart or (tonumber(Humanoid.Health) or 0) <= 0 then
+if S.EvadeStage == "Travel" then
+if Now - (S.EvadeSince or Now) < EVADE_DEAD_SETTLE then
+SetStatus("EVADING  @" .. S.EvadeName .. "  RESPAWNING")
+return true
+end
+S.EvadeStage = "Hold"
+S.EvadeSent = false
+end
+return EvadeHoldStep(Now, Humanoid, RootPart)
+end
+if S.EvadeStage == "Travel" then
+if EvadeTravelStep(Now, Humanoid, RootPart) then
+return true
+end
+S.EvadeStage = "Hold"
+S.EvadeSent = false
+end
+return EvadeHoldStep(Now, Humanoid, RootPart)
+end
+local function Step(Now)
+if EvadeStep(Now) then
+return true
+end
+if not IsEnabled() then
+return false
+end
+if WatchDeath(Now) then
+return true
+end
+if S.Phase == "Recover" then
+return RecoverStep(Now)
+end
+local Stops = GetStops()
+if #Stops == 0 then
+S.Phase = "Idle"
+SetStatus("ADD A BOSS STOP")
+return true
+end
+if S.Index > #Stops then
+S.Index = 1
+end
+if S.Phase == "Idle" then
+BeginStop(Now)
+end
+local _, Humanoid, RootPart = Runtime:GetCharacter()
+if not Humanoid or not RootPart or Humanoid.Health <= 0 then
+if S.Phase ~= "Recover" then
+BeginRecover(Now, "DIED", true)
+end
+return true
+end
+local Stop = CurrentStop()
+if not Stop then
+S.Phase = "Idle"
+SetStatus("ADD A BOSS STOP")
+return true
+end
+if S.Phase == "Approach" then
+ApproachStep(Stop, Now)
+return true
+end
+if S.Phase == "Fight" then
+FightStep(Stop, Now)
+return true
+end
+if S.Phase == "Done" then
+return true
+end
+BeginStop(Now)
+return true
+end
+AICFeature.BossStep = function(Now)
+return Step(Now)
+end
+AICFeature.BossEvadeStep = function(Now)
+local Features = Context.Feature or FeatureState
+local Route = Features and Features.BossRoute
+local Pause = Features and Features.PauseForStrangers
+if not Route or Route.Enabled ~= true then
+return false
+end
+if not Pause or Pause.Enabled ~= true then
+return false
+end
+return EvadeStep(Now)
+end
+AICFeature.BossKillPending = function()
+if not IsEnabled() or S.Phase ~= "Fight" then
+return false
+end
+if S.KillAt then
+return true
+end
+return S.SeenTarget == true
+and S.LastTarget ~= nil
+and not IsMobAlive(S.LastTarget)
+end
+AICFeature.BossRecoverStep = function(Now)
+if not IsEnabled() then
+return false
+end
+if EvadeStep(Now) then
+return true
+end
+if WatchDeath(Now) then
+return true
+end
+if S.Phase ~= "Recover" then
+BeginRecover(Now, "DIED", true)
+end
+return RecoverStep(Now)
+end
+AICFeature.StopBossRoute = function()
+StopRoute("OFF")
+end
+AICFeature.ResetBossRoute = function()
+if S.Evading and EndEvade then
+EndEvade(os.clock(), false)
+end
+EndDodge()
+S.HpAt = nil
+S.HpBase = nil
+S.Index = 1
+S.Phase = "Idle"
+S.SeenTarget = false
+S.LastTarget = nil
+S.TargetSeenAt = nil
+ClearKillClock()
+S.WaitUntil = nil
+S.SpotWaitUntil = nil
+SetBlocking(false)
+S.WalkStart = nil
+S.SkipSpotWait = false
+S.SkipSpotWaitNext = false
+SyncDeathMark()
+ResetWalk()
+end
+AICFeature.BossEvadeReady = true
+return { Name = "BossNavigator_Evade" }
 end,
 }
 ]======],

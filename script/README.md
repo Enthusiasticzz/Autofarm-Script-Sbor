@@ -18,7 +18,7 @@ so **a change only reaches the game once it is pushed to `main` here** — and
 pointing an executor at a single feature file does nothing.
 
 Behind the scenes it fetches `UI/Utils.lua` and the bundle parts built from the
-82 modules under `script/` (`tools/build-bundle.ps1`), decodes them a part at a
+84 modules under `script/` (`tools/build-bundle.ps1`), decodes them a part at a
 time and starts them in dependency order. It needs an executor (`loadstring`,
 `game:HttpGet`, `LocalPlayer`/`PlayerGui`).
 
