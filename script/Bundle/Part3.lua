@@ -256,7 +256,7 @@ local OPEN_WAIT = 1.5
 local CARD_WAIT = 1.5
 local REFILL_WAIT = 0.5
 local VERIFY_WAIT = 1.2
-local ATTEMPT_WAIT = 0.45
+local ATTEMPT_WAIT = 0.7
 local POLL = 0.08
 local CLICK_SETTLE = 0.1
 local STATUS_SLOTS = 3
@@ -880,7 +880,7 @@ end
 Untaken = Untaken or Live.Card
 end
 end
-return Untaken or Card.Card
+return Untaken
 end
 local function MeetsRequirement(Card, Stats)
 if Card.Amount == nil then
@@ -1053,8 +1053,8 @@ local function IsPageShowing()
 local Page = GetPage()
 return Page ~= nil and Page.Visible == true and IsShowing(Page)
 end
-local function ReadyToClick()
-return HasCards() and IsPageShowing()
+local function CardsReady()
+return HasCards()
 end
 local function RefillList(Card)
 local Filters = FilterButtons()
@@ -1107,15 +1107,12 @@ local MenuButton = FindMenuButton()
 if #Tabs == 0 and not MenuButton then
 return false, "no tab"
 end
-if ReadyToClick() then
+if CardsReady() then
 return true, "open"
 end
-if #Tabs > 0 and not IsPageShowing() then
-PressEquipmentTab()
-if WaitUntil(ReadyToClick, CARD_WAIT) then
-return true, "tab"
-end
-end
+local Traces = {}
+local Filters = #FilterButtons()
+for Lap = 1, 2 do
 local Menu = Follow(GetPlayerGui(), MENU_PATH)
 if MenuButton and not (Menu and IsShowing(Menu)) then
 S.PressedMenu = true
@@ -1125,23 +1122,29 @@ local Open = Follow(GetPlayerGui(), MENU_PATH)
 return Open ~= nil and IsShowing(Open)
 end, OPEN_WAIT)
 end
-if not IsPageShowing() then
+Tabs = EquipmentTabs()
+if #Tabs > 0 then
 PressEquipmentTab()
 end
-if WaitUntil(ReadyToClick, CARD_WAIT) then
-return true, "opened"
+if WaitUntil(CardsReady, CARD_WAIT) then
+Logger.info("panel: list filled by the menu tab (%d cards)", CardCount())
+return true, "tab"
 end
-if not IsPageShowing() then
-task.wait(CLICK_SETTLE)
-PressEquipmentTab()
-if WaitUntil(ReadyToClick, CARD_WAIT) then
-return true, "opened"
-end
-end
-if RefillList() and WaitUntil(ReadyToClick, CARD_WAIT) then
+if RefillList() then
+Logger.info("panel: list filled by a filter press (%d cards)", CardCount())
 return true, "filter"
 end
-return false, #Tabs > 0 and "empty" or "no tab"
+table.insert(Traces, string.format(
+"lap %d: menu %s, page %s, %d cards, %d filters",
+Lap,
+(Menu and IsShowing(Menu)) and "open" or "closed",
+IsPageShowing() and "shown" or "hidden",
+CardCount(),
+Filters
+))
+end
+Logger.info("panel: list stayed empty (%s)", table.concat(Traces, "; "))
+return false, #Tabs > 0 and (Filters > 0 and "empty" or "no filters") or "no tab"
 end
 local function EnsureCards()
 if HasCards() then
@@ -1152,7 +1155,10 @@ end
 local function FocusCard(Card, Force)
 local Node = LiveCard(Card)
 local Flag = Node and Node:FindFirstChild("onDisplay")
-if not Node or (Flag and ReadBool(Flag) and not Force) then
+if not Node or not IsPageShowing() then
+return Node
+end
+if Flag and ReadBool(Flag) and not Force then
 return Node
 end
 PressNow(Node)
@@ -1161,6 +1167,13 @@ return LiveCard(Card)
 end
 local function RebuildPanel(Card)
 if not IsPageShowing() then
+PressEquipmentTab()
+if not WaitUntil(IsPageShowing, CARD_WAIT) then
+PressEquipmentTab()
+WaitUntil(IsPageShowing, CARD_WAIT)
+end
+end
+if not HasCards() then
 OpenPanel()
 end
 return RefillList(Card)
@@ -1216,6 +1229,11 @@ return true, "ok"
 end
 Detail, Put = Why, Instead
 end
+if WaitUntil(function()
+return Wearing(Card, Slot)
+end, VERIFY_WAIT) then
+return true, "late"
+end
 return false, Put and ("put " .. Put .. " on") or tostring(Detail)
 end
 local function Describe(Slot, Card, Key)
@@ -1253,7 +1271,15 @@ SetStatus("NO EQUIPMENT PAGE  ·  " .. tostring(How))
 else
 SetStatus("NO CARDS ON THE EQUIPMENT PAGE  ·  " .. tostring(How))
 end
-Notify("The Equipment page did not show any items.")
+local Reason
+if How == "no tab" then
+Reason = "no Equipment tab was found in the menu"
+elseif How == "no filters" then
+Reason = "the Equipment page has no filter buttons to refill it with"
+else
+Reason = "the list stayed empty after pressing its filters"
+end
+Notify("Could not fill the Equipment list: " .. Reason .. ".")
 return
 end
 local List = GetList()

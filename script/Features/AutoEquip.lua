@@ -64,8 +64,12 @@ return {
         --// three signals a full 1.2 s was most of why a pass felt slow.
         --// A press that is merely late is still caught by the end-of-pass
         --// read, which is what puts an item the game undid back on the
-        --// report.
-        local ATTEMPT_WAIT = 0.45
+        --// report. The panel probe timed a press at 0.25 s; that leaves no
+        --// room for a slow frame, and every press that ran out of this window
+        --// was pressed a second time - which is the retrying the log shows.
+        --// Polling leaves as soon as the item is on, so the headroom itself
+        --// costs nothing when the press works.
+        local ATTEMPT_WAIT = 0.7
         local POLL = 0.08
         --// Between selecting a card and pressing its equip button, and
         --// between the presses of a refill: one frame of work each, not the
@@ -991,7 +995,11 @@ return {
                 end
             end
 
-            return Untaken or Card.Card
+            --// Nothing on the page matches this item: the card that was read
+            --// earlier has been rebuilt away, so its buttons are gone. Pressing
+            --// them reached nothing (or the card that moved into their place);
+            --// returning nil costs a rebuild instead and says so.
+            return Untaken
         end
 
         local function MeetsRequirement(Card, Stats)
@@ -1265,8 +1273,14 @@ return {
             return Page ~= nil and Page.Visible == true and IsShowing(Page)
         end
 
-        local function ReadyToClick()
-            return HasCards() and IsPageShowing()
+        --// Cards in the list are what a pass needs. The page being drawn is
+        --// not: the game keeps the cards after the page is put away, and the
+        --// panel probe confirmed that a press on a hidden card equips it
+        --// (0.25 s, verified against PlayerStats). Requiring the page as well
+        --// is what reported "did not show any items" on a list it had just
+        --// filled - the page reads as hidden while the cards are right there.
+        local function CardsReady()
+            return HasCards()
         end
 
         --// Presses filters until the cards are built again. Card is the item
@@ -1343,10 +1357,17 @@ return {
             return There()
         end
 
-        --// The page, showing, with cards on it. This is the slow path: it is
-        --// only taken when the list is empty (the game builds the cards when
-        --// the panel is opened or a filter changes) or when a press with the
-        --// menu shut did not take.
+        --// Fills the list. This is the slow path: it is only taken when the
+        --// list is empty (the game builds the cards when the panel is opened
+        --// or a filter changes) or when a press with the menu shut did not
+        --// take.
+        --//
+        --// Two laps of menu, tab, filters. Each step is cheap and every one of
+        --// them is a way the panel fills, but none of them is reliable on its
+        --// own: the menu button is a toggle, the tab does nothing when its
+        --// page is already current, and pressing it at all was seen to leave
+        --// the list untouched. A filter press is the one refill that worked
+        --// from every state in the panel probe, so it is always tried.
         local function OpenPanel()
             local Tabs = EquipmentTabs()
             local MenuButton = FindMenuButton()
@@ -1356,61 +1377,70 @@ return {
                 return false, "no tab"
             end
 
-            if ReadyToClick() then
+            if CardsReady() then
                 return true, "open"
             end
 
-            --// Pressing the tab of the page that is already showing does
-            --// nothing, so only press it when it is not showing. The copy of
-            --// the row that is not laid out is skipped by PressEquipmentTab.
-            if #Tabs > 0 and not IsPageShowing() then
-                PressEquipmentTab()
+            local Traces = {}
+            local Filters = #FilterButtons()
 
-                if WaitUntil(ReadyToClick, CARD_WAIT) then
+            for Lap = 1, 2 do
+                local Menu = Follow(GetPlayerGui(), MENU_PATH)
+
+                --// The panel needs the menu behind it. The button is a
+                --// toggle: pressing it with the menu already open would
+                --// close the page instead of showing it, so it is only
+                --// pressed when the menu is away.
+                if MenuButton and not (Menu and IsShowing(Menu)) then
+                    S.PressedMenu = true
+                    PressNow(MenuButton)
+                    WaitUntil(function()
+                        local Open = Follow(GetPlayerGui(), MENU_PATH)
+                        return Open ~= nil and IsShowing(Open)
+                    end, OPEN_WAIT)
+                end
+
+                --// Opening the menu can switch which copy of the tab row is
+                --// laid out, so the tabs are looked up again here rather
+                --// than reused from before the press. Opening the menu can
+                --// also leave the page where it was, in which case this
+                --// press does nothing - which is what the filters below are
+                --// for.
+                Tabs = EquipmentTabs()
+
+                if #Tabs > 0 then
+                    PressEquipmentTab()
+                end
+
+                if WaitUntil(CardsReady, CARD_WAIT) then
+                    Logger.info("panel: list filled by the menu tab (%d cards)", CardCount())
                     return true, "tab"
                 end
-            end
 
-            local Menu = Follow(GetPlayerGui(), MENU_PATH)
-
-            --// The menu button is a toggle: pressing it with the menu already
-            --// open would close the page instead of showing it.
-            if MenuButton and not (Menu and IsShowing(Menu)) then
-                S.PressedMenu = true
-                PressNow(MenuButton)
-                WaitUntil(function()
-                    local Open = Follow(GetPlayerGui(), MENU_PATH)
-                    return Open ~= nil and IsShowing(Open)
-                end, OPEN_WAIT)
-            end
-
-            --// Opening the menu can switch which copy of the tab row is laid
-            --// out, so the tabs are looked up again instead of reused.
-            if not IsPageShowing() then
-                PressEquipmentTab()
-            end
-
-            if WaitUntil(ReadyToClick, CARD_WAIT) then
-                return true, "opened"
-            end
-
-            --// The row is laid out a frame or two after the menu opens.
-            if not IsPageShowing() then
-                task.wait(CLICK_SETTLE)
-                PressEquipmentTab()
-
-                if WaitUntil(ReadyToClick, CARD_WAIT) then
-                    return true, "opened"
+                --// The page's own refill, and the only one the probe saw work
+                --// with the page put away: pressing a filter rebuilds every
+                --// card, which is also what binds each button to the card it
+                --// is drawn on.
+                if RefillList() then
+                    Logger.info("panel: list filled by a filter press (%d cards)", CardCount())
+                    return true, "filter"
                 end
+
+                table.insert(Traces, string.format(
+                    "lap %d: menu %s, page %s, %d cards, %d filters",
+                    Lap,
+                    (Menu and IsShowing(Menu)) and "open" or "closed",
+                    IsPageShowing() and "shown" or "hidden",
+                    CardCount(),
+                    Filters
+                ))
             end
 
-            --// The page is showing but no card is readable on it: a filter
-            --// press is what makes the game fill the list.
-            if RefillList() and WaitUntil(ReadyToClick, CARD_WAIT) then
-                return true, "filter"
-            end
+            --// One line, so a list that would not fill says what it tried
+            --// instead of only that it failed.
+            Logger.info("panel: list stayed empty (%s)", table.concat(Traces, "; "))
 
-            return false, #Tabs > 0 and "empty" or "no tab"
+            return false, #Tabs > 0 and (Filters > 0 and "empty" or "no filters") or "no tab"
         end
 
         --// Selects the Equipment page, opening the menu only when the cards
@@ -1436,7 +1466,18 @@ return {
             local Node = LiveCard(Card)
             local Flag = Node and Node:FindFirstChild("onDisplay")
 
-            if not Node or (Flag and ReadBool(Flag) and not Force) then
+            --// Selecting a card is a page interaction. With the page put away
+            --// there is nothing to select, and the press is one more thing
+            --// that can land on the panel's other handlers on the way in - so
+            --// it is skipped and the equip button is pressed directly. The
+            --// press is verified against PlayerStats either way, so a card
+            --// that really had to be selected first fails once and is
+            --// retried with the page drawn.
+            if not Node or not IsPageShowing() then
+                return Node
+            end
+
+            if Flag and ReadBool(Flag) and not Force then
                 return Node
             end
 
@@ -1457,8 +1498,25 @@ return {
         --// Card is the item that has to be on the page afterwards; the retry
         --// only presses when it can find it again. Nothing here presses
         --// another page's tab.
+        --//
+        --// The page is opened for real, because this only runs after a press
+        --// did not take and a press with the page away is the one the game is
+        --// most likely to have ignored. OpenPanel alone would be content with
+        --// the cards it already has and change nothing at all, which left the
+        --// retry pressing the same hidden button again.
         local function RebuildPanel(Card)
             if not IsPageShowing() then
+                PressEquipmentTab()
+
+                --// A second press for the frame or two before the row is laid
+                --// out: the first can land while the menu is still opening.
+                if not WaitUntil(IsPageShowing, CARD_WAIT) then
+                    PressEquipmentTab()
+                    WaitUntil(IsPageShowing, CARD_WAIT)
+                end
+            end
+
+            if not HasCards() then
                 OpenPanel()
             end
 
@@ -1554,6 +1612,16 @@ return {
                 Detail, Put = Why, Instead
             end
 
+            --// Last chance: a press can be applied a beat after the attempt
+            --// window closed. Reporting FAILED for an item the game actually
+            --// put on is what made the same item be pressed again on the next
+            --// pass.
+            if WaitUntil(function()
+                return Wearing(Card, Slot)
+            end, VERIFY_WAIT) then
+                return true, "late"
+            end
+
             return false, Put and ("put " .. Put .. " on") or tostring(Detail)
         end
 
@@ -1614,7 +1682,19 @@ return {
                     SetStatus("NO CARDS ON THE EQUIPMENT PAGE  ·  " .. tostring(How))
                 end
 
-                Notify("The Equipment page did not show any items.")
+                --// Name the step that ran out, so an empty list is
+                --// actionable instead of being the same line every time.
+                local Reason
+
+                if How == "no tab" then
+                    Reason = "no Equipment tab was found in the menu"
+                elseif How == "no filters" then
+                    Reason = "the Equipment page has no filter buttons to refill it with"
+                else
+                    Reason = "the list stayed empty after pressing its filters"
+                end
+
+                Notify("Could not fill the Equipment list: " .. Reason .. ".")
                 return
             end
 
