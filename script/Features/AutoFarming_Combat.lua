@@ -55,10 +55,13 @@ return {
             return EnsureWeaponDrawn(now, InputBindableFunction, MainWeld)
         end
 
-        --// Drinks the last used potion when it is off cooldown. The weapon
-        --// is sheathed first, which costs a frame: true means this frame was
-        --// spent sheathing and the caller should yield it.
-        local function TryConsumePotion(now, PlayerStats, InputBindableFunction, MainWeld)
+        --// Drinks the last used potion when it is off cooldown. The drink is
+        --// the game's own UseConsumable remote, so the weapon makes no
+        --// difference to it: nothing is sheathed first. The old sheathe cost
+        --// two frames (a sheathe and the draw back) and left the character
+        --// bare-handed between them, which is what a remote drink never needs.
+        --// True means this frame drank, so the caller may yield it.
+        local function TryConsumePotion(now, PlayerStats)
             local UseConsumable = Replicated:FindFirstChild("UseConsumable", true)
             local LastConsumed = PlayerStats and PlayerStats:FindFirstChild("LastConsumed")
 
@@ -70,49 +73,27 @@ return {
                 return false
             end
 
-            if InputBindableFunction
-                and (AICFeature.S.Equipped or (MainWeld.Part1 and MainWeld.Part1.Name ~= "UpperTorso"))
-                and now - AICFeature.S.LAST_EQUIP_TIME >= CONFIG.EQUIP_TOGGLE_COOLDOWN
-            then
-                AICFeature.S.Equipped = false
-                AICFeature.S.LAST_EQUIP_TIME = now
+            AICFeature.S.LAST_CONSUME_TIME = now
+            UseConsumable:InvokeServer(LastConsumed.Value)
 
-                InputBindableFunction:Invoke(
-                    "EquipButton",
-                    Enum.UserInputState.Begin
-                )
-
-                return true
-            end
-
-            if not AICFeature.S.Equipped then
-                AICFeature.S.LAST_CONSUME_TIME = now
-                UseConsumable:InvokeServer(LastConsumed.Value)
-            end
-
-            return false
+            return true
         end
 
         AICFeature.TryConsumePotion = TryConsumePotion
 
-        --// Drinks from anywhere, for code that never reaches the retreat.
+        --// Drinks from anywhere, for code that never reaches the retreat. No
+        --// weld or input handle is needed any more: the drink is a remote, and
+        --// the weapon is left exactly as it is.
         AICFeature.TryHeal = function(now)
             local Character = Runtime:GetCharacter()
-            local Sword = Character and Character:FindFirstChild("Sword")
-            local MainWeld = Sword and Sword:FindFirstChild("MainWeld", true)
-            local InputBindableFunction = Runtime:GetInputBindableFunction()
+            local PlayerStats = Player:FindFirstChild("PlayerStats")
 
-            if not Character or not MainWeld or not InputBindableFunction then
-                Logger.debug("TryHeal: no character, weld, or input handle")
+            if not Character or not PlayerStats then
+                Logger.debug("TryHeal: no character or PlayerStats")
                 return false
             end
 
-            return TryConsumePotion(
-                now,
-                Player:FindFirstChild("PlayerStats"),
-                InputBindableFunction,
-                MainWeld
-            )
+            return TryConsumePotion(now, PlayerStats)
         end
 
         return { Name = "AutoFarming_Combat" }

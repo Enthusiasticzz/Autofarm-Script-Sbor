@@ -4842,7 +4842,7 @@ SaveConfig.Features = {
 { Name = "PartySystem",       Default = false, Key = "l" },
 { Name = "WaypointLoop",      Default = false, Key = "m" },
 { Name = "BossRoute",         Default = false, Key = "z" },
-{ Name = "PauseForStrangers", Default = false },
+{ Name = "PauseForStrangers", Default = false, Key = "pf" },
 { Name = "SafeBoosterReset",  Default = false, Key = "n" },
 { Name = "AutoBlockConfirm",  Default = false, Key = "o" },
 { Name = "AutoMining",        Default = false, Key = "p" },

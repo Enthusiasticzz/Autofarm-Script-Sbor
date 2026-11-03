@@ -145,14 +145,23 @@ return {
         --// the clock.
         local TimeZones = Context.TimeZones
 
-        local function ZoneClock()
+        --// The stamp for a moment already past. The session keeps its start
+        --// as an epoch rather than a finished string, so changing the Time
+        --// Zone picker while a report is running restamps the header and the
+        --// session label in the zone picked now; a saved string kept
+        --// printing the zone the session began in until the script restarted.
+        local function ClockAt(Epoch)
             if TimeZones and TimeZones.Stamp then
-                return TimeZones.Stamp(CONFIG.DISCORD_TIMEZONE)
+                return TimeZones.Stamp(CONFIG.DISCORD_TIMEZONE, Epoch)
             end
 
             --// The module did not start (an older bundle): UTC is better than
             --// a report with no time on it.
-            return os.date("!%I:%M %p") .. " UTC"
+            return os.date("!%I:%M %p", Epoch or os.time()) .. " UTC"
+        end
+
+        local function ZoneClock()
+            return ClockAt(os.time())
         end
 
         --// A UserId, "everyone", or nothing at all. A hand-typed @name is
@@ -213,6 +222,7 @@ return {
         --// the first update that has them.
         function Feature:ResetSession()
             self.S.StartedAt = os.clock()
+            self.S.StartedEpoch = os.time()
             self.S.StartedClock = ZoneClock()
             self.S.StartCurrency = ReadCurrency()
             self.S.StartLevel = ReadLevel()
@@ -222,6 +232,15 @@ return {
 
         function Feature:GetElapsed()
             return math.max(0, os.clock() - (self.S.StartedAt or os.clock()))
+        end
+
+        --// When this session started, in whichever zone is picked now.
+        function Feature:GetStartedClock()
+            if self.S.StartedEpoch then
+                return ClockAt(self.S.StartedEpoch)
+            end
+
+            return tostring(self.S.StartedClock or ZoneClock())
         end
 
         function Feature:CaptureStart()
@@ -332,7 +351,7 @@ return {
             elseif Ending then
                 Head = "# Macro Turned off at " .. ZoneClock()
             else
-                Head = "# Macro Started at " .. tostring(self.S.StartedClock or ZoneClock())
+                Head = "# Macro Started at " .. self:GetStartedClock()
             end
 
             local Lines = {
@@ -778,7 +797,7 @@ return {
 
             SessionLabel:Set(string.format(
                 "SESSION STARTED  %s   ·   %s",
-                tostring(S.StartedClock or "--"),
+                S.StartedEpoch and ClockAt(S.StartedEpoch) or tostring(S.StartedClock or "--"),
                 FormatDuration(Feature:GetElapsed())
             ))
         end
@@ -867,6 +886,9 @@ return {
                 Options = ZoneNames,
                 Callback = function(Value)
                     Save("DISCORD_TIMEZONE", TimeZones and TimeZones.Get(Value).Name or Value)
+                    --// Restamp the label now: the zone applies to the session
+                    --// already running, not only to the next report.
+                    RefreshLabel()
                 end,
             }
 

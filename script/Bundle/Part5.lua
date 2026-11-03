@@ -6181,11 +6181,14 @@ Add(Rest, "Second", "Seconds")
 return table.concat(Parts, ", ")
 end
 local TimeZones = Context.TimeZones
-local function ZoneClock()
+local function ClockAt(Epoch)
 if TimeZones and TimeZones.Stamp then
-return TimeZones.Stamp(CONFIG.DISCORD_TIMEZONE)
+return TimeZones.Stamp(CONFIG.DISCORD_TIMEZONE, Epoch)
 end
-return os.date("!%I:%M %p") .. " UTC"
+return os.date("!%I:%M %p", Epoch or os.time()) .. " UTC"
+end
+local function ZoneClock()
+return ClockAt(os.time())
 end
 local function FormatPing(Value)
 local Text = Trim(Value)
@@ -6223,6 +6226,7 @@ return Fallback
 end
 function Feature:ResetSession()
 self.S.StartedAt = os.clock()
+self.S.StartedEpoch = os.time()
 self.S.StartedClock = ZoneClock()
 self.S.StartCurrency = ReadCurrency()
 self.S.StartLevel = ReadLevel()
@@ -6231,6 +6235,12 @@ self.S.LastLabelUpdate = 0
 end
 function Feature:GetElapsed()
 return math.max(0, os.clock() - (self.S.StartedAt or os.clock()))
+end
+function Feature:GetStartedClock()
+if self.S.StartedEpoch then
+return ClockAt(self.S.StartedEpoch)
+end
+return tostring(self.S.StartedClock or ZoneClock())
 end
 function Feature:CaptureStart()
 if self.S.StartCurrency == nil then
@@ -6304,7 +6314,7 @@ Head = "# " .. (Who ~= "" and Who or "A Player")
 elseif Ending then
 Head = "# Macro Turned off at " .. ZoneClock()
 else
-Head = "# Macro Started at " .. tostring(self.S.StartedClock or ZoneClock())
+Head = "# Macro Started at " .. self:GetStartedClock()
 end
 local Lines = {
 Head,
@@ -6589,7 +6599,7 @@ return
 end
 SessionLabel:Set(string.format(
 "SESSION STARTED  %s   ·   %s",
-tostring(S.StartedClock or "--"),
+S.StartedEpoch and ClockAt(S.StartedEpoch) or tostring(S.StartedClock or "--"),
 FormatDuration(Feature:GetElapsed())
 ))
 end
@@ -6660,6 +6670,7 @@ Name = "Time Zone",
 Options = ZoneNames,
 Callback = function(Value)
 Save("DISCORD_TIMEZONE", TimeZones and TimeZones.Get(Value).Name or Value)
+RefreshLabel()
 end,
 }
 local ZoneName = TimeZones and TimeZones.Get(CONFIG.DISCORD_TIMEZONE).Name or "US Eastern"

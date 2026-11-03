@@ -1772,13 +1772,13 @@ local WantsConsume = (EmergencyHealth or (ShouldHeal and not FightBackThreat))
 and not EnemyUsingSkill
 and not InDuel
 if WantsConsume then
-AICFeature.TryConsumePotion(now, PlayerStats, InputBindableFunction, MainWeld)
+AICFeature.TryConsumePotion(now, PlayerStats)
 end
 return
 end
 if RouteActive
 and (EmergencyHealth or ShouldHeal)
-and AICFeature.TryConsumePotion(now, PlayerStats, InputBindableFunction, MainWeld)
+and AICFeature.TryConsumePotion(now, PlayerStats)
 then
 return
 end
@@ -2219,7 +2219,7 @@ return false
 end
 return EnsureWeaponDrawn(now, InputBindableFunction, MainWeld)
 end
-local function TryConsumePotion(now, PlayerStats, InputBindableFunction, MainWeld)
+local function TryConsumePotion(now, PlayerStats)
 local UseConsumable = Replicated:FindFirstChild("UseConsumable", true)
 local LastConsumed = PlayerStats and PlayerStats:FindFirstChild("LastConsumed")
 if not UseConsumable
@@ -2229,40 +2229,19 @@ or now - AICFeature.S.LAST_CONSUME_TIME < CONFIG.CONSUME_INTERVAL
 then
 return false
 end
-if InputBindableFunction
-and (AICFeature.S.Equipped or (MainWeld.Part1 and MainWeld.Part1.Name ~= "UpperTorso"))
-and now - AICFeature.S.LAST_EQUIP_TIME >= CONFIG.EQUIP_TOGGLE_COOLDOWN
-then
-AICFeature.S.Equipped = false
-AICFeature.S.LAST_EQUIP_TIME = now
-InputBindableFunction:Invoke(
-"EquipButton",
-Enum.UserInputState.Begin
-)
-return true
-end
-if not AICFeature.S.Equipped then
 AICFeature.S.LAST_CONSUME_TIME = now
 UseConsumable:InvokeServer(LastConsumed.Value)
-end
-return false
+return true
 end
 AICFeature.TryConsumePotion = TryConsumePotion
 AICFeature.TryHeal = function(now)
 local Character = Runtime:GetCharacter()
-local Sword = Character and Character:FindFirstChild("Sword")
-local MainWeld = Sword and Sword:FindFirstChild("MainWeld", true)
-local InputBindableFunction = Runtime:GetInputBindableFunction()
-if not Character or not MainWeld or not InputBindableFunction then
-Logger.debug("TryHeal: no character, weld, or input handle")
+local PlayerStats = Player:FindFirstChild("PlayerStats")
+if not Character or not PlayerStats then
+Logger.debug("TryHeal: no character or PlayerStats")
 return false
 end
-return TryConsumePotion(
-now,
-Player:FindFirstChild("PlayerStats"),
-InputBindableFunction,
-MainWeld
-)
+return TryConsumePotion(now, PlayerStats)
 end
 return { Name = "AutoFarming_Combat" }
 end,

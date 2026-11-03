@@ -1283,6 +1283,37 @@ return {
             S.FleeFromSpeed = nil
         end
 
+        --// The game's block button, held rather than pressed: Begin on the way
+        --// into a wait, End on the way out, so the sword is up for as long as
+        --// the stop is waited at and back down when the fight (or the next
+        --// step) starts. The name follows the game's own bindings
+        --// (AttackButton, EquipButton, InteractButton). A game without the
+        --// binding answers with an error through pcall and the wait carries on
+        --// without a guard, the same way a missing prompt binding is survived.
+        local function SetBlocking(On)
+            On = On == true
+
+            if S.Blocking == On then
+                return
+            end
+
+            local GetInput = Runtime.GetInputBindableFunction
+            local InputBindableFunction = GetInput and GetInput(Runtime)
+
+            if not InputBindableFunction then
+                return
+            end
+
+            S.Blocking = On
+
+            pcall(function()
+                InputBindableFunction:Invoke(
+                    "BlockButton",
+                    On and Enum.UserInputState.Begin or Enum.UserInputState.End
+                )
+            end)
+        end
+
         --// Defined with the rest of the hold, further down: a stop of the route
         --// has to be able to end one that is running.
         local EndEvade
@@ -1302,6 +1333,7 @@ return {
             ClearKillClock()
             S.WaitUntil = nil
             S.SpotWaitUntil = nil
+            SetBlocking(false)
             S.WalkStart = nil
             --// Nothing carries a death's skip into a later run, and a death
             --// from while the route was off is not the next run's.
@@ -1358,6 +1390,7 @@ return {
             S.PromptTargetPosition = nil
             S.FloorLifts = 0
             S.SpotWaitUntil = nil
+            SetBlocking(false)
             S.SkipSpotWait = S.SkipSpotWaitNext == true
             S.SkipSpotWaitNext = false
             S.InteractSuppressed = false
@@ -2183,7 +2216,9 @@ return {
                 and AICFeature.TryHeal
                 and AICFeature.TryHeal(Now)
             then
-                Humanoid:Move(Vector3.zero)
+                --// The drink is a remote, so the sword is never put away: the
+                --// fight loses this frame to the drink and the next one to a
+                --// swing, not two frames to a sheathe and a draw.
                 return
             end
 
@@ -2834,18 +2869,66 @@ return {
                     end
 
                     if S.SpotWaitUntil and Now < S.SpotWaitUntil then
-                        Humanoid:Move(Vector3.zero)
+                        --// The wait is for the spawn, not for the character to
+                        --// stand still and be killed in: the heal and the run
+                        --// from a mob still happen, only the fight is held
+                        --// back until the wait is over.
+                        local WaitHealPercent = math.clamp(
+                            tonumber(CONFIG.AUTO_HEAL_HEALTH_PERCENT) or 65,
+                            30,
+                            80
+                        )
+                        local WaitMaxHealth = tonumber(Humanoid.MaxHealth) or 0
+                        local WaitMarker = ""
+
+                        if WaitMaxHealth > 0
+                            and (tonumber(Humanoid.Health) or 0) <= WaitMaxHealth * (WaitHealPercent / 100)
+                            and AICFeature.TryHeal
+                            and AICFeature.TryHeal(Now)
+                        then
+                            --// A remote drink: the sword stays out and the
+                            --// wait goes on standing where the stop is, with
+                            --// the guard still up.
+                            Humanoid:Move(Vector3.zero)
+                            SetBlocking(true)
+                            --// Only says BLOCK when the binding actually took
+                            --// it: a game that names its block differently
+                            --// shows HEAL alone rather than a guard that is
+                            --// not up.
+                            WaitMarker = S.Blocking and "  HEAL  BLOCK" or "  HEAL"
+                        elseif FleeStep(Humanoid, RootPart, Stop) then
+                            --// Running from a mob is not a stance: the guard
+                            --// comes down for the leg and goes back up once the
+                            --// character is stood at the stop again.
+                            SetBlocking(false)
+                            WaitMarker = "  EVADE"
+                        else
+                            --// Standing at the stop with the boss not spawned
+                            --// yet: the sword is held up in a block instead of
+                            --// hanging at the side for the whole wait.
+                            Humanoid:Move(Vector3.zero)
+                            RequireWeapon(Now)
+                            SetBlocking(true)
+                            WaitMarker = S.Blocking and "  BLOCK" or ""
+                        end
+
                         SetStatus(string.format(
-                            "STOP %d/%d  WAIT %ds  %s",
+                            "STOP %d/%d  WAIT %ds  %s%s",
                             S.Index,
                             #GetStops(),
                             math.ceil(S.SpotWaitUntil - Now),
-                            Stop.Label
+                            Stop.Label,
+                            WaitMarker
                         ))
                         return
                     end
 
                     S.SpotWaitUntil = nil
+                    --// The wait is over (or was skipped): the guard comes down
+                    --// for the fight, and the speed the evade borrowed goes
+                    --// back.
+                    SetBlocking(false)
+                    StopFlee(Humanoid)
 
                     --// On the spot: fight straight away. The scan is forced,
                     --// so a boss that dies within the first eighth of a second
@@ -3970,6 +4053,7 @@ return {
             ClearKillClock()
             S.WaitUntil = nil
             S.SpotWaitUntil = nil
+            SetBlocking(false)
             S.WalkStart = nil
             S.SkipSpotWait = false
             S.SkipSpotWaitNext = false

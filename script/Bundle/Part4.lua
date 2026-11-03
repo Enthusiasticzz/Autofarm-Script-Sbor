@@ -694,6 +694,24 @@ Humanoid.WalkSpeed = S.FleeFromSpeed
 end
 S.FleeFromSpeed = nil
 end
+local function SetBlocking(On)
+On = On == true
+if S.Blocking == On then
+return
+end
+local GetInput = Runtime.GetInputBindableFunction
+local InputBindableFunction = GetInput and GetInput(Runtime)
+if not InputBindableFunction then
+return
+end
+S.Blocking = On
+pcall(function()
+InputBindableFunction:Invoke(
+"BlockButton",
+On and Enum.UserInputState.Begin or Enum.UserInputState.End
+)
+end)
+end
 local EndEvade
 local function StopRoute(StatusText)
 if S.Evading and EndEvade then
@@ -708,6 +726,7 @@ S.TargetSeenAt = nil
 ClearKillClock()
 S.WaitUntil = nil
 S.SpotWaitUntil = nil
+SetBlocking(false)
 S.WalkStart = nil
 S.SkipSpotWait = false
 S.SkipSpotWaitNext = false
@@ -759,6 +778,7 @@ S.PromptCheckAt = nil
 S.PromptTargetPosition = nil
 S.FloorLifts = 0
 S.SpotWaitUntil = nil
+SetBlocking(false)
 S.SkipSpotWait = S.SkipSpotWaitNext == true
 S.SkipSpotWaitNext = false
 S.InteractSuppressed = false
@@ -1287,7 +1307,6 @@ and (tonumber(Humanoid.Health) or 0) <= MaxHealth * (HealPercent / 100)
 and AICFeature.TryHeal
 and AICFeature.TryHeal(Now)
 then
-Humanoid:Move(Vector3.zero)
 return
 end
 if AICCombatUtils.IsStandingOnTarget(TargetRoot) then
@@ -1702,17 +1721,43 @@ if Wait > 0 and not S.SpotWaitUntil then
 S.SpotWaitUntil = Now + Wait
 end
 if S.SpotWaitUntil and Now < S.SpotWaitUntil then
+local WaitHealPercent = math.clamp(
+tonumber(CONFIG.AUTO_HEAL_HEALTH_PERCENT) or 65,
+30,
+80
+)
+local WaitMaxHealth = tonumber(Humanoid.MaxHealth) or 0
+local WaitMarker = ""
+if WaitMaxHealth > 0
+and (tonumber(Humanoid.Health) or 0) <= WaitMaxHealth * (WaitHealPercent / 100)
+and AICFeature.TryHeal
+and AICFeature.TryHeal(Now)
+then
 Humanoid:Move(Vector3.zero)
+SetBlocking(true)
+WaitMarker = S.Blocking and "  HEAL  BLOCK" or "  HEAL"
+elseif FleeStep(Humanoid, RootPart, Stop) then
+SetBlocking(false)
+WaitMarker = "  EVADE"
+else
+Humanoid:Move(Vector3.zero)
+RequireWeapon(Now)
+SetBlocking(true)
+WaitMarker = S.Blocking and "  BLOCK" or ""
+end
 SetStatus(string.format(
-"STOP %d/%d  WAIT %ds  %s",
+"STOP %d/%d  WAIT %ds  %s%s",
 S.Index,
 #GetStops(),
 math.ceil(S.SpotWaitUntil - Now),
-Stop.Label
+Stop.Label,
+WaitMarker
 ))
 return
 end
 S.SpotWaitUntil = nil
+SetBlocking(false)
+StopFlee(Humanoid)
 S.Phase = "Fight"
 S.FightStart = Now
 S.SeenTarget = false
@@ -2410,6 +2455,7 @@ S.TargetSeenAt = nil
 ClearKillClock()
 S.WaitUntil = nil
 S.SpotWaitUntil = nil
+SetBlocking(false)
 S.WalkStart = nil
 S.SkipSpotWait = false
 S.SkipSpotWaitNext = false

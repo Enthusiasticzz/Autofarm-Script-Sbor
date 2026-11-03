@@ -42,9 +42,11 @@ return {
             { Name = "BossRoute",         Default = false, Key = "z" },
             --// A stranger on the server pauses the boss run instead of being
             --// blocked or hopped from: reset, go to the saved evade spot and
-            --// wait them out (BossNavigator, Evasion section). No Key: saved
-            --// in the profile, left out of the exported text.
-            { Name = "PauseForStrangers", Default = false },
+            --// wait them out (BossNavigator, Evasion section). Key "pf": every
+            --// single letter is taken, so exports carry it as a two-letter
+            --// key. Left out, an imported profile came in with the toggle
+            --// off no matter what the profile it came from had.
+            { Name = "PauseForStrangers", Default = false, Key = "pf" },
             { Name = "SafeBoosterReset",  Default = false, Key = "n" },
             { Name = "AutoBlockConfirm",  Default = false, Key = "o" },
             { Name = "AutoMining",        Default = false, Key = "p" },

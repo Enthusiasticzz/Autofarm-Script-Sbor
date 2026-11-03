@@ -368,17 +368,18 @@ return {
                     AICCombat.RetreatAttack(FightBackThreat, now)
                 end
 
-                --// Never stop to drink mid-dodge. Getting out of the skill first
-                --// is worth more than the heal, and sheathing costs an animation.
-                --// A mob in reach used to block the drink as well, which is
-                --// exactly when the health was being taken: only the softer
-                --// heal waits for the fight now, an emergency drink does not.
+                --// Never stop to drink mid-dodge: getting out of the skill first
+                --// is worth more than the heal. A mob in reach used to block the
+                --// drink as well, which is exactly when the health was being
+                --// taken: only the softer heal waits for the fight now, an
+                --// emergency drink does not. The drink is a remote now, so the
+                --// sword stays out for it instead of being put away first.
                 local WantsConsume = (EmergencyHealth or (ShouldHeal and not FightBackThreat))
                     and not EnemyUsingSkill
                     and not InDuel
 
                 if WantsConsume then
-                    AICFeature.TryConsumePotion(now, PlayerStats, InputBindableFunction, MainWeld)
+                    AICFeature.TryConsumePotion(now, PlayerStats)
                 end
 
                 return
@@ -387,7 +388,7 @@ return {
             --// Low on the route: no retreat, keep walking and drink on the move.
             if RouteActive
                 and (EmergencyHealth or ShouldHeal)
-                and AICFeature.TryConsumePotion(now, PlayerStats, InputBindableFunction, MainWeld)
+                and AICFeature.TryConsumePotion(now, PlayerStats)
             then
                 return
             end
