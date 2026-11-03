@@ -14,6 +14,17 @@ local Library = {}
 Library.__index = Library
 local ROOT_W, ROOT_H, SIDEBAR = 760, 500, 190
 local HEADER, MINI_W = 30, 250        -- top strip (minimize / close live here) and the width of the minimized bar
+local MENU_ANIMATIONS = { "Pop", "Bounce", "Slide", "Snap", "None" }
+local MENU_ANIM = {
+Pop    = { From = .86, To = .84, Time = .26, CloseTime = .18, Style = Enum.EasingStyle.Back,
+CloseStyle = Enum.EasingStyle.Quad, CloseDir = Enum.EasingDirection.In },
+Bounce = { From = .64, To = .72, Time = .44, CloseTime = .24, Style = Enum.EasingStyle.Back,
+CloseStyle = Enum.EasingStyle.Back, CloseDir = Enum.EasingDirection.In },
+Slide  = { From = .97, To = .97, Time = .26, CloseTime = .18, Style = Enum.EasingStyle.Quint,
+CloseStyle = Enum.EasingStyle.Quad, CloseDir = Enum.EasingDirection.In, Travel = 28 },
+Snap   = { From = .96, To = .97, Time = .12, CloseTime = .10, Style = Enum.EasingStyle.Quint,
+CloseStyle = Enum.EasingStyle.Quad, CloseDir = Enum.EasingDirection.In },
+}
 local function FontEnum(name, fallback)
 local ok, f = pcall(function() return Enum.Font[name] end)
 return (ok and f) or fallback
@@ -161,6 +172,7 @@ self.SingleColumn = o.SingleColumn == true   -- true = every section is full wid
 self._open = true
 self.MenuKey = Enum.KeyCode.Insert
 self.TabAnimation = "Fade"
+self.MenuAnimation = "Pop"
 self.Notifications = { Enabled = true, Position = "Bottom right" }
 self.Cursor = { Mode = "Menu open", Style = "Arrow", Size = 100, Effects = true, CustomEnabled = false, Color = rgb(70,160,255) }
 self.ConfigName = o.ConfigName or "Default"
@@ -407,6 +419,11 @@ function Library:SetTabAnimation(name)
 self.TabAnimation = name
 self:_settingsChanged()
 end
+function Library:SetMenuAnimation(name)
+if not table.find(MENU_ANIMATIONS, name) then return end
+self.MenuAnimation = name
+self:_settingsChanged()
+end
 function Library:SetNotificationsEnabled(b)
 self.Notifications.Enabled = b and true or false
 self:_settingsChanged()
@@ -433,6 +450,7 @@ Palette = self.Palette or "Default",
 WindowWidth = ROOT_W,
 WindowHeight = ROOT_H,
 TabAnimation = self.TabAnimation or "Fade",
+MenuAnimation = self.MenuAnimation or "Pop",
 Notifications = not (self.Notifications and self.Notifications.Enabled == false),
 NotificationPosition = type(self.Notifications and self.Notifications.Position) == "string"
 and self.Notifications.Position or "Bottom right",
@@ -472,6 +490,9 @@ self:SetWindowSize(tonumber(Settings.WindowWidth), tonumber(Settings.WindowHeigh
 end
 if table.find({ "Fade", "Slide", "None" }, Settings.TabAnimation) then
 self.TabAnimation = Settings.TabAnimation
+end
+if table.find(MENU_ANIMATIONS, Settings.MenuAnimation) then
+self.MenuAnimation = Settings.MenuAnimation
 end
 if type(Settings.Notifications) == "boolean" then
 self.Notifications.Enabled = Settings.Notifications
@@ -571,28 +592,47 @@ end
 function Library:IsOpen()
 return self._open == true and self._minimized ~= true
 end
-local OPEN_FROM = .86
-local CLOSE_TO = .84
 function Library:Toggle(state)
 if state == nil then state = not self._open end
 if state == self._open then return end
 self._open = state
+local Anim = MENU_ANIM[self.MenuAnimation or "Pop"]
 if self._scaleTw and self._scaleTw.Cancel then
 pcall(function() self._scaleTw:Cancel() end)
 end
 self._scaleTw = nil
+if not Anim then
+self.Scale.Scale = self.BaseScale
+self.Root.Visible = state
+return
+end
+local Travel = (Anim.Travel and self._minimized ~= true) and Anim.Travel or 0
+local Base = self.Root.Position
+local SlideTo = Travel > 0
+and UDim2.new(Base.X.Scale, Base.X.Offset, Base.Y.Scale, Base.Y.Offset - Travel)
+or Base
 if state then
 self.Root.Visible = true
-self.Scale.Scale = self.BaseScale * OPEN_FROM
-self._scaleTw = self:Tween(self.Scale, { Scale = self.BaseScale }, .26, Enum.EasingStyle.Back)
+self.Scale.Scale = self.BaseScale * Anim.From
+if Travel > 0 then
+self.Root.Position = SlideTo
+self:Tween(self.Root, { Position = Base }, Anim.Time, Anim.Style)
+end
+self._scaleTw = self:Tween(self.Scale, { Scale = self.BaseScale }, Anim.Time, Anim.Style)
 else
 self:ClosePopup(true)
 self:_hideTip()
-self._scaleTw = self:Tween(self.Scale, { Scale = self.BaseScale * CLOSE_TO }, .18, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-task.delay(.18 / math.max(self.AnimSpeed, .1), function()
+if Travel > 0 then
+self:Tween(self.Root, { Position = SlideTo }, Anim.CloseTime, Anim.CloseStyle, Anim.CloseDir)
+end
+self._scaleTw = self:Tween(self.Scale, { Scale = self.BaseScale * Anim.To }, Anim.CloseTime, Anim.CloseStyle, Anim.CloseDir)
+task.delay(Anim.CloseTime / math.max(self.AnimSpeed, .1), function()
 if self._open then return end
 self.Root.Visible = false
 self.Scale.Scale = self.BaseScale
+if Travel > 0 then
+self.Root.Position = Base
+end
 end)
 end
 end
@@ -2569,6 +2609,12 @@ Options = { "Fade", "Slide", "None" },
 Default = self.TabAnimation,
 Flag = "TabAnim",
 Callback = function(value) self:SetTabAnimation(value) end,
+}
+behavior:AddDropdown{
+Name = "Animation of menu open",
+Options = MENU_ANIMATIONS,
+Default = self.MenuAnimation or "Pop",
+Callback = function(value) self:SetMenuAnimation(value) end,
 }
 behavior:AddToggle{
 Name = "Watermark",

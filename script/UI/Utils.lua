@@ -22,7 +22,7 @@
 
     -- Menu behaviour is driven through public methods so YOU build the settings tab:
     --   SetScale, SetMenuKey, SetAnimSpeed, SetNotificationsEnabled, SetNotificationPosition,
-    --   SetTabAnimation, SetAccent, SetHover, SetPalette, SetWatermark, SetKeybindList,
+    --   SetTabAnimation, SetMenuAnimation, SetAccent, SetHover, SetPalette, SetWatermark, SetKeybindList,
     --   SetCursor{Mode,Style,Size,Effects,Color,CustomEnabled},
     --   SaveConfig, LoadConfig, GetConfigNames, LoadConfigs, Autoload, SetAutoload,
     --   AddStatusIcon, SetStatusPerRow, SetSettingsTab, SetMinimized, Copy, Notify, Toggle, Destroy
@@ -43,6 +43,25 @@ Library.__index = Library
 
 local ROOT_W, ROOT_H, SIDEBAR = 760, 500, 190
 local HEADER, MINI_W = 30, 250        -- top strip (minimize / close live here) and the width of the minimized bar
+
+-- The window's own open/close animation, picked in the Settings tab. Every one
+-- of them is a tween on the UIScale, plus - for Slide - the window's position,
+-- which is put back where it was once the window is hidden.
+--   From / To   the scale it comes in from and leaves to
+--   Time / CloseTime   seconds, before AnimSpeed scales them
+--   Travel      pixels it slides down on the way in (Slide only)
+local MENU_ANIMATIONS = { "Pop", "Bounce", "Slide", "Snap", "None" }
+
+local MENU_ANIM = {
+	Pop    = { From = .86, To = .84, Time = .26, CloseTime = .18, Style = Enum.EasingStyle.Back,
+		CloseStyle = Enum.EasingStyle.Quad, CloseDir = Enum.EasingDirection.In },
+	Bounce = { From = .64, To = .72, Time = .44, CloseTime = .24, Style = Enum.EasingStyle.Back,
+		CloseStyle = Enum.EasingStyle.Back, CloseDir = Enum.EasingDirection.In },
+	Slide  = { From = .97, To = .97, Time = .26, CloseTime = .18, Style = Enum.EasingStyle.Quint,
+		CloseStyle = Enum.EasingStyle.Quad, CloseDir = Enum.EasingDirection.In, Travel = 28 },
+	Snap   = { From = .96, To = .97, Time = .12, CloseTime = .10, Style = Enum.EasingStyle.Quint,
+		CloseStyle = Enum.EasingStyle.Quad, CloseDir = Enum.EasingDirection.In },
+}
 
 -- Fonts. BuilderSans is the closest built-in Roblox font to the reference (clean humanist
 -- sans). Override any entry with Library.new{ Fonts = { Medium = Enum.Font.Roboto } }.
@@ -213,6 +232,8 @@ function Library.new(o)
 	self._open = true
 	self.MenuKey = Enum.KeyCode.Insert
 	self.TabAnimation = "Fade"
+	--// How the window itself comes and goes; see MENU_ANIM above.
+	self.MenuAnimation = "Pop"
 	self.Notifications = { Enabled = true, Position = "Bottom right" }
 	self.Cursor = { Mode = "Menu open", Style = "Arrow", Size = 100, Effects = true, CustomEnabled = false, Color = rgb(70,160,255) }
 	self.ConfigName = o.ConfigName or "Default"
@@ -525,6 +546,13 @@ function Library:SetTabAnimation(name)
 	self.TabAnimation = name
 	self:_settingsChanged()
 end
+function Library:SetMenuAnimation(name)
+	--// An unknown name keeps the one already picked: a save from a build with
+	--// fewer animations still opens on something that exists.
+	if not table.find(MENU_ANIMATIONS, name) then return end
+	self.MenuAnimation = name
+	self:_settingsChanged()
+end
 function Library:SetNotificationsEnabled(b)
 	self.Notifications.Enabled = b and true or false
 	self:_settingsChanged()
@@ -556,6 +584,7 @@ function Library:GetUISettings()
 		WindowWidth = ROOT_W,
 		WindowHeight = ROOT_H,
 		TabAnimation = self.TabAnimation or "Fade",
+		MenuAnimation = self.MenuAnimation or "Pop",
 		Notifications = not (self.Notifications and self.Notifications.Enabled == false),
 		NotificationPosition = type(self.Notifications and self.Notifications.Position) == "string"
 			and self.Notifications.Position or "Bottom right",
@@ -612,6 +641,10 @@ function Library:ApplyUISettings(Settings)
 
 	if table.find({ "Fade", "Slide", "None" }, Settings.TabAnimation) then
 		self.TabAnimation = Settings.TabAnimation
+	end
+
+	if table.find(MENU_ANIMATIONS, Settings.MenuAnimation) then
+		self.MenuAnimation = Settings.MenuAnimation
 	end
 
 	if type(Settings.Notifications) == "boolean" then
@@ -740,39 +773,76 @@ end
 function Library:IsOpen()
 	return self._open == true and self._minimized ~= true
 end
---// Open and close are a pop, not a nudge: the window grows in from OPEN_FROM
---// with a Back ease, so it overshoots by a hair and settles; on the way out it
---// actually shrinks to CLOSE_TO and is hidden when the shrink lands. The old
---// close shrank it 4% over .15 s and hid it on a timer, which read as a flash.
-local OPEN_FROM = .86
-local CLOSE_TO = .84
-
+--// Open and close are a real movement in both directions, and which movement
+--// is the player's choice (Settings tab, saved as UI_MENU_ANIMATION):
+--//   Pop     a small scale pop with a Back overshoot - the default
+--//   Bounce  the same idea, from much smaller, so it springs in
+--//   Slide   the window drops into place from above at full size
+--//   Snap    a quick, almost-instant settle for people who hate waiting
+--//   None    on screen or gone, nothing in between
+--// Every one of them shrinks on the way out and is hidden when the tween
+--// lands, so a close reads as a close rather than a flash.
 function Library:Toggle(state)
 	if state == nil then state = not self._open end
 	if state == self._open then return end
 	self._open = state
 
+	local Anim = MENU_ANIM[self.MenuAnimation or "Pop"]
+
 	--// Half a tween left over from the other direction is stopped first, or the
-	--// two fight over the same UIScale and the pop stutters.
+	--// two fight over the same UIScale and the movement stutters.
 	if self._scaleTw and self._scaleTw.Cancel then
 		pcall(function() self._scaleTw:Cancel() end)
 	end
 	self._scaleTw = nil
 
+	if not Anim then
+		--// "None" (or a name this build does not know): no animation at all.
+		self.Scale.Scale = self.BaseScale
+		self.Root.Visible = state
+		return
+	end
+
+	--// Slide moves the whole window. A minimised window is a bar in a corner
+	--// whose position the minimise tween owns, so that one only scales.
+	local Travel = (Anim.Travel and self._minimized ~= true) and Anim.Travel or 0
+	local Base = self.Root.Position
+	local SlideTo = Travel > 0
+		and UDim2.new(Base.X.Scale, Base.X.Offset, Base.Y.Scale, Base.Y.Offset - Travel)
+		or Base
+
 	if state then
 		self.Root.Visible = true
-		self.Scale.Scale = self.BaseScale * OPEN_FROM
-		self._scaleTw = self:Tween(self.Scale, { Scale = self.BaseScale }, .26, Enum.EasingStyle.Back)
+		self.Scale.Scale = self.BaseScale * Anim.From
+
+		if Travel > 0 then
+			self.Root.Position = SlideTo
+			self:Tween(self.Root, { Position = Base }, Anim.Time, Anim.Style)
+		end
+
+		self._scaleTw = self:Tween(self.Scale, { Scale = self.BaseScale }, Anim.Time, Anim.Style)
 	else
 		self:ClosePopup(true)
 		self:_hideTip()
-		self._scaleTw = self:Tween(self.Scale, { Scale = self.BaseScale * CLOSE_TO }, .18, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+
+		if Travel > 0 then
+			self:Tween(self.Root, { Position = SlideTo }, Anim.CloseTime, Anim.CloseStyle, Anim.CloseDir)
+		end
+
+		self._scaleTw = self:Tween(self.Scale, { Scale = self.BaseScale * Anim.To }, Anim.CloseTime, Anim.CloseStyle, Anim.CloseDir)
+
 		--// Hidden when the shrink finishes, so the last thing seen is the window
-		--// closing in rather than vanishing at full size.
-		task.delay(.18 / math.max(self.AnimSpeed, .1), function()
+		--// closing in rather than vanishing at full size. The scale and the
+		--// position are both put back while it is hidden, so the next open
+		--// starts from the same size and the same spot.
+		task.delay(Anim.CloseTime / math.max(self.AnimSpeed, .1), function()
 			if self._open then return end
 			self.Root.Visible = false
 			self.Scale.Scale = self.BaseScale
+
+			if Travel > 0 then
+				self.Root.Position = Base
+			end
 		end)
 	end
 end
@@ -3057,6 +3127,12 @@ function Library:_BuildSettingsTab()
 		Default = self.TabAnimation,
 		Flag = "TabAnim",
 		Callback = function(value) self:SetTabAnimation(value) end,
+	}
+	behavior:AddDropdown{
+		Name = "Animation of menu open",
+		Options = MENU_ANIMATIONS,
+		Default = self.MenuAnimation or "Pop",
+		Callback = function(value) self:SetMenuAnimation(value) end,
 	}
 	behavior:AddToggle{
 		Name = "Watermark",

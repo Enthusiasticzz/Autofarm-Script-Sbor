@@ -2887,7 +2887,14 @@ return {
                                 and WaitTarget:FindFirstChild("HumanoidRootPart") ~= nil
                             local WaitCasting = WaitDodge and IsSkillShowing(WaitTarget, Now) == true
 
-                            if WaitCasting or (WaitDodge and IsHealthBurst(Humanoid, Now)) then
+                            --// Only a cast the boss is actually showing arms the
+                            --// dodge while waiting. A health burst used to arm it
+                            --// as well, and during a wait that burst is just a mob
+                            --// landing on the guard: eight seconds of stepping out
+                            --// of nothing, which is the wait fighting itself
+                            --// instead of blocking. The burst stays the fight's
+                            --// own backup, where it belongs.
+                            if WaitCasting then
                                 S.DodgeMinUntil = Now + DODGE_MIN_TIME
                                 S.DodgeMaxUntil = Now + DODGE_MAX_TIME
                                 S.SkillSeenAt = Now
@@ -2896,8 +2903,10 @@ return {
                             end
 
                             if DodgeStep(WaitTarget, Humanoid, RootPart, Now, Stop) then
-                                --// DodgeStep writes its own STOP x/y DODGE line.
-                                SetBlocking(false)
+                                --// DodgeStep writes its own STOP x/y DODGE line. The
+                                --// guard stays up through it: evading and blocking
+                                --// are one stance here, not a choice between them.
+                                SetBlocking(true)
                                 return
                             end
                         end
@@ -2942,10 +2951,19 @@ return {
 
                     S.SpotWaitUntil = nil
                     --// The wait is over (or was skipped): the guard comes down
-                    --// for the fight. A dodge still running is left armed on
-                    --// purpose - the fight's own DodgeStep picks it up and
-                    --// releases the sprint when the effects go out.
+                    --// for the fight, and a dodge the wait armed ends with it.
+                    --// DODGE_MAX_TIME is eight seconds and TARGET_KEEP_TIME is
+                    --// four, so a dodge left running walked the character (and
+                    --// the boss chasing it) out of the stop's scan radius for
+                    --// long enough that the fight lost the scan and called a
+                    --// live boss dead. The fight arms its own dodge on the
+                    --// frame a skill actually shows.
                     SetBlocking(false)
+                    EndDodge(Humanoid)
+                    S.SkillSeenAt = nil
+                    S.SkillActive = false
+                    S.HpAt = nil
+                    S.HpBase = nil
 
                     --// On the spot: fight straight away. The scan is forced,
                     --// so a boss that dies within the first eighth of a second
@@ -3052,15 +3070,43 @@ return {
                 --// stop: it is not standing at the spot any more. The name was
                 --// taken off this stop's list: the route simply moves on, with
                 --// no reset and no EXP lost.
-                if IsMobAlive(S.LastTarget)
-                    and Now - (S.TargetSeenAt or 0) <= TARGET_KEEP_TIME
-                then
+                local LastAlive = IsMobAlive(S.LastTarget)
+                --// A body the game took away stops existing for us; a boss that
+                --// is merely outside the scan radius is still in the workspace.
+                local StillHere = LastAlive
+                    and S.LastTarget ~= nil
+                    and S.LastTarget:IsDescendantOf(workspace)
+
+                --// Only a stop whose list has names can be held open this way.
+                --// A stop with no names takes anything in its radius, and mobs
+                --// die on the way through a fight all the time: an ordinary mob
+                --// still standing there must never send the route walking back
+                --// for it. For an unnamed stop the old lapse stands unchanged.
+                local NamedTarget = #Stop.Targets > 0 and IsWantedTarget(S.LastTarget, Stop)
+
+                if LastAlive and Now - (S.TargetSeenAt or 0) <= TARGET_KEEP_TIME then
                     if not IsWantedTarget(S.LastTarget, Stop) then
                         Advance(Now)
                     else
                         SetStatus(string.format("STOP %d/%d  FIGHT  %s", S.Index, #GetStops(), Stop.Label))
                     end
 
+                    return
+                end
+
+                --// Alive, in the workspace, just not where the scan looks any
+                --// more (it chased something, or a dodge pulled the character
+                --// away and the boss followed). That is not a kill: resetting
+                --// over it took the EXP the reset was there to protect. Walk
+                --// the stop again, and let the walk's own timeouts move the
+                --// route on if it cannot be reached.
+                if StillHere and NamedTarget then
+                    Say("Boss Route", string.format(
+                        "Boss still alive at stop #%d; walking back",
+                        S.Index
+                    ), 4)
+                    S.SkipSpotWaitNext = true
+                    BeginStop(Now)
                     return
                 end
 
@@ -3101,15 +3147,47 @@ return {
                         S.TagWaitAt = S.TagWaitAt or Now
 
                         if Now - S.TagWaitAt < TagMax then
+                            --// The tag is the game still settling the kill, and
+                            --// the character stands in the open for it: the same
+                            --// health decision and the same run from a mob the
+                            --// reset hold uses, so a slow tag is not a free hit
+                            --// for whatever is left at the stop. Losing EXP to
+                            --// that is worse than the reset being waited for.
+                            local TagHealPercent = math.clamp(
+                                tonumber(CONFIG.AUTO_HEAL_HEALTH_PERCENT) or 65,
+                                30,
+                                80
+                            )
+                            local TagMaxHealth = tonumber(Humanoid.MaxHealth) or 0
+                            local TagMarker = ""
+
+                            if TagMaxHealth > 0
+                                and (tonumber(Humanoid.Health) or 0) <= TagMaxHealth * (TagHealPercent / 100)
+                                and AICFeature.TryHeal
+                                and AICFeature.TryHeal(Now)
+                            then
+                                --// A remote drink, so the sword stays out.
+                                Humanoid:Move(Vector3.zero)
+                                TagMarker = "  HEAL"
+                            elseif FleeStep(Humanoid, RootPart, Stop) then
+                                TagMarker = "  RUNNING"
+                            else
+                                Humanoid:Move(Vector3.zero)
+                            end
+
                             SetStatus(string.format(
-                                "STOP %d/%d  WAITING  DAMAGE TAG",
+                                "STOP %d/%d  WAITING  DAMAGE TAG%s",
                                 S.Index,
-                                #GetStops()
+                                #GetStops(),
+                                TagMarker
                             ))
                             return
                         end
                     end
 
+                    --// The tag is down: put back the speed a run borrowed before
+                    --// the hold or the reset below takes over.
+                    StopFlee(Humanoid)
                     S.HoldFrom = Now
                     S.TagWaitAt = nil
                 end

@@ -2634,6 +2634,7 @@ CONFIG.UI_PALETTE = State.Palette
 CONFIG.UI_WINDOW_WIDTH = State.WindowWidth
 CONFIG.UI_WINDOW_HEIGHT = State.WindowHeight
 CONFIG.UI_TAB_ANIMATION = State.TabAnimation
+CONFIG.UI_MENU_ANIMATION = State.MenuAnimation
 CONFIG.UI_NOTIFICATIONS = State.Notifications
 CONFIG.UI_NOTIFICATION_POSITION = State.NotificationPosition
 CONFIG.UI_WATERMARK = State.Watermark
@@ -2646,6 +2647,7 @@ Palette = CONFIG.UI_PALETTE,
 WindowWidth = CONFIG.UI_WINDOW_WIDTH,
 WindowHeight = CONFIG.UI_WINDOW_HEIGHT,
 TabAnimation = CONFIG.UI_TAB_ANIMATION,
+MenuAnimation = CONFIG.UI_MENU_ANIMATION,
 Notifications = CONFIG.UI_NOTIFICATIONS,
 NotificationPosition = CONFIG.UI_NOTIFICATION_POSITION,
 Watermark = CONFIG.UI_WATERMARK,
@@ -5019,6 +5021,7 @@ end },
 { Key = "UI_WINDOW_WIDTH", Default = 760, Min = 500, Max = 1400 },
 { Key = "UI_WINDOW_HEIGHT", Default = 500, Min = 260, Max = 900 },
 { Key = "UI_TAB_ANIMATION", Default = "Fade", Options = { "Fade", "Slide", "None" } },
+{ Key = "UI_MENU_ANIMATION", Default = "Pop", Options = { "Pop", "Bounce", "Slide", "Snap", "None" } },
 { Key = "UI_NOTIFICATIONS", Default = true },
 { Key = "UI_NOTIFICATION_POSITION", Default = "Bottom right", Options = { "Top left", "Top center", "Top right", "Bottom left", "Bottom right" } },
 { Key = "UI_WATERMARK", Default = false },

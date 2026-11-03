@@ -1726,7 +1726,7 @@ if WaitTarget then
 local WaitDodge = Stop.Dodge ~= false
 and WaitTarget:FindFirstChild("HumanoidRootPart") ~= nil
 local WaitCasting = WaitDodge and IsSkillShowing(WaitTarget, Now) == true
-if WaitCasting or (WaitDodge and IsHealthBurst(Humanoid, Now)) then
+if WaitCasting then
 S.DodgeMinUntil = Now + DODGE_MIN_TIME
 S.DodgeMaxUntil = Now + DODGE_MAX_TIME
 S.SkillSeenAt = Now
@@ -1734,7 +1734,7 @@ S.SkillActive = true
 S.DodgeTarget = nil
 end
 if DodgeStep(WaitTarget, Humanoid, RootPart, Now, Stop) then
-SetBlocking(false)
+SetBlocking(true)
 return
 end
 end
@@ -1767,6 +1767,11 @@ return
 end
 S.SpotWaitUntil = nil
 SetBlocking(false)
+EndDodge(Humanoid)
+S.SkillSeenAt = nil
+S.SkillActive = false
+S.HpAt = nil
+S.HpBase = nil
 S.Phase = "Fight"
 S.FightStart = Now
 S.SeenTarget = false
@@ -1830,14 +1835,26 @@ Humanoid:Move(Vector3.zero)
 EndDodge(Humanoid)
 S.SkillWas = false
 if S.SeenTarget then
-if IsMobAlive(S.LastTarget)
-and Now - (S.TargetSeenAt or 0) <= TARGET_KEEP_TIME
-then
+local LastAlive = IsMobAlive(S.LastTarget)
+local StillHere = LastAlive
+and S.LastTarget ~= nil
+and S.LastTarget:IsDescendantOf(workspace)
+local NamedTarget = #Stop.Targets > 0 and IsWantedTarget(S.LastTarget, Stop)
+if LastAlive and Now - (S.TargetSeenAt or 0) <= TARGET_KEEP_TIME then
 if not IsWantedTarget(S.LastTarget, Stop) then
 Advance(Now)
 else
 SetStatus(string.format("STOP %d/%d  FIGHT  %s", S.Index, #GetStops(), Stop.Label))
 end
+return
+end
+if StillHere and NamedTarget then
+Say("Boss Route", string.format(
+"Boss still alive at stop #%d; walking back",
+S.Index
+), 4)
+S.SkipSpotWaitNext = true
+BeginStop(Now)
 return
 end
 S.KillAt = S.KillAt or Now
@@ -1852,14 +1869,35 @@ TagMax = CONFIG.BOSS_DEATH_FARM == true and 0 or TAG_WAIT_FREE
 end
 S.TagWaitAt = S.TagWaitAt or Now
 if Now - S.TagWaitAt < TagMax then
+local TagHealPercent = math.clamp(
+tonumber(CONFIG.AUTO_HEAL_HEALTH_PERCENT) or 65,
+30,
+80
+)
+local TagMaxHealth = tonumber(Humanoid.MaxHealth) or 0
+local TagMarker = ""
+if TagMaxHealth > 0
+and (tonumber(Humanoid.Health) or 0) <= TagMaxHealth * (TagHealPercent / 100)
+and AICFeature.TryHeal
+and AICFeature.TryHeal(Now)
+then
+Humanoid:Move(Vector3.zero)
+TagMarker = "  HEAL"
+elseif FleeStep(Humanoid, RootPart, Stop) then
+TagMarker = "  RUNNING"
+else
+Humanoid:Move(Vector3.zero)
+end
 SetStatus(string.format(
-"STOP %d/%d  WAITING  DAMAGE TAG",
+"STOP %d/%d  WAITING  DAMAGE TAG%s",
 S.Index,
-#GetStops()
+#GetStops(),
+TagMarker
 ))
 return
 end
 end
+StopFlee(Humanoid)
 S.HoldFrom = Now
 S.TagWaitAt = nil
 end

@@ -256,6 +256,7 @@ return {
                 CONFIG.UI_WINDOW_WIDTH = State.WindowWidth
                 CONFIG.UI_WINDOW_HEIGHT = State.WindowHeight
                 CONFIG.UI_TAB_ANIMATION = State.TabAnimation
+                CONFIG.UI_MENU_ANIMATION = State.MenuAnimation
                 CONFIG.UI_NOTIFICATIONS = State.Notifications
                 CONFIG.UI_NOTIFICATION_POSITION = State.NotificationPosition
                 CONFIG.UI_WATERMARK = State.Watermark
@@ -269,6 +270,7 @@ return {
                 WindowWidth = CONFIG.UI_WINDOW_WIDTH,
                 WindowHeight = CONFIG.UI_WINDOW_HEIGHT,
                 TabAnimation = CONFIG.UI_TAB_ANIMATION,
+                MenuAnimation = CONFIG.UI_MENU_ANIMATION,
                 Notifications = CONFIG.UI_NOTIFICATIONS,
                 NotificationPosition = CONFIG.UI_NOTIFICATION_POSITION,
                 Watermark = CONFIG.UI_WATERMARK,

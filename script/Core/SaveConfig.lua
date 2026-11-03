@@ -384,6 +384,10 @@ return {
             { Key = "UI_WINDOW_WIDTH", Default = 760, Min = 500, Max = 1400 },
             { Key = "UI_WINDOW_HEIGHT", Default = 500, Min = 260, Max = 900 },
             { Key = "UI_TAB_ANIMATION", Default = "Fade", Options = { "Fade", "Slide", "None" } },
+            --// How the window itself opens and closes, picked in the same place:
+            --// a scale pop, a bigger bounce, a slide down from above, a quick
+            --// snap, or nothing at all. Utils owns the timings (MENU_ANIM).
+            { Key = "UI_MENU_ANIMATION", Default = "Pop", Options = { "Pop", "Bounce", "Slide", "Snap", "None" } },
             { Key = "UI_NOTIFICATIONS", Default = true },
             { Key = "UI_NOTIFICATION_POSITION", Default = "Bottom right", Options = { "Top left", "Top center", "Top right", "Bottom left", "Bottom right" } },
             { Key = "UI_WATERMARK", Default = false },
