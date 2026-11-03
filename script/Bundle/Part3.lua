@@ -892,8 +892,6 @@ local function PickBest(Slot, Cards, Stats, Used)
 local Candidates = {}
 for _, Card in ipairs(Cards) do
 local Eligible = Slot.Types[Card.Type] == true
-and not Card.Equipped
-and Stats.Worn[Slot.Id] ~= Card.Name
 and Used[Card.Name] ~= true
 and (not Stats.InventoryGate
 or Card.Name == "Fists"
@@ -1177,11 +1175,19 @@ local Used = {}
 local Statless = 0
 for _, Slot in ipairs(SLOTS) do
 if CONFIG[Slot.Setting] == true then
+if Slot.Id == "DUAL" and Stats.Worn.WEAPON ~= "" then
+Used[Stats.Worn.WEAPON] = true
+end
 local Card, Why = PickBest(Slot, Cards, Stats, Used)
 if not Card and Why == "no stat" then
 Statless += 1
 end
+if Card and Wearing(Card, Slot) then
+Used[Card.Name] = true
+Card = nil
+end
 if Card then
+Used[Card.Name] = true
 if Equip then
 local Took, Detail = EquipSlot(Slot, Card)
 if Took then
@@ -1193,7 +1199,6 @@ Text = Slot.Label .. " -> " .. Describe(Slot, Card, Why),
 })
 Stats.Worn = ReadWorn()
 SyncEquipped(Cards, Stats.Worn)
-Used[Card.Name] = true
 else
 table.insert(Failed, string.format("%s (%s, %s)", Slot.Label, Card.Name, tostring(Detail)))
 end
@@ -1204,7 +1209,6 @@ Label = Slot.Label,
 Name = Card.Name,
 Text = Slot.Label .. " -> " .. Describe(Slot, Card, Why),
 })
-Used[Card.Name] = true
 end
 end
 end

@@ -982,16 +982,21 @@ return {
             return nil, nil
         end
 
-        --// Used holds the items an earlier slot put on this pass. A dual
-        --// weapon must be a second item: pressing E2 on the sword that was
-        --// just equipped to slot 1 could move it out of the main hand.
+        --// Used holds the items an earlier slot is holding this pass. A dual
+        --// weapon must be a second item: pressing E2 on the sword that is in
+        --// the main hand could move it out.
+        --//
+        --// The item that is already on stays in the running. Taking it out
+        --// looked harmless and was not: the best of the rest is by definition
+        --// the second best, so every slot whose worn item was the best was
+        --// swapped down a tier (a level 22 helm went to a level 8, a level 18
+        --// shield to a level 10). RunPass compares the winner with the worn
+        --// item instead and presses nothing when they match.
         local function PickBest(Slot, Cards, Stats, Used)
             local Candidates = {}
 
             for _, Card in ipairs(Cards) do
                 local Eligible = Slot.Types[Card.Type] == true
-                    and not Card.Equipped
-                    and Stats.Worn[Slot.Id] ~= Card.Name
                     and Used[Card.Name] ~= true
                     --// The panel only lists what is owned, so the inventory
                     --// is a second opinion; it is only used when it names
@@ -1441,15 +1446,34 @@ return {
 
             for _, Slot in ipairs(SLOTS) do
                 if CONFIG[Slot.Setting] == true then
+                    --// A second item, never the one in the main hand: E2 on a
+                    --// sword that is already equipped can pull it out.
+                    if Slot.Id == "DUAL" and Stats.Worn.WEAPON ~= "" then
+                        Used[Stats.Worn.WEAPON] = true
+                    end
+
                     local Card, Why = PickBest(Slot, Cards, Stats, Used)
 
                     if not Card and Why == "no stat" then
                         Statless += 1
                     end
 
+                    --// The winner is the item that is already on: there is
+                    --// nothing to press, and pressing the runner-up would be
+                    --// a downgrade. This is the check that keeps a worn best
+                    --// item from being replaced by the second best.
+                    if Card and Wearing(Card, Slot) then
+                        Used[Card.Name] = true
+                        Card = nil
+                    end
+
                     --// "worn" / "none" / "no stat" are silent per slot:
                     --// there is nothing to do and nothing to name.
                     if Card then
+                        --// Held for the rest of the pass even if the press
+                        --// fails, so the next slot cannot take this item.
+                        Used[Card.Name] = true
+
                         if Equip then
                             local Took, Detail = EquipSlot(Slot, Card)
 
@@ -1467,7 +1491,6 @@ return {
                                 --// changed.
                                 Stats.Worn = ReadWorn()
                                 SyncEquipped(Cards, Stats.Worn)
-                                Used[Card.Name] = true
                             else
                                 --// Why it did not take matters: a press that
                                 --// reached nothing is a different problem
@@ -1481,7 +1504,6 @@ return {
                                 Name = Card.Name,
                                 Text = Slot.Label .. " -> " .. Describe(Slot, Card, Why),
                             })
-                            Used[Card.Name] = true
                         end
                     end
                 end

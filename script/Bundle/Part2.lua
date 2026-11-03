@@ -3012,17 +3012,20 @@ local LOG_PREFIX = '[AIC]'
 function Logger.SetVerbose(enabled)
 VERBOSE = enabled == true
 end
-local function Log(level, message, ...)
-local args = {...}
-local formatted = message
-if #args > 0 then
-for _, arg in ipairs(args) do
-formatted = formatted:gsub('%%s', function()
-return tostring(arg)
+local function Format(message, args)
+local Index = 0
+local Text = tostring(message):gsub('%%s', function()
+Index += 1
+local Value = args[Index]
+if Value == nil then
+return '%s'
+end
+return tostring(Value)
 end)
+return Text
 end
-end
-print(LOG_PREFIX, level, formatted)
+local function Log(level, message, ...)
+print(LOG_PREFIX, level, Format(message, table.pack(...)))
 end
 function Logger.info(message, ...)
 Log('INFO', message, ...)

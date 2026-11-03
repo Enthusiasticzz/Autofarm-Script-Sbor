@@ -989,6 +989,7 @@ How it decides:
 - **Only what you own.** A card counts only when its name is in `PlayerStats.Inventory` (`Fists` excepted); that also rejects a stale card left behind by the game. When the inventory string names not one card on the panel (it can hold only the crafting materials), the check is dropped rather than rejecting the whole page — the panel is itself the proof that the item is owned.
 - **Overlays are never equipped.** A `Type` containing `Overlay` is dropped before anything else, and the list's `Base` template is dropped on its empty `Type` — its labels read `999` / `9999` and would otherwise look like the best item in the game.
 - **The requirement is a gate.** `Level` is checked against `PlayerStats.Level`; `Skill` against the stat the card's `Type` names (`One-Handed` → `One-HandedSkill`, `Rapier` → `RapierSkill`, `Dagger` → `DaggerSkill`, `Two-Handed` → `Two-HandedSkill`, `Melee` → `MeleeSkill`). Anything above your number is skipped, and so is a card whose requirement cannot be read.
+- **What is already on is ranked with everything else.** Leaving the worn item out would make "the best of the rest" win, which is the second best — a slot whose worn item was the best one owned would be swapped down a tier. The pass picks the winner over all eligible cards and then presses nothing when that winner is the item already equipped (`ALREADY BEST`), so a second press of **Equip Now** changes nothing.
 - **The winner is the number, not the name.** Damage for weapons, the build's stat for armour, with the other stat as tie-break, then the requirement, then the name so the result is stable between passes. An item the game's table has no damage (or defence) for cannot win a slot that ranks on it — it is left alone rather than equipped for having no number.
 - **One item, one slot per pass.** A card equipped to the weapon slot is not then pressed into the dual slot, because `E2` on the sword just equipped could take it back out of the main hand. The dual slot wants a second item.
 - **Already-worn is left alone.** The card's `isEquipped` and `PlayerStats` both decide that, so a slot wearing the winner is skipped rather than clicked forever.
@@ -1223,7 +1224,7 @@ previous file for a few minutes after a push.
 The first line in the console says which build and which source is running:
 
 ```
-[AIC] GILDED ARCHIVES v3.95  (from https://raw.githubusercontent.com/...)
+[AIC] GILDED ARCHIVES v4.03  (from https://raw.githubusercontent.com/...)
 ```
 
 If a fix looks absent, check that line first, then re-execute. To keep a build

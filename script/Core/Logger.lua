@@ -29,18 +29,35 @@ function Logger.SetVerbose(enabled)
     VERBOSE = enabled == true
 end
 
+--// Internal: fill each "%s" from the arguments, in order.
+--//
+--// This used to be one gsub call per argument, and gsub replaces every
+--// match it finds: the first argument filled the whole line, so
+--// "equip %s: %s (was %s)" read "equip Weapon: Weapon (was Weapon)" and the
+--// other arguments were dropped. One pass with a counter gives each
+--// placeholder its own argument, and a line with more placeholders than
+--// arguments keeps the leftover ones instead of losing text.
+local function Format(message, args)
+    local Index = 0
+
+    local Text = tostring(message):gsub('%%s', function()
+        Index += 1
+
+        local Value = args[Index]
+
+        if Value == nil then
+            return '%s'
+        end
+
+        return tostring(Value)
+    end)
+
+    return Text
+end
+
 --// Internal: format and print a log message.
 local function Log(level, message, ...)
-    local args = {...}
-    local formatted = message
-    if #args > 0 then
-        for _, arg in ipairs(args) do
-            formatted = formatted:gsub('%%s', function()
-                return tostring(arg)
-            end)
-        end
-    end
-    print(LOG_PREFIX, level, formatted)
+    print(LOG_PREFIX, level, Format(message, table.pack(...)))
 end
 
 --// Log at INFO level. Always shown.
