@@ -1,4 +1,4 @@
--- EQUIP PANEL PROBE  (v1)
+-- EQUIP PANEL PROBE  (v2)
 --
 -- Paste this whole file into the executor. The menu may be open or closed; the
 -- probe opens what it needs, measures, and puts the menu back the way it found
@@ -16,9 +16,18 @@
 --      (that is what decides if the menu can be skipped entirely)
 --   E. one real press on a hidden card, checked against PlayerStats, then the
 --      worn item put back
+--   F. whether the list holds every item or only a window of them: what the
+--      search box says, the canvas size, and the card count after scrolling
+--      to the bottom
 --
 -- Read the [PANEL] lines. Anything that throws is caught and printed, so one
 -- bad node cannot swallow the rest of the report.
+--
+-- One thing v1 got wrong: the panel rebuilds (and re-pools) its cards the
+-- moment an item goes on, so a card held from before the press is gone or has
+-- another item's data on it. Section E now looks its card up again before every
+-- press, which is what makes the undo work; a stale node was why v1 could not
+-- put the worn item back.
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -121,6 +130,15 @@ end
 local function ValueOf(Node)
     local Ok, Value = pcall(function()
         return Node.Value
+    end)
+
+    return Ok and Value or nil
+end
+
+--// A property that may not exist on this class; nil instead of an error.
+local function Prop(Node, Key)
+    local Ok, Value = pcall(function()
+        return Node[Key]
     end)
 
     return Ok and Value or nil
@@ -250,6 +268,18 @@ local function Cards(List)
     return Found
 end
 
+--// The card for this item right now. The panel rebuilds its cards after every
+--// press, so this is looked up again each time instead of held.
+local function FindCard(Name)
+    for _, Card in ipairs(Cards(List)) do
+        if Card.Name == Name then
+            return Card
+        end
+    end
+
+    return nil
+end
+
 local function CardSummary(Card)
     local Entry = Card:FindFirstChild("Entry")
     local Typed = Card:FindFirstChild("Type")
@@ -349,7 +379,10 @@ local FrameB = Equipment and Equipment:FindFirstChild("FrameB")
 local List = FrameB and FrameB:FindFirstChild("List")
 local Filters = FrameB and FrameB:FindFirstChild("Filters")
 
-out("FrontRight found: %s   menu showing: %s", tostring(FrontRight ~= nil), tostring(OnScreen(MenuGui)))
+--// Whether the menu was up when the probe started, so it can be put back.
+local MenuWasShown = OnScreen(MenuGui)
+
+out("FrontRight found: %s   menu showing: %s", tostring(FrontRight ~= nil), tostring(MenuWasShown))
 out("equipment page visible: %s   frameB: %s   list: %s   filters: %s", tostring(Equipment and Equipment.Visible), tostring(FrameB ~= nil), tostring(List ~= nil), tostring(Filters ~= nil))
 out("cards already built: %d", #Cards(List))
 
@@ -736,17 +769,8 @@ step("E. a press with the page hidden", function()
     local Field = PlayerStats:FindFirstChild(WornField)
     WornName = Field and Trim(tostring(ValueOf(Field))) or ""
 
-    local RestoreCard
-
     if WornName ~= "" then
-        for _, Card in ipairs(Cards(List)) do
-            if Card.Name == WornName then
-                RestoreCard = Card
-                break
-            end
-        end
-
-        if not RestoreCard then
+        if not FindCard(WornName) then
             out("   the worn %s \"%s\" has no card in the list, so a press could not be undone: skipped", WornField, WornName)
             return
         end
@@ -763,7 +787,9 @@ step("E. a press with the page hidden", function()
 
     out("   page away: menu showing %s   page visible %s", tostring(OnScreen(MenuGui)), tostring(Equipment and Equipment.Visible))
 
-    local Buttons = ProbeCard:FindFirstChild("Buttons")
+    --// Looked up again: section D may have rebuilt the list.
+    local Live = FindCard(ProbeCard.Name) or ProbeCard
+    local Buttons = Live:FindFirstChild("Buttons")
     local E = Buttons and Buttons:FindFirstChild("E")
 
     if not E then
@@ -780,7 +806,7 @@ step("E. a press with the page hidden", function()
     end, 2.5)
     local After = Field and Trim(tostring(ValueOf(Field))) or ""
 
-    out("   pressed %s via %s   worn %s -> %s   after %s (%.2fs)", ProbeCard.Name, tostring(Via), Before ~= "" and Before or "empty", After ~= "" and After or "empty", Took and string.format("%.2fs", Took) or "2.5s timeout", os.clock() - Started)
+    out("   pressed %s via %s   worn %s -> %s   after %s (%.2fs)", Live.Name, tostring(Via), Before ~= "" and Before or "empty", After ~= "" and After or "empty", Took and string.format("%.2fs", Took) or "2.5s timeout", os.clock() - Started)
 
     if After == Before then
         out("   RESULT: a hidden press does NOT equip. The page has to be shown before the equip button works.")
@@ -789,35 +815,126 @@ step("E. a press with the page hidden", function()
 
     out("   RESULT: a hidden press DOES equip. The menu can be skipped once the cards exist.")
 
-    if RestoreCard then
-        local Back = RestoreCard:FindFirstChild("Buttons")
-        local BackE = Back and Back:FindFirstChild("E")
+    if Before ~= "" then
+        local Restored = false
 
-        if BackE then
-            Press(BackE)
-            local Restored = TimeUntil(function()
-                return (Field and Trim(tostring(ValueOf(Field))) or "") == Before
-            end, 2.5)
+        --// Three tries, each on a card looked up again: the press that just
+        --// went through rebuilt the list, and the next one will too.
+        for Attempt = 1, 3 do
+            local Back = FindCard(Before)
+            local BackButtons = Back and Back:FindFirstChild("Buttons")
+            local BackE = BackButtons and BackButtons:FindFirstChild("E")
 
-            if Restored then
-                out("   put \"%s\" back", Before)
+            if not BackE then
+                out("   try %d: \"%s\" has no card on the page", Attempt, Before)
+                task.wait(0.2)
             else
-                out("   WARNING: could not put \"%s\" back automatically. Press Equip Now in the Gear tab.", Before)
+                Press(BackE)
+
+                if TimeUntil(function()
+                    return (Field and Trim(tostring(ValueOf(Field))) or "") == Before
+                end, 2) then
+                    out("   put \"%s\" back (try %d)", Before, Attempt)
+                    Restored = true
+                    break
+                end
             end
-        else
-            out("   WARNING: \"%s\" has no equip button. Press Equip Now in the Gear tab.", Before)
+
+            task.wait(0.2)
+        end
+
+        if not Restored then
+            local Now = Field and Trim(tostring(ValueOf(Field))) or ""
+            out("   WARNING: could not put \"%s\" back (worn is \"%s\"). Press Equip Now in the Gear tab.", Before, Now ~= "" and Now or "empty")
         end
     end
 end)
 
 ------------------------------------------------------------------------
---// F. Summary
+--// F. Is the panel showing every item, or only a window of them
+------------------------------------------------------------------------
+
+step("F. how much of the list exists at once", function()
+    if not List then
+        out("   no list")
+        return
+    end
+
+    local function Number(Value)
+        if not Value then
+            return "?"
+        end
+
+        local Ok, Y = pcall(function()
+            return Value.Y
+        end)
+
+        return Ok and string.format("%d", math.floor(Y)) or "?"
+    end
+
+    local SearchBar = FrameB and FrameB:FindFirstChild("SearchBar")
+    local SearchBox = SearchBar and SearchBar:FindFirstChildWhichIsA("TextBox", true)
+    local SearchText = ""
+
+    if SearchBox then
+        local Ok, Text = pcall(function()
+            return SearchBox.Text
+        end)
+
+        SearchText = Ok and tostring(Text) or "?"
+    end
+
+    out("   list is a %s   cards %d of %d children", tostring(List.ClassName), #Cards(List), #Kids(List))
+    out("   canvas %s   position %s   scrolling %s   search box \"%s\"", Number(Prop(List, "AbsoluteCanvasSize")), Number(Prop(List, "CanvasPosition")), tostring(Prop(List, "ScrollingEnabled")), Clip(SearchText))
+
+    local Before = #Cards(List)
+    local Seen = Watched
+
+    --// Scrolling to the bottom is what tells a windowed list (more cards
+    --// appear as you scroll) from one that holds every item at once.
+    pcall(function()
+        List.CanvasPosition = Vector2.new(0, List.AbsoluteCanvasSize.Y)
+    end)
+
+    task.wait(0.6)
+
+    out("   scrolled to the bottom: cards %d -> %d   ChildAdded +%d", Before, #Cards(List), Watched - Seen)
+
+    pcall(function()
+        List.CanvasPosition = Vector2.new(0, 0)
+    end)
+
+    task.wait(0.4)
+
+    out("   scrolled back: cards %d", #Cards(List))
+end)
+
+------------------------------------------------------------------------
+--// G. Summary
 ------------------------------------------------------------------------
 
 step("F. what this means", function()
     out("   cards in the list now: %d   ChildAdded events seen: %d", #Cards(List), Watched)
     out("   filters: %d   menu showing: %s   page visible: %s", #(Filters and Kids(Filters) or {}), tostring(OnScreen(MenuGui)), tostring(Equipment and Equipment.Visible))
     out("   done in %s — paste every [PANEL] line", Now())
+end)
+
+step("G. putting the menu back", function()
+    if MenuWasShown or not OnScreen(MenuGui) then
+        out("   left as found (menu showing: %s)", tostring(OnScreen(MenuGui)))
+        return
+    end
+
+    local MenuButton = Follow(PlayerGui, "DeviceGui", "ConsolePC", "MenuButton")
+        or Follow(PlayerGui, "DeviceGui", "Mobile", "MobileMenuButton")
+
+    if MenuButton then
+        Press(MenuButton)
+        task.wait(0.4)
+        out("   closed the menu this probe opened")
+    else
+        out("   no menu button, so the menu this probe opened is still up")
+    end
 end)
 
 if Watcher then
