@@ -447,32 +447,6 @@ end
 local function GetPage()
 return Follow(GetPlayerGui(), PAGE_PATH)
 end
-local function FindMenuButton()
-local Gui = GetPlayerGui()
-for _, Path in ipairs(MENU_BUTTONS) do
-local Button = Follow(Gui, Path)
-if Button and GuiClick.IsOnScreen(Button) then
-return Button
-end
-end
-for _, Path in ipairs(MENU_BUTTONS) do
-local Button = Follow(Gui, Path)
-if Button then
-return Button
-end
-end
-return nil
-end
-local function FindEquipmentTab()
-local Gui = GetPlayerGui()
-for _, Path in ipairs(TAB_PATHS) do
-local Tab = Follow(Gui, Path)
-if Tab and IsA(Tab, "GuiButton") then
-return Tab
-end
-end
-return nil
-end
 local function FilterButtons()
 local Frame = Follow(GetPlayerGui(), FILTERS_PATH)
 local Found = {}
@@ -598,6 +572,52 @@ return Object[Key]
 end)
 return Ok and type(Value) == "number" and Value or nil
 end
+local function IsDrawn(Gui)
+if not (Gui and IsShowing(Gui)) then
+return false
+end
+local OkSize, Size = pcall(function()
+return Gui.AbsoluteSize
+end)
+local Width = OkSize and NumberField(Size, "X") or nil
+return Width ~= nil and Width >= 1
+end
+local function EquipmentTabs()
+local Gui = GetPlayerGui()
+local Drawn, Others = {}, {}
+for _, Path in ipairs(TAB_PATHS) do
+local Tab = Follow(Gui, Path)
+if Tab and IsA(Tab, "GuiButton") then
+table.insert(IsDrawn(Tab) and Drawn or Others, Tab)
+end
+end
+for _, Tab in ipairs(Others) do
+table.insert(Drawn, Tab)
+end
+return Drawn
+end
+local function FindMenuButton()
+local Gui = GetPlayerGui()
+local Fallback
+for _, Path in ipairs(MENU_BUTTONS) do
+local Button = Follow(Gui, Path)
+if Button and IsDrawn(Button) then
+return Button
+end
+Fallback = Fallback or Button
+end
+for _, RootName in ipairs({ "DeviceGui", "GameGui" }) do
+local Root = Gui and Gui:FindFirstChild(RootName)
+local Button = Root and Root:FindFirstChild("MenuButton", true)
+if Button and IsA(Button, "GuiButton") then
+if IsDrawn(Button) then
+return Button
+end
+Fallback = Fallback or Button
+end
+end
+return Fallback
+end
 local function IsPointerSafe(Button)
 if not (Button and IsShowing(Button)) then
 return false
@@ -668,6 +688,20 @@ return true
 end
 end
 return false
+end
+local function PressEquipmentTab()
+local Tabs = EquipmentTabs()
+local Drawn = {}
+for _, Tab in ipairs(Tabs) do
+if IsDrawn(Tab) then
+table.insert(Drawn, Tab)
+end
+end
+local Pressed = false
+for _, Tab in ipairs(#Drawn > 0 and Drawn or Tabs) do
+Pressed = PressNow(Tab) or Pressed
+end
+return Pressed
 end
 local function PressUntil(Button, Verify)
 if not Button then
@@ -1068,16 +1102,16 @@ end
 return There()
 end
 local function OpenPanel()
-local Tab = FindEquipmentTab()
+local Tabs = EquipmentTabs()
 local MenuButton = FindMenuButton()
-if not Tab and not MenuButton then
+if #Tabs == 0 and not MenuButton then
 return false, "no tab"
 end
-if Tab and ReadyToClick() then
+if ReadyToClick() then
 return true, "open"
 end
-if Tab and not IsPageShowing() then
-PressNow(Tab)
+if #Tabs > 0 and not IsPageShowing() then
+PressEquipmentTab()
 if WaitUntil(ReadyToClick, CARD_WAIT) then
 return true, "tab"
 end
@@ -1091,17 +1125,23 @@ local Open = Follow(GetPlayerGui(), MENU_PATH)
 return Open ~= nil and IsShowing(Open)
 end, OPEN_WAIT)
 end
-Tab = FindEquipmentTab()
-if Tab and not IsPageShowing() then
-PressNow(Tab)
+if not IsPageShowing() then
+PressEquipmentTab()
 end
 if WaitUntil(ReadyToClick, CARD_WAIT) then
 return true, "opened"
 end
+if not IsPageShowing() then
+task.wait(CLICK_SETTLE)
+PressEquipmentTab()
+if WaitUntil(ReadyToClick, CARD_WAIT) then
+return true, "opened"
+end
+end
 if RefillList() and WaitUntil(ReadyToClick, CARD_WAIT) then
 return true, "filter"
 end
-return false, Tab and "empty" or "no tab"
+return false, #Tabs > 0 and "empty" or "no tab"
 end
 local function EnsureCards()
 if HasCards() then
