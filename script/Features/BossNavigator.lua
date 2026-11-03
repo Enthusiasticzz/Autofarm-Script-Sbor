@@ -4637,6 +4637,7 @@ return {
         --// one) always sees a complete table.
         AICFeature.BossNav = {
             S = S,
+            FeatureState = FeatureState,
             SetStatus = SetStatus,
             Say = Say,
             IsEnabled = IsEnabled,

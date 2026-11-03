@@ -27,12 +27,14 @@ return {
         local AICCombat = Context.AICCombat
         local AICCombatUtils = Context.AICCombatUtils
         local AICFeature = Context.AICFeature
-        --// The route reads the same table as Context.Feature; FeatureState is
-        --// the older name, kept for a context that still passes it alone.
-        local FeatureState = Context.FeatureState or Context.Feature
-
         local Boss = AICFeature.BossNav
         assert(type(Boss) == "table", "BossNavigator_Evade: BossNavigator did not publish BossNav")
+
+        --// The route publishes the table it actually uses (Context.Feature in
+        --// this build), so the hold and the route can never disagree about a
+        --// switch. The context names stay as fallbacks for a harness.
+        local FeatureState = Boss.FeatureState or Context.FeatureState or Context.Feature
+        assert(FeatureState ~= nil, "BossNavigator_Evade: the route published no feature state")
 
         local REQUIRED = {
             "S", "SetStatus", "Say", "IsEnabled", "CurrentStop", "GetStops",

@@ -2912,6 +2912,7 @@ AICUI.RefreshBossRoutePickers()
 AICUI.RefreshBossPathList()
 AICFeature.BossNav = {
 S = S,
+FeatureState = FeatureState,
 SetStatus = SetStatus,
 Say = Say,
 IsEnabled = IsEnabled,
@@ -2976,9 +2977,10 @@ local AICConfig = Context.AICConfig
 local AICCombat = Context.AICCombat
 local AICCombatUtils = Context.AICCombatUtils
 local AICFeature = Context.AICFeature
-local FeatureState = Context.FeatureState or Context.Feature
 local Boss = AICFeature.BossNav
 assert(type(Boss) == "table", "BossNavigator_Evade: BossNavigator did not publish BossNav")
+local FeatureState = Boss.FeatureState or Context.FeatureState or Context.Feature
+assert(FeatureState ~= nil, "BossNavigator_Evade: the route published no feature state")
 local REQUIRED = {
 "S", "SetStatus", "Say", "IsEnabled", "CurrentStop", "GetStops",
 "BeginStop", "ResetWalk", "EndDodge", "StopFlee", "ClearKillClock",
