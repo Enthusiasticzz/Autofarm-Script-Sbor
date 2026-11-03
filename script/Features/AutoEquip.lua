@@ -52,6 +52,10 @@ return {
         local OPEN_WAIT = 2
         local CARD_WAIT = 2.5
         local VERIFY_WAIT = 2.5
+        --// How long one delivery style gets before the next is tried. An
+        --// equip the game accepts shows up at once; this only has to outlast
+        --// the frame the handler runs on.
+        local ATTEMPT_WAIT = 0.9
         local POLL = 0.1
         --// Between the first button and the opposite one on a failed equip.
         local CLICK_SETTLE = 0.35
@@ -70,6 +74,9 @@ return {
         }
         local LIST_PATH = { "GameGui", "MenuGui-NEW", "FrontRight", "Menu", "Frames", "Equipment", "FrameB", "List" }
         local PAGE_PATH = { "GameGui", "MenuGui-NEW", "FrontRight", "Menu", "Frames", "Equipment" }
+        --// The menu itself: its button toggles it, so it is only pressed when
+        --// the menu is not already showing.
+        local MENU_PATH = { "GameGui", "MenuGui-NEW" }
 
         --// The skill a Skill requirement is measured against is the Type
         --// itself; the player carries one number per Type.
@@ -361,9 +368,12 @@ return {
             end
         end
 
-        --// Our own window is hidden for the length of a click, so a method
-        --// that sends a mouse click cannot land on it when it covers the
-        --// menu. Auto Start Game hides its window for the same reason.
+        --// Our own window is hidden for the length of a pointer click, so a
+        --// method that sends a mouse click cannot land on it when it covers
+        --// the menu. Auto Start Game hides its window for the same reason.
+        --// Signal presses move no pointer, so they run with the window left
+        --// alone: hiding it for those only made the macro's own controls
+        --// blink out for the length of a pass.
         local function WithWindowHidden(Action)
             local ScreenGui = Context.UI and Context.UI.ScreenGui
             local WasShown = ScreenGui ~= nil and ScreenGui.Enabled
@@ -389,20 +399,272 @@ return {
             return Result
         end
 
-        local function Press(Button)
+        --// The signals an equip can be bound to. A handler may live on any
+        --// one of them, so each is tried instead of only the first that
+        --// answers: firing a signal nobody listens to used to count as a
+        --// click and then wait 2.5 s for an item that was never going on.
+        local PRESS_SIGNALS = { "MouseButton1Click", "MouseButton1Down", "Activated" }
+
+        local function ConnectionCount(Signal)
+            if type(getconnections) ~= "function" then
+                return nil
+            end
+
+            local Ok, List = pcall(getconnections, Signal)
+
+            if not Ok or type(List) ~= "table" then
+                return nil
+            end
+
+            return #List
+        end
+
+        local function FireHandlers(Signal)
+            if type(getconnections) ~= "function" then
+                return false
+            end
+
+            local Ok, List = pcall(getconnections, Signal)
+
+            if not Ok or type(List) ~= "table" then
+                return false
+            end
+
+            local Fired = false
+
+            for _, Connection in ipairs(List) do
+                if pcall(function()
+                    Connection:Fire()
+                end) then
+                    Fired = true
+                end
+            end
+
+            return Fired
+        end
+
+        --// Fires one signal's handlers; false when nothing is listening.
+        --// firesignal "succeeds" on a signal with no handlers, which is how a
+        --// press that reached nothing still looked like a press.
+        local function SendSignal(Button, SignalName)
+            local Signal = Button and Button[SignalName]
+
+            if not Signal then
+                return false
+            end
+
+            local Count = ConnectionCount(Signal)
+
+            if Count == 0 then
+                return false
+            end
+
+            if FireHandlers(Signal) then
+                return true
+            end
+
+            --// No getconnections to ask: firesignal is the only way in, and
+            --// it cannot say whether anyone was listening.
+            if Count == nil and type(firesignal) == "function" then
+                return (pcall(firesignal, Signal))
+            end
+
+            return false
+        end
+
+        --// Drawn: every frame above it is Visible, and a ScreenGui above it
+        --// is Enabled. The local player's own tree ends at PlayerGui, which
+        --// has no Enabled, so reaching it means shown - GuiClick.IsOnScreen
+        --// wants a ScreenGui ancestor and says no to the game's own menus.
+        local function IsShowing(Node)
+            if not Node then
+                return false
+            end
+
+            local Current = Node
+
+            while Current do
+                local OkLayer, IsLayer = pcall(function()
+                    return Current:IsA("LayerCollector")
+                end)
+
+                if OkLayer and IsLayer then
+                    local OkEnabled, Enabled = pcall(function()
+                        return Current.Enabled
+                    end)
+
+                    return not OkEnabled or Enabled ~= false
+                end
+
+                local OkVisible, Visible = pcall(function()
+                    return Current.Visible
+                end)
+
+                if OkVisible and Visible == false then
+                    return false
+                end
+
+                if Current.ClassName == "PlayerGui" then
+                    return true
+                end
+
+                Current = Current.Parent
+            end
+
+            return false
+        end
+
+        --// A number off a Vector2 (userdata, not a table in Roblox) or a
+        --// plain table holding the same fields.
+        local function NumberField(Object, Key)
+            if Object == nil then
+                return nil
+            end
+
+            local Ok, Value = pcall(function()
+                return Object[Key]
+            end)
+
+            return Ok and type(Value) == "number" and Value or nil
+        end
+
+        --// A pointer click only works where the button is drawn. A card
+        --// scrolled out of the list would otherwise be clicked through
+        --// whatever happens to be on top of it.
+        local function IsPointerSafe(Button)
+            if not (Button and IsShowing(Button)) then
+                return false
+            end
+
+            local OkSize, Size = pcall(function()
+                return Button.AbsoluteSize
+            end)
+
+            local Width = OkSize and NumberField(Size, "X") or nil
+            local Height = OkSize and NumberField(Size, "Y") or nil
+
+            if not (Width and Height) or Width < 1 or Height < 1 then
+                return false
+            end
+
+            local Ancestor = Button.Parent
+
+            while Ancestor do
+                local Clips = false
+
+                pcall(function()
+                    Clips = Ancestor:IsA("ScrollingFrame") or Ancestor.ClipsDescendants == true
+                end)
+
+                if Clips then
+                    local Ok, Pos, Size, FramePos, FrameSize = pcall(function()
+                        return Button.AbsolutePosition,
+                            Button.AbsoluteSize,
+                            Ancestor.AbsolutePosition,
+                            Ancestor.AbsoluteSize
+                    end)
+
+                    if not Ok then
+                        return false
+                    end
+
+                    local X = NumberField(Pos, "X")
+                    local Y = NumberField(Pos, "Y")
+                    local W = NumberField(Size, "X")
+                    local H = NumberField(Size, "Y")
+                    local FX = NumberField(FramePos, "X")
+                    local FY = NumberField(FramePos, "Y")
+                    local FW = NumberField(FrameSize, "X")
+                    local FH = NumberField(FrameSize, "Y")
+
+                    if not (X and Y and W and H and FX and FY and FW and FH) then
+                        return false
+                    end
+
+                    local CenterX = X + W / 2
+                    local CenterY = Y + H / 2
+
+                    if CenterX < FX or CenterX > FX + FW
+                        or CenterY < FY or CenterY > FY + FH
+                    then
+                        return false
+                    end
+                end
+
+                Ancestor = Ancestor.Parent
+            end
+
+            return true
+        end
+
+        --// Presses once, whatever signal answers, and does not wait. For a
+        --// tab or the menu button, which toggle rather than confirm.
+        local function PressNow(Button)
             if not Button then
                 return false
             end
 
-            return WithWindowHidden(function()
-                local Method = GuiClick.Click(Button, S.LastMethod, { "MouseButton1Click", "Activated", "MouseButton1Down" })
-
-                if Method then
-                    S.LastMethod = Method
+            for _, SignalName in ipairs(PRESS_SIGNALS) do
+                if SendSignal(Button, SignalName) then
+                    return true
                 end
+            end
 
-                return Method ~= nil
-            end)
+            if IsPointerSafe(Button) then
+                local Method = WithWindowHidden(function()
+                    return GuiClick.Click(Button, S.LastMethod, PRESS_SIGNALS)
+                end)
+
+                if Method and Method ~= false then
+                    S.LastMethod = Method
+                    return true
+                end
+            end
+
+            return false
+        end
+
+        --// Presses until the game shows the effect. A press that reaches
+        --// nothing is not a press: every signal, then a real click, each
+        --// followed by Verify(), and the escalation stops as soon as one
+        --// takes. Returns whether it took, and what was tried.
+        local function PressUntil(Button, Verify)
+            if not Button then
+                return false, "no button"
+            end
+
+            local Sent = false
+
+            for _, SignalName in ipairs(PRESS_SIGNALS) do
+                if SendSignal(Button, SignalName) then
+                    Sent = true
+
+                    if WaitUntil(Verify, ATTEMPT_WAIT) then
+                        return true, SignalName
+                    end
+                end
+            end
+
+            --// A signal was heard and the game did not act: it got the press
+            --// and refused it, so a pointer click would only fire the same
+            --// handlers again. The pointer is for a button no signal of which
+            --// could be fired at all.
+            if not Sent and IsPointerSafe(Button) then
+                local Method = WithWindowHidden(function()
+                    return GuiClick.Click(Button, S.LastMethod, PRESS_SIGNALS)
+                end)
+
+                if Method and Method ~= false then
+                    Sent = true
+                    S.LastMethod = Method
+
+                    if WaitUntil(Verify, VERIFY_WAIT) then
+                        return true, Method
+                    end
+                end
+            end
+
+            return false, Sent and "ignored" or "no click"
         end
 
         ------------------------------------------------------------------------
@@ -579,6 +841,20 @@ return {
             return Cards
         end
 
+        --// The live card for a name. The game rebuilds the list when an item
+        --// goes on, so a card read before the last equip may no longer be in
+        --// the panel, and pressing its buttons would reach nothing.
+        local function LiveCard(Card)
+            local List = GetList()
+            local Found = List and List:FindFirstChild(Card.Name)
+
+            if Found and IsCard(Found) then
+                return Found
+            end
+
+            return Card.Card
+        end
+
         local function MeetsRequirement(Card, Stats)
             if Card.Amount == nil then
                 return false
@@ -668,7 +944,12 @@ return {
                     and not Card.Equipped
                     and Stats.Worn[Slot.Id] ~= Card.Name
                     and Used[Card.Name] ~= true
-                    and (Card.Name == "Fists" or Stats.Owned[NormalizeName(Card.Name)] == true)
+                    --// The panel only lists what is owned, so the inventory
+                    --// is a second opinion; it is only used when it names
+                    --// something on the panel (see RunPass).
+                    and (not Stats.InventoryGate
+                        or Card.Name == "Fists"
+                        or Stats.Owned[NormalizeName(Card.Name)] == true)
                     and MeetsRequirement(Card, Stats)
 
                 if Eligible then
@@ -738,11 +1019,16 @@ return {
             local PlayerStats = GetPlayerStats()
             local Field = PlayerStats and PlayerStats:FindFirstChild(Slot.Field)
 
+            --// PlayerStats is the worn state the game itself keeps; the
+            --// card's own marker is only a fallback, and only on the card
+            --// that is in the panel now.
             if Field and ReadName(Field) == Card.Name then
                 return true
             end
 
-            return ReadBool(Card.Card:FindFirstChild("isEquipped"))
+            local Node = LiveCard(Card)
+
+            return ReadBool(Node and Node:FindFirstChild("isEquipped"))
         end
 
         ------------------------------------------------------------------------
@@ -779,10 +1065,24 @@ return {
             return false
         end
 
+        --// The cards outlive the page that showed them, so a list with cards
+        --// in it is not the same as an Equipment page you can press. The
+        --// game ignores a button on a page that is not showing.
+        local function IsPageShowing()
+            local Page = GetPage()
+
+            return Page ~= nil and Page.Visible == true and IsShowing(Page)
+        end
+
+        local function ReadyToClick()
+            return HasCards() and IsPageShowing()
+        end
+
         --// Selects the Equipment page, opening the menu only when the page
-        --// cannot be reached without it. True once cards are readable.
+        --// cannot be reached without it. True once cards are readable on a
+        --// page that is actually showing.
         local function EnsureCards()
-            if HasCards() then
+            if ReadyToClick() then
                 return true, "open"
             end
 
@@ -795,55 +1095,88 @@ return {
             end
 
             if Tab then
-                Press(Tab)
+                PressNow(Tab)
+
+                if WaitUntil(ReadyToClick, CARD_WAIT) then
+                    return true, "tab"
+                end
             end
 
-            if WaitUntil(HasCards, CARD_WAIT) then
-                return true, Tab and "tab" or "open"
-            end
+            local Menu = Follow(GetPlayerGui(), MENU_PATH)
 
-            if MenuButton then
-                Press(MenuButton)
+            --// The menu button is a toggle: pressing it with the menu already
+            --// open would close the page instead of showing it.
+            if MenuButton and not (Menu and IsShowing(Menu)) then
                 S.PressedMenu = true
+                PressNow(MenuButton)
                 WaitUntil(function()
-                    local Page = GetPage()
-                    return Page ~= nil and Page.Visible == true
+                    local Open = Follow(GetPlayerGui(), MENU_PATH)
+                    return Open ~= nil and IsShowing(Open)
                 end, OPEN_WAIT)
             end
 
             Tab = FindEquipmentTab()
 
             if Tab then
-                Press(Tab)
+                PressNow(Tab)
             end
 
-            if WaitUntil(HasCards, CARD_WAIT) then
+            if WaitUntil(ReadyToClick, CARD_WAIT) then
                 return true, "opened"
             end
 
             return false, Tab and "empty" or "no tab"
         end
 
+        --// The card the equip button acts on is the one the page is showing:
+        --// a card that is not on display is selected first, so the press
+        --// cannot land on the item the page was showing before it.
+        local function FocusCard(Card)
+            local Node = LiveCard(Card)
+            local Flag = Node and Node:FindFirstChild("onDisplay")
+
+            if not Flag or ReadBool(Flag) then
+                return Node
+            end
+
+            PressUntil(Node, function()
+                local Live = LiveCard(Card)
+                local Marker = Live and Live:FindFirstChild("onDisplay")
+
+                return Marker ~= nil and ReadBool(Marker)
+            end)
+
+            return LiveCard(Card)
+        end
+
         local function EquipSlot(Slot, Card)
             local Order = { Slot.Button or "E", Slot.Button == "E2" and "E" or "E2" }
+            local Node = FocusCard(Card)
+            local Detail = "no button"
 
             for Index, ButtonName in ipairs(Order) do
                 if Index > 1 then
                     task.wait(CLICK_SETTLE)
+                    Node = LiveCard(Card)
                 end
 
-                local Button = Card.Buttons and Card.Buttons:FindFirstChild(ButtonName)
+                local Buttons = Node and Node:FindFirstChild("Buttons")
+                local Button = Buttons and Buttons:FindFirstChild(ButtonName)
 
-                if Button and Press(Button) then
-                    if WaitUntil(function()
+                if Button then
+                    local Took, Why = PressUntil(Button, function()
                         return Wearing(Card, Slot)
-                    end, VERIFY_WAIT) then
+                    end)
+
+                    if Took then
                         return true, ButtonName
                     end
+
+                    Detail = Why
                 end
             end
 
-            return false
+            return false, Detail
         end
 
         --// Key is the stat the slot was actually ranked on, so the number
@@ -916,6 +1249,19 @@ return {
                 return
             end
 
+            --// "Name|2,Name|1" is the inventory, but it may hold only the
+            --// crafting materials and not the gear (the panel is the proof
+            --// of ownership). If not one card is named in it, the gate is
+            --// switched off instead of rejecting every card on the page.
+            Stats.InventoryGate = false
+
+            for _, Card in ipairs(Cards) do
+                if Stats.Owned[NormalizeName(Card.Name)] then
+                    Stats.InventoryGate = true
+                    break
+                end
+            end
+
             local Changed, Failed = {}, {}
             local Used = {}
             local Statless = 0
@@ -932,12 +1278,19 @@ return {
                     --// there is nothing to do and nothing to name.
                     if Card then
                         if Equip then
-                            if EquipSlot(Slot, Card) then
+                            SetStatus(string.format("EQUIPPING  ·  %s -> %s", Slot.Label, Card.Name))
+
+                            local Took, Detail = EquipSlot(Slot, Card)
+
+                            if Took then
                                 table.insert(Changed, Slot.Label .. " -> " .. Describe(Slot, Card, Why))
                                 Stats.Worn[Slot.Id] = Card.Name
                                 Used[Card.Name] = true
                             else
-                                table.insert(Failed, Slot.Label .. " (" .. Card.Name .. ")")
+                                --// Why it did not take matters: a press that
+                                --// reached nothing is a different problem
+                                --// from a game that refused the item.
+                                table.insert(Failed, string.format("%s (%s, %s)", Slot.Label, Card.Name, tostring(Detail)))
                             end
                         else
                             table.insert(Changed, Slot.Label .. " -> " .. Describe(Slot, Card, Why))
@@ -968,7 +1321,14 @@ return {
                 table.insert(Parts, "FAILED " .. table.concat(Failed, ", "))
             end
 
-            local Prefix = Equip and "DONE" or "WOULD EQUIP"
+            --// Nothing went on is not "DONE": the readout used to claim it
+            --// for a pass whose every press was refused.
+            local Prefix = "WOULD EQUIP"
+
+            if Equip then
+                Prefix = #Changed > 0 and "DONE" or (#Failed > 0 and "NOT EQUIPPED" or "DONE")
+            end
+
             SetStatus(string.format("%s  ·  %d cards  ·  %s", Prefix, #Cards, table.concat(Parts, "  ·  ")))
 
             if Equip then
@@ -1004,7 +1364,7 @@ return {
                     local MenuButton = FindMenuButton()
 
                     if MenuButton then
-                        Press(MenuButton)
+                        PressNow(MenuButton)
                     end
                 end
 

@@ -255,6 +255,7 @@ local Logger = Context.Logger
 local OPEN_WAIT = 2
 local CARD_WAIT = 2.5
 local VERIFY_WAIT = 2.5
+local ATTEMPT_WAIT = 0.9
 local POLL = 0.1
 local CLICK_SETTLE = 0.35
 local STATUS_SLOTS = 3
@@ -268,6 +269,7 @@ local TAB_PATHS = {
 }
 local LIST_PATH = { "GameGui", "MenuGui-NEW", "FrontRight", "Menu", "Frames", "Equipment", "FrameB", "List" }
 local PAGE_PATH = { "GameGui", "MenuGui-NEW", "FrontRight", "Menu", "Frames", "Equipment" }
+local MENU_PATH = { "GameGui", "MenuGui-NEW" }
 local SKILL_BY_TYPE = {
 ["One-Handed"] = "One-HandedSkill",
 ["Two-Handed"] = "Two-HandedSkill",
@@ -500,17 +502,186 @@ return false
 end
 return Result
 end
-local function Press(Button)
+local PRESS_SIGNALS = { "MouseButton1Click", "MouseButton1Down", "Activated" }
+local function ConnectionCount(Signal)
+if type(getconnections) ~= "function" then
+return nil
+end
+local Ok, List = pcall(getconnections, Signal)
+if not Ok or type(List) ~= "table" then
+return nil
+end
+return #List
+end
+local function FireHandlers(Signal)
+if type(getconnections) ~= "function" then
+return false
+end
+local Ok, List = pcall(getconnections, Signal)
+if not Ok or type(List) ~= "table" then
+return false
+end
+local Fired = false
+for _, Connection in ipairs(List) do
+if pcall(function()
+Connection:Fire()
+end) then
+Fired = true
+end
+end
+return Fired
+end
+local function SendSignal(Button, SignalName)
+local Signal = Button and Button[SignalName]
+if not Signal then
+return false
+end
+local Count = ConnectionCount(Signal)
+if Count == 0 then
+return false
+end
+if FireHandlers(Signal) then
+return true
+end
+if Count == nil and type(firesignal) == "function" then
+return (pcall(firesignal, Signal))
+end
+return false
+end
+local function IsShowing(Node)
+if not Node then
+return false
+end
+local Current = Node
+while Current do
+local OkLayer, IsLayer = pcall(function()
+return Current:IsA("LayerCollector")
+end)
+if OkLayer and IsLayer then
+local OkEnabled, Enabled = pcall(function()
+return Current.Enabled
+end)
+return not OkEnabled or Enabled ~= false
+end
+local OkVisible, Visible = pcall(function()
+return Current.Visible
+end)
+if OkVisible and Visible == false then
+return false
+end
+if Current.ClassName == "PlayerGui" then
+return true
+end
+Current = Current.Parent
+end
+return false
+end
+local function NumberField(Object, Key)
+if Object == nil then
+return nil
+end
+local Ok, Value = pcall(function()
+return Object[Key]
+end)
+return Ok and type(Value) == "number" and Value or nil
+end
+local function IsPointerSafe(Button)
+if not (Button and IsShowing(Button)) then
+return false
+end
+local OkSize, Size = pcall(function()
+return Button.AbsoluteSize
+end)
+local Width = OkSize and NumberField(Size, "X") or nil
+local Height = OkSize and NumberField(Size, "Y") or nil
+if not (Width and Height) or Width < 1 or Height < 1 then
+return false
+end
+local Ancestor = Button.Parent
+while Ancestor do
+local Clips = false
+pcall(function()
+Clips = Ancestor:IsA("ScrollingFrame") or Ancestor.ClipsDescendants == true
+end)
+if Clips then
+local Ok, Pos, Size, FramePos, FrameSize = pcall(function()
+return Button.AbsolutePosition,
+Button.AbsoluteSize,
+Ancestor.AbsolutePosition,
+Ancestor.AbsoluteSize
+end)
+if not Ok then
+return false
+end
+local X = NumberField(Pos, "X")
+local Y = NumberField(Pos, "Y")
+local W = NumberField(Size, "X")
+local H = NumberField(Size, "Y")
+local FX = NumberField(FramePos, "X")
+local FY = NumberField(FramePos, "Y")
+local FW = NumberField(FrameSize, "X")
+local FH = NumberField(FrameSize, "Y")
+if not (X and Y and W and H and FX and FY and FW and FH) then
+return false
+end
+local CenterX = X + W / 2
+local CenterY = Y + H / 2
+if CenterX < FX or CenterX > FX + FW
+or CenterY < FY or CenterY > FY + FH
+then
+return false
+end
+end
+Ancestor = Ancestor.Parent
+end
+return true
+end
+local function PressNow(Button)
 if not Button then
 return false
 end
-return WithWindowHidden(function()
-local Method = GuiClick.Click(Button, S.LastMethod, { "MouseButton1Click", "Activated", "MouseButton1Down" })
-if Method then
-S.LastMethod = Method
+for _, SignalName in ipairs(PRESS_SIGNALS) do
+if SendSignal(Button, SignalName) then
+return true
 end
-return Method ~= nil
+end
+if IsPointerSafe(Button) then
+local Method = WithWindowHidden(function()
+return GuiClick.Click(Button, S.LastMethod, PRESS_SIGNALS)
 end)
+if Method and Method ~= false then
+S.LastMethod = Method
+return true
+end
+end
+return false
+end
+local function PressUntil(Button, Verify)
+if not Button then
+return false, "no button"
+end
+local Sent = false
+for _, SignalName in ipairs(PRESS_SIGNALS) do
+if SendSignal(Button, SignalName) then
+Sent = true
+if WaitUntil(Verify, ATTEMPT_WAIT) then
+return true, SignalName
+end
+end
+end
+if not Sent and IsPointerSafe(Button) then
+local Method = WithWindowHidden(function()
+return GuiClick.Click(Button, S.LastMethod, PRESS_SIGNALS)
+end)
+if Method and Method ~= false then
+Sent = true
+S.LastMethod = Method
+if WaitUntil(Verify, VERIFY_WAIT) then
+return true, Method
+end
+end
+end
+return false, Sent and "ignored" or "no click"
 end
 local function ReadStats()
 local Stats = { Level = 0, Worn = {}, Owned = {}, Found = false }
@@ -633,6 +804,14 @@ end
 end
 return Cards
 end
+local function LiveCard(Card)
+local List = GetList()
+local Found = List and List:FindFirstChild(Card.Name)
+if Found and IsCard(Found) then
+return Found
+end
+return Card.Card
+end
 local function MeetsRequirement(Card, Stats)
 if Card.Amount == nil then
 return false
@@ -691,7 +870,9 @@ local Eligible = Slot.Types[Card.Type] == true
 and not Card.Equipped
 and Stats.Worn[Slot.Id] ~= Card.Name
 and Used[Card.Name] ~= true
-and (Card.Name == "Fists" or Stats.Owned[NormalizeName(Card.Name)] == true)
+and (not Stats.InventoryGate
+or Card.Name == "Fists"
+or Stats.Owned[NormalizeName(Card.Name)] == true)
 and MeetsRequirement(Card, Stats)
 if Eligible then
 table.insert(Candidates, Card)
@@ -744,7 +925,8 @@ local Field = PlayerStats and PlayerStats:FindFirstChild(Slot.Field)
 if Field and ReadName(Field) == Card.Name then
 return true
 end
-return ReadBool(Card.Card:FindFirstChild("isEquipped"))
+local Node = LiveCard(Card)
+return ReadBool(Node and Node:FindFirstChild("isEquipped"))
 end
 local function SetStatus(Text)
 if S.Status then
@@ -770,8 +952,15 @@ end
 end
 return false
 end
+local function IsPageShowing()
+local Page = GetPage()
+return Page ~= nil and Page.Visible == true and IsShowing(Page)
+end
+local function ReadyToClick()
+return HasCards() and IsPageShowing()
+end
 local function EnsureCards()
-if HasCards() then
+if ReadyToClick() then
 return true, "open"
 end
 local Tab = FindEquipmentTab()
@@ -780,44 +969,64 @@ if not Tab and not MenuButton then
 return false, "no tab"
 end
 if Tab then
-Press(Tab)
+PressNow(Tab)
+if WaitUntil(ReadyToClick, CARD_WAIT) then
+return true, "tab"
 end
-if WaitUntil(HasCards, CARD_WAIT) then
-return true, Tab and "tab" or "open"
 end
-if MenuButton then
-Press(MenuButton)
+local Menu = Follow(GetPlayerGui(), MENU_PATH)
+if MenuButton and not (Menu and IsShowing(Menu)) then
 S.PressedMenu = true
+PressNow(MenuButton)
 WaitUntil(function()
-local Page = GetPage()
-return Page ~= nil and Page.Visible == true
+local Open = Follow(GetPlayerGui(), MENU_PATH)
+return Open ~= nil and IsShowing(Open)
 end, OPEN_WAIT)
 end
 Tab = FindEquipmentTab()
 if Tab then
-Press(Tab)
+PressNow(Tab)
 end
-if WaitUntil(HasCards, CARD_WAIT) then
+if WaitUntil(ReadyToClick, CARD_WAIT) then
 return true, "opened"
 end
 return false, Tab and "empty" or "no tab"
 end
+local function FocusCard(Card)
+local Node = LiveCard(Card)
+local Flag = Node and Node:FindFirstChild("onDisplay")
+if not Flag or ReadBool(Flag) then
+return Node
+end
+PressUntil(Node, function()
+local Live = LiveCard(Card)
+local Marker = Live and Live:FindFirstChild("onDisplay")
+return Marker ~= nil and ReadBool(Marker)
+end)
+return LiveCard(Card)
+end
 local function EquipSlot(Slot, Card)
 local Order = { Slot.Button or "E", Slot.Button == "E2" and "E" or "E2" }
+local Node = FocusCard(Card)
+local Detail = "no button"
 for Index, ButtonName in ipairs(Order) do
 if Index > 1 then
 task.wait(CLICK_SETTLE)
+Node = LiveCard(Card)
 end
-local Button = Card.Buttons and Card.Buttons:FindFirstChild(ButtonName)
-if Button and Press(Button) then
-if WaitUntil(function()
+local Buttons = Node and Node:FindFirstChild("Buttons")
+local Button = Buttons and Buttons:FindFirstChild(ButtonName)
+if Button then
+local Took, Why = PressUntil(Button, function()
 return Wearing(Card, Slot)
-end, VERIFY_WAIT) then
+end)
+if Took then
 return true, ButtonName
 end
+Detail = Why
 end
 end
-return false
+return false, Detail
 end
 local function Describe(Slot, Card, Key)
 local Shown = Key and StatOf(Card, Key) or nil
@@ -864,6 +1073,13 @@ SetStatus("NO CARDS ON THE EQUIPMENT PAGE")
 Notify("The Equipment page showed no items.")
 return
 end
+Stats.InventoryGate = false
+for _, Card in ipairs(Cards) do
+if Stats.Owned[NormalizeName(Card.Name)] then
+Stats.InventoryGate = true
+break
+end
+end
 local Changed, Failed = {}, {}
 local Used = {}
 local Statless = 0
@@ -875,12 +1091,14 @@ Statless += 1
 end
 if Card then
 if Equip then
-if EquipSlot(Slot, Card) then
+SetStatus(string.format("EQUIPPING  ·  %s -> %s", Slot.Label, Card.Name))
+local Took, Detail = EquipSlot(Slot, Card)
+if Took then
 table.insert(Changed, Slot.Label .. " -> " .. Describe(Slot, Card, Why))
 Stats.Worn[Slot.Id] = Card.Name
 Used[Card.Name] = true
 else
-table.insert(Failed, Slot.Label .. " (" .. Card.Name .. ")")
+table.insert(Failed, string.format("%s (%s, %s)", Slot.Label, Card.Name, tostring(Detail)))
 end
 else
 table.insert(Changed, Slot.Label .. " -> " .. Describe(Slot, Card, Why))
@@ -903,7 +1121,10 @@ end
 if #Failed > 0 then
 table.insert(Parts, "FAILED " .. table.concat(Failed, ", "))
 end
-local Prefix = Equip and "DONE" or "WOULD EQUIP"
+local Prefix = "WOULD EQUIP"
+if Equip then
+Prefix = #Changed > 0 and "DONE" or (#Failed > 0 and "NOT EQUIPPED" or "DONE")
+end
 SetStatus(string.format("%s  ·  %d cards  ·  %s", Prefix, #Cards, table.concat(Parts, "  ·  ")))
 if Equip then
 if #Changed > 0 then
@@ -931,7 +1152,7 @@ local Ok, Err = pcall(RunPass, Equip)
 if S.PressedMenu then
 local MenuButton = FindMenuButton()
 if MenuButton then
-Press(MenuButton)
+PressNow(MenuButton)
 end
 end
 S.PressedMenu = false
