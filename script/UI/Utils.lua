@@ -405,8 +405,8 @@ function Library:QueueRefresh()
 	self._refreshQueued = true
 	task.defer(function() self._refreshQueued = false; self:Refresh() end)
 end
-function Library:Tween(obj, props, t, style)
-	local tw = TweenService:Create(obj, TweenInfo.new((t or .15) / math.max(self.AnimSpeed, .1), style or Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props)
+function Library:Tween(obj, props, t, style, dir)
+	local tw = TweenService:Create(obj, TweenInfo.new((t or .15) / math.max(self.AnimSpeed, .1), style or Enum.EasingStyle.Quad, dir or Enum.EasingDirection.Out), props)
 	tw:Play()
 	return tw
 end
@@ -740,19 +740,40 @@ end
 function Library:IsOpen()
 	return self._open == true and self._minimized ~= true
 end
+--// Open and close are a pop, not a nudge: the window grows in from OPEN_FROM
+--// with a Back ease, so it overshoots by a hair and settles; on the way out it
+--// actually shrinks to CLOSE_TO and is hidden when the shrink lands. The old
+--// close shrank it 4% over .15 s and hid it on a timer, which read as a flash.
+local OPEN_FROM = .86
+local CLOSE_TO = .84
+
 function Library:Toggle(state)
 	if state == nil then state = not self._open end
 	if state == self._open then return end
 	self._open = state
+
+	--// Half a tween left over from the other direction is stopped first, or the
+	--// two fight over the same UIScale and the pop stutters.
+	if self._scaleTw and self._scaleTw.Cancel then
+		pcall(function() self._scaleTw:Cancel() end)
+	end
+	self._scaleTw = nil
+
 	if state then
 		self.Root.Visible = true
-		self.Scale.Scale = self.BaseScale * .95
-		self:Tween(self.Scale, { Scale = self.BaseScale }, .22, Enum.EasingStyle.Quint)
+		self.Scale.Scale = self.BaseScale * OPEN_FROM
+		self._scaleTw = self:Tween(self.Scale, { Scale = self.BaseScale }, .26, Enum.EasingStyle.Back)
 	else
 		self:ClosePopup(true)
 		self:_hideTip()
-		self:Tween(self.Scale, { Scale = self.BaseScale * .96 }, .15)
-		task.delay(.16 / math.max(self.AnimSpeed, .1), function() if not self._open then self.Root.Visible = false end end)
+		self._scaleTw = self:Tween(self.Scale, { Scale = self.BaseScale * CLOSE_TO }, .18, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+		--// Hidden when the shrink finishes, so the last thing seen is the window
+		--// closing in rather than vanishing at full size.
+		task.delay(.18 / math.max(self.AnimSpeed, .1), function()
+			if self._open then return end
+			self.Root.Visible = false
+			self.Scale.Scale = self.BaseScale
+		end)
 	end
 end
 function Library:Destroy()

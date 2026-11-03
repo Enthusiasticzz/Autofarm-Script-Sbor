@@ -1721,29 +1721,39 @@ if Wait > 0 and not S.SpotWaitUntil then
 S.SpotWaitUntil = Now + Wait
 end
 if S.SpotWaitUntil and Now < S.SpotWaitUntil then
+local WaitTarget = FindTarget(Stop, Now)
+if WaitTarget then
+local WaitDodge = Stop.Dodge ~= false
+and WaitTarget:FindFirstChild("HumanoidRootPart") ~= nil
+local WaitCasting = WaitDodge and IsSkillShowing(WaitTarget, Now) == true
+if WaitCasting or (WaitDodge and IsHealthBurst(Humanoid, Now)) then
+S.DodgeMinUntil = Now + DODGE_MIN_TIME
+S.DodgeMaxUntil = Now + DODGE_MAX_TIME
+S.SkillSeenAt = Now
+S.SkillActive = true
+S.DodgeTarget = nil
+end
+if DodgeStep(WaitTarget, Humanoid, RootPart, Now, Stop) then
+SetBlocking(false)
+return
+end
+end
 local WaitHealPercent = math.clamp(
 tonumber(CONFIG.AUTO_HEAL_HEALTH_PERCENT) or 65,
 30,
 80
 )
 local WaitMaxHealth = tonumber(Humanoid.MaxHealth) or 0
-local WaitMarker = ""
-if WaitMaxHealth > 0
+local WaitHeal = WaitMaxHealth > 0
 and (tonumber(Humanoid.Health) or 0) <= WaitMaxHealth * (WaitHealPercent / 100)
 and AICFeature.TryHeal
 and AICFeature.TryHeal(Now)
-then
-Humanoid:Move(Vector3.zero)
-SetBlocking(true)
-WaitMarker = S.Blocking and "  HEAL  BLOCK" or "  HEAL"
-elseif FleeStep(Humanoid, RootPart, Stop) then
-SetBlocking(false)
-WaitMarker = "  EVADE"
-else
 Humanoid:Move(Vector3.zero)
 RequireWeapon(Now)
 SetBlocking(true)
-WaitMarker = S.Blocking and "  BLOCK" or ""
+local WaitMarker = S.Blocking and "  BLOCK" or ""
+if WaitHeal then
+WaitMarker = S.Blocking and "  HEAL  BLOCK" or "  HEAL"
 end
 SetStatus(string.format(
 "STOP %d/%d  WAIT %ds  %s%s",
@@ -1757,7 +1767,6 @@ return
 end
 S.SpotWaitUntil = nil
 SetBlocking(false)
-StopFlee(Humanoid)
 S.Phase = "Fight"
 S.FightStart = Now
 S.SeenTarget = false

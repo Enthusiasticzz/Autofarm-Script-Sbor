@@ -2870,46 +2870,63 @@ return {
 
                     if S.SpotWaitUntil and Now < S.SpotWaitUntil then
                         --// The wait is for the spawn, not for the character to
-                        --// stand still and be killed in: the heal and the run
-                        --// from a mob still happen, only the fight is held
-                        --// back until the wait is over.
+                        --// stand still and be killed in: the boss's dodge, the
+                        --// heal and the guard all still run, only the fight
+                        --// itself is held back until the wait is over.
+                        --//
+                        --// No evade code of its own: a boss that spawns early
+                        --// and opens with a skill is dodged with the fight's
+                        --// own DodgeStep, armed by the same IsSkillShowing /
+                        --// IsHealthBurst checks and the same constants, so the
+                        --// ring, the sprint and the release are the ones the
+                        --// fight has already been tuned to.
+                        local WaitTarget = FindTarget(Stop, Now)
+
+                        if WaitTarget then
+                            local WaitDodge = Stop.Dodge ~= false
+                                and WaitTarget:FindFirstChild("HumanoidRootPart") ~= nil
+                            local WaitCasting = WaitDodge and IsSkillShowing(WaitTarget, Now) == true
+
+                            if WaitCasting or (WaitDodge and IsHealthBurst(Humanoid, Now)) then
+                                S.DodgeMinUntil = Now + DODGE_MIN_TIME
+                                S.DodgeMaxUntil = Now + DODGE_MAX_TIME
+                                S.SkillSeenAt = Now
+                                S.SkillActive = true
+                                S.DodgeTarget = nil
+                            end
+
+                            if DodgeStep(WaitTarget, Humanoid, RootPart, Now, Stop) then
+                                --// DodgeStep writes its own STOP x/y DODGE line.
+                                SetBlocking(false)
+                                return
+                            end
+                        end
+
                         local WaitHealPercent = math.clamp(
                             tonumber(CONFIG.AUTO_HEAL_HEALTH_PERCENT) or 65,
                             30,
                             80
                         )
                         local WaitMaxHealth = tonumber(Humanoid.MaxHealth) or 0
-                        local WaitMarker = ""
-
-                        if WaitMaxHealth > 0
+                        local WaitHeal = WaitMaxHealth > 0
                             and (tonumber(Humanoid.Health) or 0) <= WaitMaxHealth * (WaitHealPercent / 100)
                             and AICFeature.TryHeal
                             and AICFeature.TryHeal(Now)
-                        then
-                            --// A remote drink: the sword stays out and the
-                            --// wait goes on standing where the stop is, with
-                            --// the guard still up.
-                            Humanoid:Move(Vector3.zero)
-                            SetBlocking(true)
-                            --// Only says BLOCK when the binding actually took
-                            --// it: a game that names its block differently
-                            --// shows HEAL alone rather than a guard that is
-                            --// not up.
+
+                        --// Standing at the stop either way: the sword stays
+                        --// out and the guard goes up, and a remote drink on a
+                        --// low bar is the only thing that happens besides it.
+                        Humanoid:Move(Vector3.zero)
+                        RequireWeapon(Now)
+                        SetBlocking(true)
+
+                        --// Only says BLOCK when the binding actually took it: a
+                        --// game that names its block differently shows HEAL
+                        --// alone rather than a guard that is not up.
+                        local WaitMarker = S.Blocking and "  BLOCK" or ""
+
+                        if WaitHeal then
                             WaitMarker = S.Blocking and "  HEAL  BLOCK" or "  HEAL"
-                        elseif FleeStep(Humanoid, RootPart, Stop) then
-                            --// Running from a mob is not a stance: the guard
-                            --// comes down for the leg and goes back up once the
-                            --// character is stood at the stop again.
-                            SetBlocking(false)
-                            WaitMarker = "  EVADE"
-                        else
-                            --// Standing at the stop with the boss not spawned
-                            --// yet: the sword is held up in a block instead of
-                            --// hanging at the side for the whole wait.
-                            Humanoid:Move(Vector3.zero)
-                            RequireWeapon(Now)
-                            SetBlocking(true)
-                            WaitMarker = S.Blocking and "  BLOCK" or ""
                         end
 
                         SetStatus(string.format(
@@ -2925,10 +2942,10 @@ return {
 
                     S.SpotWaitUntil = nil
                     --// The wait is over (or was skipped): the guard comes down
-                    --// for the fight, and the speed the evade borrowed goes
-                    --// back.
+                    --// for the fight. A dodge still running is left armed on
+                    --// purpose - the fight's own DodgeStep picks it up and
+                    --// releases the sprint when the effects go out.
                     SetBlocking(false)
-                    StopFlee(Humanoid)
 
                     --// On the spot: fight straight away. The scan is forced,
                     --// so a boss that dies within the first eighth of a second
