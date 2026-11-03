@@ -1,188 +1,460 @@
-[EQUIP] -- A. player
-[EQUIP]   worn Weapon                 Sanctum Edge Oathbreaker
-[EQUIP]   worn WeaponOverlay          Glacier Sabre
-[EQUIP]   worn DualWeapon             Blackflame Katana Mk V
-[EQUIP]   worn DualWeaponOverlay      Glacier Sabre
-[EQUIP]   worn Shield                 
-[EQUIP]   worn ShieldOverlay          
-[EQUIP]   worn Outfit                 Easter Sangreal Armor Mk V
-[EQUIP]   worn OutfitOverlay          Veydras Underlayer Clothing
-[EQUIP]   worn UpperHeadwear          Kringlewrath Sanctified Helm
-[EQUIP]   worn UpperHeadwearOverlay   Nosferatu Dominion Black
-[EQUIP]   worn LowerHeadwear          Crimson Coil Mk III
-[EQUIP]   worn LowerHeadwearOverlay   Hunters Robe Black
-[EQUIP]   worn Facewear               Round Sunglasses Tan
-[EQUIP]   worn Necklace               
-[EQUIP]   worn Armor3D                
-[EQUIP]   --- level and skills
-[EQUIP]   DaggerSkill            83.45
-[EQUIP]   CurrentSkill           Starburst Stream
-[EQUIP]   Two-HandedSkill        4.3
-[EQUIP]   RapierSkill            460
-[EQUIP]   One-HandedSkill        1582.6
-[EQUIP]   Level                  1125
-[EQUIP]   TailoringSkill         0
-[EQUIP]   SmithingSkill          448.1
-[EQUIP]   CookingSkill           0
-[EQUIP]   BoostSkill             0
-[EQUIP]   MiningSkill            1
-[EQUIP]   FishingSkill           1
-[EQUIP]   LevelPoints            0
-[EQUIP]   MeleeSkill             1.1
-[EQUIP] -- B. the list
-[EQUIP] GameGui true / MenuGui-NEW true / Frames true / Equipment true / FrameB true / List true
-[EQUIP] MenuGui-NEW visible true, on screen true
-[EQUIP] Equipment page visible true, on screen true
-[EQUIP] List children (603):
-[EQUIP]   [TextButton] Base                           visible true  card false
-[EQUIP]   [UIListLayout] UIListLayout                   visible n/a   card false
-[EQUIP]   [TextButton] Antlers Overlay                visible true  card true
-[EQUIP]   [TextButton] Azure Fang                     visible true  card true
-[EQUIP]   [TextButton] Sanctum Edge Oathbreaker       visible true  card true
-[EQUIP]   [TextButton] Blackflame Katana Mk V         visible true  card true
-[EQUIP]   [TextButton] Easter Sangreal Armor Mk V     visible true  card true
-[EQUIP]   [TextButton] Kringlewrath Sanctified Helm   visible true  card true
-[EQUIP]   [TextButton] Crimson Coil Mk III            visible true  card true
-[EQUIP]   [TextButton] Veydras Underlayer Clothing    visible true  card true
-[EQUIP]   ... 593 more
-[EQUIP] cards (real items): 400
-[EQUIP] template "Base": Type "", Requirement "Level", RequiredAmount "999", Amount "9999", isEquipped ?, onDisplay ?
-[EQUIP] -- C. card shape
-[EQUIP]   name | type | requirement | amount | equipped | E | E2
-[EQUIP]   Antlers Overlay              | UpperHeadwearOve | Level     0     | 1      | nil   | true | true
-[EQUIP]   Azure Fang                   | DaggerOverlay    | Skill     0     | 1      | nil   | true | true
-[EQUIP]   Sanctum Edge Oathbreaker     | One-Handed       | Skill     435   | 1      | true  | true | true
-[EQUIP]   Blackflame Katana Mk V       | One-Handed       | Skill     430   | 1      | true  | true | true
-[EQUIP]   Easter Sangreal Armor Mk V   | Outfit           | Level     220   | 1      | true  | true | true
-[EQUIP]   Kringlewrath Sanctified Helm | UpperHeadwear    | Level     205   | 1      | true  | true | true
-[EQUIP]   Crimson Coil Mk III          | LowerHeadwear    | Level     170   | 1      | true  | true | true
-[EQUIP]   Veydras Underlayer Clothing  | OutfitOverlay    | Level     0     | 1      | true  | true | true
-[EQUIP]   Round Sunglasses Tan         | Facewear         | Level     0     | 1      | true  | true | true
-[EQUIP]   Nosferatu Dominion Black     | UpperHeadwearOve | Level     0     | 1      | true  | true | true
-[EQUIP]   Hunters Robe Black           | LowerHeadwearOve | Level     0     | 1      | true  | true | true
-[EQUIP]   Glacier Sabre                | One-HandedOverla | Skill     0     | 2      | true  | true | true
-[EQUIP]   Glacier Frost Cross          | LowerHeadwearOve | Level     0     | 1      | true  | true | true
-[EQUIP]   Easter Struanctus Mk V       | One-Handed       | Skill     425   | 2      | nil   | true | true
-[EQUIP]   ... 386 more cards
-[EQUIP]   Background                         Frame              in 400  <Frame>
-[EQUIP]   Buttons                            Frame              in 400  <Frame>
-[EQUIP]   Buttons.De                         ImageButton        in 400  Value
-[EQUIP]   Buttons.De.Value                   StringValue        in 400  rbxassetid://232144421
-[EQUIP]   Buttons.Dr                         ImageButton        in 400  Value
-[EQUIP]   Buttons.Dr.Value                   StringValue        in 400  rbxassetid://232144275
-[EQUIP]   Buttons.E                          ImageButton        in 400  Value
-[EQUIP]   Buttons.E.Slot                     TextLabel          in 400  1
-[EQUIP]   Buttons.E.Value                    StringValue        in 400  rbxassetid://232144354
-[EQUIP]   Buttons.E2                         ImageButton        in 400  Value
-[EQUIP]   Buttons.E2.Slot                    TextLabel          in 400  2
-[EQUIP]   Buttons.E2.Value                   StringValue        in 400  rbxassetid://232144354
-[EQUIP]   Buttons.I                          ImageButton        in 400  Value
-[EQUIP]   Buttons.I.Value                    StringValue        in 400  rbxassetid://232144421
-[EQUIP]   Buttons.UIListLayout               UIListLayout       in 400  <UIListLayout>
-[EQUIP]   Entry                              Frame              in 400  <Frame>
-[EQUIP]   Entry.Amount                       TextLabel          in 400  1 | 2 | 7 | 3 | 96 | 111
-[EQUIP]   Entry.Amount.UICorner              UICorner           in 400  <UICorner>
-[EQUIP]   Entry.Container                    Frame              in 400  <Frame>
-[EQUIP]   Entry.Container.Effects            Frame              in 400  <Frame>
-[EQUIP]   Entry.Container.UIListLayout       UIListLayout       in 400  <UIListLayout>
-[EQUIP]   Entry.Effect                       ImageLabel         in 400  <ImageLabel>
-[EQUIP]   Entry.Icon                         ImageLabel         in 400  <ImageLabel>
-[EQUIP]   Entry.ItemName                     TextLabel          in 400  Antlers Overlay | Azure Fang | Sanctum Edge Oathbreaker | Blackflame Katana Mk V | Easter Sangreal Armor Mk V | Kringlewrath Sanctified Helm
-[EQUIP]   Entry.ItemName.UITextSizeConstraint UITextSizeConstraint in 400  <UITextSizeConstraint>
-[EQUIP]   Entry.QuantityChar                 TextLabel          in 400  x
-[EQUIP]   Entry.QuantityChar.UITextSizeConstraint UITextSizeConstraint in 400  <UITextSizeConstraint>
-[EQUIP]   Entry.RequiredAmount               TextLabel          in 400  0 | 435 | 430 | 220 | 205 | 170
-[EQUIP]   Entry.RequiredAmount.UICorner      UICorner           in 400  <UICorner>
-[EQUIP]   Entry.Requirement                  TextLabel          in 400  Level | Skill
-[EQUIP]   Entry.Requirement.UITextSizeConstraint UITextSizeConstraint in 400  <UITextSizeConstraint>
-[EQUIP]   Type                               StringValue        in 400  UpperHeadwearOverlay | DaggerOverlay | One-Handed | Outfit | UpperHeadwear | LowerHeadwear
-[EQUIP]   UIGradient                         UIGradient         in 400  <UIGradient>
-[EQUIP]   UITextSizeConstraint               UITextSizeConstraint in 400  <UITextSizeConstraint>
-[EQUIP]   isEquipped                         BoolValue          in 400  <BoolValue> | true
-[EQUIP]   onDisplay                          BoolValue          in 400  true
-[EQUIP] --- distinct values
-[EQUIP]   Type:            "One-Handed" x57, "Outfit" x52, "Two-Handed" x46, "Rapier" x41, "OutfitOverlay" x40, "Dagger" x36, "UpperHeadwearOverlay" x25, "Shield" x20, "LowerHeadwear" x19, "UpperHeadwear" x18, ...
-[EQUIP]   Requirement:     "Skill" x208, "Level" x192
-[EQUIP]   RequiredAmount:  "0" x69, "150" x13, "160" x11, "20" x11, "30" x10, "1" x8, "205" x8, "105" x7, "225" x7, "45" x7, ...
-[EQUIP]   Entry.Amount:    "1" x216, "2" x76, "4" x12, "7" x6, "5" x5, "14" x5, "10" x5, "3" x5, "6" x4, "999" x3, ...
-[EQUIP]   isEquipped:      "nil" x389, "true" x11
-[EQUIP] -- D. whole cards
-[EQUIP] --- equipped
-[EQUIP]   [TextButton] Sanctum Edge Oathbreaker
-[EQUIP]     UITextSizeConstraint   [UITextSizeConstraint]
-[EQUIP]     Background             [Frame]
-[EQUIP]     Type                   [StringValue] = "One-Handed"
-[EQUIP]     isEquipped             [BoolValue] = "true"
-[EQUIP]     Buttons                [Frame] 6 children
-[EQUIP]     Entry                  [Frame] 8 children
-[EQUIP]     onDisplay              [BoolValue] = "true"
-[EQUIP]     UIGradient             [UIGradient]
-[EQUIP] --- an overlay
-[EQUIP]   [TextButton] Antlers Overlay
-[EQUIP]     UITextSizeConstraint   [UITextSizeConstraint]
-[EQUIP]     Background             [Frame]
-[EQUIP]     Type                   [StringValue] = "UpperHeadwearOverlay"
-[EQUIP]     isEquipped             [BoolValue]
-[EQUIP]     Buttons                [Frame] 6 children
-[EQUIP]     Entry                  [Frame] 8 children
-[EQUIP]     onDisplay              [BoolValue] = "true"
-[EQUIP]     UIGradient             [UIGradient]
-[EQUIP] --- first card
-[EQUIP]   [TextButton] Azure Fang
-[EQUIP]     UITextSizeConstraint   [UITextSizeConstraint]
-[EQUIP]     Background             [Frame]
-[EQUIP]     Type                   [StringValue] = "DaggerOverlay"
-[EQUIP]     isEquipped             [BoolValue]
-[EQUIP]     Buttons                [Frame] 6 children
-[EQUIP]     Entry                  [Frame] 8 children
-[EQUIP]     onDisplay              [BoolValue] = "true"
-[EQUIP]     UIGradient             [UIGradient]
-[EQUIP] -- E. equip buttons
-[EQUIP] card "Sanctum Edge Oathbreaker" buttons:
-[EQUIP]   E      [ImageButton] true  slot 1
-[EQUIP]   Dr     [ImageButton] true
-[EQUIP]   De     [ImageButton] true
-[EQUIP]   I      [ImageButton] true
-[EQUIP]   UIListLayout [UIListLayout] false
-[EQUIP]   E2     [ImageButton] true  slot 2
-[EQUIP] cards with E: 400, with E2: 400
-[EQUIP] -- F. the menu
-[EQUIP] pages and which one is showing:
-[EQUIP]   Trade          [Frame] visible false
-[EQUIP]   Friends        [Frame] visible false
-[EQUIP]   Owned          [Frame] visible false
-[EQUIP]   Equipment      [Frame] visible true  ON SCREEN
-[EQUIP]   Guild          [Frame] visible false
-[EQUIP]   Arrow          [ImageLabel] visible true  ON SCREEN
-[EQUIP]   Quest          [Frame] visible false
-[EQUIP]   GM             [Frame] visible false
-[EQUIP]   Store          [Frame] visible false
-[EQUIP]   Items          [Frame] visible false
-[EQUIP]   Players        [Frame] visible false
-[EQUIP]   Map            [Frame] visible false
-[EQUIP]   Skills         [Frame] visible false
-[EQUIP]   Stats          [Frame] visible false
-[EQUIP]   Help           [Frame] visible false
-[EQUIP]   Appearance     [Frame] visible false
-[EQUIP]   Options        [Frame] visible false
-[EQUIP] equipment tab buttons:
-[EQUIP]   Players.LordInsrat.PlayerGui.GameGui.MenuGui-NEW.FrontRight.Menu.MidFrames.Player-PageLayout.Equipment  (ImageButton, 0, 234.314453, on screen false)
-[EQUIP]   Players.LordInsrat.PlayerGui.GameGui.MenuGui-NEW.FrontRight.Menu.MidFrames.Player.Equipment  (ImageButton, 248.425385, 50.9978561, on screen true)
-[EQUIP] --- buttons anywhere in the PlayerGui whose name or label suggests the menu
-[EQUIP]   Players.LordInsrat.PlayerGui.DeviceGui.ConsolePC.MenuButton  (ImageButton, on screen true)
-[EQUIP]   Players.LordInsrat.PlayerGui.DeviceGui.ConsolePC.EquipButton  (ImageButton, on screen true)
-[EQUIP]   Players.LordInsrat.PlayerGui.DeviceGui.Mobile.MobileEquipButton  (ImageButton, on screen false)
-[EQUIP]   Players.LordInsrat.PlayerGui.DeviceGui.Mobile.MobileMenuButton  (ImageButton, on screen false)
-[EQUIP]   Players.LordInsrat.PlayerGui.GameGui.MenuGui-NEW.FrontRight.Menu.MidFrames.Player-PageLayout.Equipment  (ImageButton, on screen false)
-[EQUIP]   Players.LordInsrat.PlayerGui.GameGui.MenuGui-NEW.FrontRight.Menu.MidFrames.Player.Equipment  (ImageButton, on screen true)
-[EQUIP]   Players.LordInsrat.PlayerGui.GameGui.MenuGui-NEW.FrontRight.Menu.Frames.Owned.FrameB.MainFrame.GamePasses.[Equip] Black Swordsman Equipment  (TextButton, on screen false)
-[EQUIP]   Players.LordInsrat.PlayerGui.GameGui.MenuGui-NEW.FrontRight.Menu.Frames.Owned.FrameB.MainFrame.GamePasses.Beast Tamer Equipment  (TextButton, on screen false)
-[EQUIP]   Players.LordInsrat.PlayerGui.GameGui.MenuGui-NEW.FrontRight.Menu.Frames.Owned.FrameB.MainFrame.GamePasses.[Equip] Sharp Shooter Equipment  (TextButton, on screen false)
-[EQUIP]   Players.LordInsrat.PlayerGui.GameGui.MenuGui-NEW.FrontRight.Menu.Frames.Owned.FrameB.MainFrame.GamePasses.[Equip] Master Blacksmith Equipment  (TextButton, on screen false)
-[EQUIP]   Players.LordInsrat.PlayerGui.GameGui.MenuGui-NEW.FrontRight.Menu.Frames.Owned.FrameB.MainFrame.GamePasses.[Equip] Veteran Merchant Equipment  (TextButton, on screen false)
-[EQUIP]   Players.LordInsrat.PlayerGui.GameGui.MenuGui-NEW.FrontRight.Menu.Frames.Equipment.FrameB.List.Easter Bunny Backpack  (TextButton, on screen true)
-[EQUIP]   Players.LordInsrat.PlayerGui.GameGui.MenuGui-NEW.FrontRight.Menu.Frames.Store.FrameB.MainFrame.GamePasses.[Equip] Blood Enforcer Equipment  (TextButton, on screen false)
-[EQUIP]   Players.LordInsrat.PlayerGui.GameGui.MenuGui-NEW.FrontRight.Menu.Frames.Store.FrameB.MainFrame.GamePasses.[Equip] Blue Swordsman Equipment  (TextButton, on screen false)
-[EQUIP]   Players.LordInsrat.PlayerGui.GameGui.MenuGui-NEW.FrontRight.Menu.Frames.Store.FrameB.MainFrame.GamePasses.[Equip] Grandmaster Liberator Equipment  (TextButton, on screen false)
-[EQUIP] GameGui.Switch: [ImageButton] on screen false, size 0, 0
-[EQUIP] done — paste every [EQUIP] line
+20:22:11 -- [AIC] heartbeat: AutoQuest took 14.4 ms in one frame (39 features, 0.7 ms each on average)
+20:22:12 -- [PANEL] FrontRight found: true   menu showing: true
+20:22:12 -- [PANEL] equipment page visible: false   frameB: true   list: true   filters: true
+20:22:12 -- [PANEL] cards already built: 21
+20:22:12 -- [PANEL] -- A. FrontRight children
+20:22:12 -- [PANEL]    [Frame] Menu  visible true  on screen true  size 1920x999   children 2
+20:22:12 -- [PANEL]       [CanvasGroup] MidFrames  visible n/a  on screen false  size 355x314   children 8
+20:22:12 -- [PANEL]       [CanvasGroup] Frames  visible true  on screen true  size 979x639   children 18
+20:22:12 -- [PANEL] -- A2. FrontRight deep scan, names only (depth 4)
+20:22:12 -- [PANEL]   Menu  [Frame]  visible true  on screen true
+20:22:12 -- [PANEL]     MidFrames  [CanvasGroup]  visible n/a  on screen false
+20:22:12 -- [PANEL]       Arrow  [ImageLabel]  visible n/a  on screen false
+20:22:12 -- [PANEL]       Player-PageLayout  [Frame]  visible n/a  on screen false
+20:22:12 -- [PANEL]         Items  [ImageButton]  visible true  on screen false
+20:22:12 -- [PANEL]         Skills  [ImageButton]  visible true  on screen false
+20:22:12 -- [PANEL]         Equipment  [ImageButton]  visible true  on screen false
+20:22:12 -- [PANEL]         Appearance  [ImageButton]  visible true  on screen false
+20:22:12 -- [PANEL]         UIPageLayout  [UIPageLayout]  visible n/a  on screen false
+20:22:12 -- [PANEL]       UIGradient  [UIGradient]  visible n/a  on screen false
+20:22:12 -- [PANEL]       Message  [Frame]  visible n/a  on screen false
+20:22:12 -- [PANEL]         UIListLayout  [UIListLayout]  visible n/a  on screen false
+20:22:12 -- [PANEL]         GM  [ImageButton]  visible true  on screen false
+20:22:12 -- [PANEL]         Trade  [ImageButton]  visible true  on screen false
+20:22:12 -- [PANEL]         Inbox  [ImageButton]  visible true  on screen false
+20:22:12 -- [PANEL]       Players  [Frame]  visible n/a  on screen false
+20:22:12 -- [PANEL]         UIListLayout  [UIListLayout]  visible n/a  on screen false
+20:22:12 -- [PANEL]         Players  [ImageButton]  visible true  on screen false
+20:22:12 -- [PANEL]         Friends  [ImageButton]  visible true  on screen false
+20:22:12 -- [PANEL]         Guild  [ImageButton]  visible true  on screen false
+20:22:12 -- [PANEL]         Store  [ImageButton]  visible true  on screen false
+20:22:12 -- [PANEL]       Data  [Frame]  visible n/a  on screen false
+20:22:12 -- [PANEL]         UIListLayout  [UIListLayout]  visible n/a  on screen false
+20:22:12 -- [PANEL]         Stats  [ImageButton]  visible true  on screen false
+20:22:12 -- [PANEL]         Map  [ImageButton]  visible true  on screen false
+20:22:12 -- [PANEL]         Quest  [ImageButton]  visible true  on screen false
+20:22:12 -- [PANEL]         Fishdex  [ImageButton]  visible true  on screen false
+20:22:12 -- [PANEL]       Settings  [Frame]  visible n/a  on screen false
+20:22:12 -- [PANEL]         UIListLayout  [UIListLayout]  visible n/a  on screen false
+20:22:12 -- [PANEL]         Options  [ImageButton]  visible true  on screen false
+20:22:12 -- [PANEL]         Help  [ImageButton]  visible true  on screen false
+20:22:12 -- [PANEL]         Owned  [ImageButton]  visible true  on screen false
+20:22:12 -- [PANEL]         Logout  [ImageButton]  visible true  on screen false
+20:22:12 -- [PANEL]       Player  [Frame]  visible n/a  on screen false
+20:22:12 -- [PANEL]         Items  [ImageButton]  visible true  on screen false
+20:22:12 -- [PANEL]         Skills  [ImageButton]  visible true  on screen false
+20:22:12 -- [PANEL]         Equipment  [ImageButton]  visible true  on screen false
+20:22:12 -- [PANEL]         Appearance  [ImageButton]  visible true  on screen false
+20:22:12 -- [PANEL]         UIListLayout  [UIListLayout]  visible n/a  on screen false
+20:22:12 -- [PANEL]     Frames  [CanvasGroup]  visible true  on screen true
+20:22:12 -- [PANEL]       Trade  [Frame]  visible n/a  on screen false
+20:22:12 -- [PANEL]         UIListLayout  [UIListLayout]  visible n/a  on screen false
+20:22:12 -- [PANEL]         FrameB  [Frame]  visible true  on screen false
+20:22:12 -- [PANEL]         UIStroke  [UIStroke]  visible n/a  on screen false
+20:22:12 -- [PANEL]       Friends  [Frame]  visible n/a  on screen false
+20:22:12 -- [PANEL]         UIListLayout  [UIListLayout]  visible n/a  on screen false
+20:22:12 -- [PANEL]         FrameB  [Frame]  visible true  on screen false
+20:22:12 -- [PANEL]         UIStroke  [UIStroke]  visible n/a  on screen false
+20:22:12 -- [PANEL]         SearchBar  [Frame]  visible true  on screen false
+20:22:12 -- [PANEL]         Top  [Frame]  visible true  on screen false
+20:22:12 -- [PANEL]         Bottom  [Frame]  visible n/a  on screen false
+20:22:12 -- [PANEL]       Owned  [Frame]  visible n/a  on screen false
+20:22:12 -- [PANEL]         3dEdges  [Frame]  visible true  on screen false
+20:22:12 -- [PANEL]         UIStroke  [UIStroke]  visible n/a  on screen false
+20:22:12 -- [PANEL]         Hover  [Frame]  visible n/a  on screen false
+20:22:12 -- [PANEL]         FrameB  [Frame]  visible true  on screen false
+20:22:12 -- [PANEL]       Equipment  [Frame]  visible n/a  on screen false
+20:22:12 -- [PANEL]         UIListLayout  [UIListLayout]  visible n/a  on screen false
+20:22:12 -- [PANEL]         FrameB  [Frame]  visible true  on screen false
+20:22:12 -- [PANEL]         UIStroke  [UIStroke]  visible n/a  on screen false
+20:22:12 -- [PANEL]         Bottom  [Frame]  visible n/a  on screen false
+20:22:12 -- [PANEL]         SearchBar  [Frame]  visible true  on screen false
+20:22:12 -- [PANEL]         Top  [Frame]  visible true  on screen false
+20:22:12 -- [PANEL]       Guild  [Frame]  visible n/a  on screen false
+20:22:12 -- [PANEL]         UIListLayout  [UIListLayout]  visible n/a  on screen false
+20:22:12 -- [PANEL]         FrameB  [Frame]  visible true  on screen false
+20:22:12 -- [PANEL]         UIStroke  [UIStroke]  visible n/a  on screen false
+20:22:12 -- [PANEL]       Arrow  [ImageLabel]  visible n/a  on screen false
+20:22:12 -- [PANEL]       Quest  [Frame]  visible n/a  on screen false
+20:22:12 -- [PANEL]         FrameB  [Frame]  visible true  on screen false
+20:22:12 -- [PANEL]         UIStroke  [UIStroke]  visible n/a  on screen false
+20:22:12 -- [PANEL]         UIListLayout  [UIListLayout]  visible n/a  on screen false
+20:22:12 -- [PANEL]       UIGradient  [UIGradient]  visible n/a  on screen true
+20:22:12 -- [PANEL]       GM  [Frame]  visible n/a  on screen false
+20:22:12 -- [PANEL]         UIListLayout  [UIListLayout]  visible n/a  on screen false
+20:22:12 -- [PANEL]         FrameB  [Frame]  visible true  on screen false
+20:22:12 -- [PANEL]         UIStroke  [UIStroke]  visible n/a  on screen false
+20:22:12 -- [PANEL]       Store  [Frame]  visible n/a  on screen false
+20:22:12 -- [PANEL]         3dEdges  [Frame]  visible true  on screen false
+20:22:12 -- [PANEL]         UIStroke  [UIStroke]  visible n/a  on screen false
+20:22:12 -- [PANEL]         Hover  [Frame]  visible n/a  on screen false
+20:22:12 -- [PANEL]         FrameB  [Frame]  visible true  on screen false
+20:22:12 -- [PANEL]       Items  [Frame]  visible n/a  on screen false
+20:22:12 -- [PANEL]         UIListLayout  [UIListLayout]  visible n/a  on screen false
+20:22:12 -- [PANEL]         FrameB  [Frame]  visible true  on screen false
+20:22:12 -- [PANEL]         UIStroke  [UIStroke]  visible n/a  on screen false
+20:22:12 -- [PANEL]         Bottom  [Frame]  visible n/a  on screen false
+20:22:12 -- [PANEL]         Top  [Frame]  visible true  on screen false
+20:22:12 -- [PANEL]         SearchBar  [Frame]  visible true  on screen false
+20:22:12 -- [PANEL]       Players  [Frame]  visible n/a  on screen false
+20:22:12 -- [PANEL]         UIListLayout  [UIListLayout]  visible n/a  on screen false
+20:22:12 -- [PANEL]         FrameB  [Frame]  visible true  on screen false
+20:22:12 -- [PANEL]         UIStroke  [UIStroke]  visible n/a  on screen false
+20:22:12 -- [PANEL]         SearchBar  [Frame]  visible true  on screen false
+20:22:12 -- [PANEL]         Top  [Frame]  visible true  on screen false
+20:22:12 -- [PANEL]         Bottom  [Frame]  visible n/a  on screen false
+20:22:12 -- [PANEL]       Map  [Frame]  visible n/a  on screen false
+20:22:12 -- [PANEL]         UIListLayout  [UIListLayout]  visible n/a  on screen false
+20:22:12 -- [PANEL]         FrameB  [Frame]  visible true  on screen false
+20:22:12 -- [PANEL]         UIStroke  [UIStroke]  visible n/a  on screen false
+20:22:12 -- [PANEL]       Skills  [Frame]  visible n/a  on screen false
+20:22:12 -- [PANEL]         UIListLayout  [UIListLayout]  visible n/a  on screen false
+20:22:12 -- [PANEL]         FrameB  [Frame]  visible true  on screen false
+20:22:12 -- [PANEL]         UIStroke  [UIStroke]  visible n/a  on screen false
+20:22:12 -- [PANEL]         Bottom  [Frame]  visible n/a  on screen false
+20:22:12 -- [PANEL]         Top  [Frame]  visible true  on screen false
+20:22:12 -- [PANEL]         SearchBar  [Frame]  visible true  on screen false
+20:22:12 -- [PANEL]       Stats  [Frame]  visible n/a  on screen false
+20:22:12 -- [PANEL]         UIListLayout  [UIListLayout]  visible n/a  on screen false
+20:22:12 -- [PANEL]         FrameB  [Frame]  visible true  on screen false
+20:22:12 -- [PANEL]         UIStroke  [UIStroke]  visible n/a  on screen false
+20:22:12 -- [PANEL]       Help  [Frame]  visible n/a  on screen false
+20:22:12 -- [PANEL]         UIListLayout  [UIListLayout]  visible n/a  on screen false
+20:22:12 -- [PANEL]         FrameB  [Frame]  visible true  on screen false
+20:22:12 -- [PANEL]         UIStroke  [UIStroke]  visible n/a  on screen false
+20:22:12 -- [PANEL]       Appearance  [Frame]  visible n/a  on screen false
+20:22:12 -- [PANEL]         UIListLayout  [UIListLayout]  visible n/a  on screen false
+20:22:12 -- [PANEL]         FrameB  [Frame]  visible true  on screen false
+20:22:12 -- [PANEL]         UIStroke  [UIStroke]  visible n/a  on screen false
+20:22:12 -- [PANEL]       Options  [Frame]  visible n/a  on screen false
+20:22:12 -- [PANEL]         UIListLayout  [UIListLayout]  visible n/a  on screen false
+20:22:12 -- [PANEL]         FrameB  [Frame]  visible true  on screen false
+20:22:12 -- [PANEL]         UIStroke  [UIStroke]  visible n/a  on screen false
+20:22:12 -- [PANEL] -- B. Equipment page children
+20:22:12 -- [PANEL]    [UIListLayout] UIListLayout  visible n/a  on screen false
+20:22:12 -- [PANEL]    [Frame] FrameB  visible true  on screen false  size 406x560
+20:22:12 -- [PANEL]    [UIStroke] UIStroke  visible n/a  on screen false
+20:22:12 -- [PANEL]    [Frame] Bottom  visible n/a  on screen false  size 0x0
+20:22:12 -- [PANEL]    [Frame] SearchBar  visible true  on screen false  size 389x31
+20:22:12 -- [PANEL]    [Frame] Top  visible true  on screen false  size 416x1
+20:22:12 -- [PANEL] -- B2. FrameB children (the row above the list)
+20:22:12 -- [PANEL]    [UIStroke] UIStroke  visible n/a  on screen false
+20:22:12 -- [PANEL]    [Frame] Shadow  visible true  on screen false  size 406x19
+20:22:12 -- [PANEL]    [Frame] Shadow  visible n/a  on screen false  size 406x19
+20:22:12 -- [PANEL]    [Frame] Filters  visible true  on screen false  size 345x44
+20:22:12 -- [PANEL]    [Frame] Sort  visible true  on screen false  size 60x44
+20:22:12 -- [PANEL]    [Folder] Temp  visible n/a  on screen false
+20:22:12 -- [PANEL]    [UIGradient] UIGradient-Curved  visible n/a  on screen false
+20:22:12 -- [PANEL]    [UIGradient] UIGradient-Linear  visible n/a  on screen false
+20:22:12 -- [PANEL]    [UIGradient] UIGradient-CurvedNew  visible n/a  on screen false
+20:22:12 -- [PANEL]    [ScrollingFrame] List  visible true  on screen false  size 406x501
+20:22:12 -- [PANEL] -- B3. Filters: what a filter button is
+20:22:12 -- [PANEL]    [Frame] Filters  visible true  on screen false  size 345x44
+20:22:12 -- [PANEL]    [UIListLayout] UIListLayout  visible n/a  on screen false   children 0
+20:22:12 -- [PANEL]    [ImageButton] Dagger  visible true  on screen false  size 31x44   children 0
+20:22:12 -- [PANEL]    [ImageButton] UpperHeadwear  visible true  on screen false  size 31x44   children 0
+20:22:12 -- [PANEL]    [ImageButton] One-Handed  visible true  on screen false  size 31x44   children 0
+20:22:12 -- [PANEL]    [ImageButton] Outfit  visible true  on screen false  size 31x44   children 0
+20:22:12 -- [PANEL]    [ImageButton] Rapier  visible true  on screen false  size 31x44   children 0
+20:22:12 -- [PANEL]    [ImageButton] Shield  visible true  on screen false  size 31x44   children 0
+20:22:12 -- [PANEL]    [ImageButton] Two-Handed  visible true  on screen false  size 31x44   children 0
+20:22:12 -- [PANEL]    [ImageButton] LowerHeadwear  visible true  on screen false  size 31x44   children 0
+20:22:12 -- [PANEL]    [ImageButton] Melee  visible true  on screen false  size 31x44   children 0
+20:22:12 -- [PANEL] -- B4. Every button on the page that could open or refill it
+20:22:12 -- [PANEL]    [ImageButton] Items  visible true  on screen false  size 248x48
+20:22:12 -- [PANEL]    [ImageButton] Skills  visible true  on screen false  size 248x48
+20:22:12 -- [PANEL]    [ImageButton] Equipment  visible true  on screen false  size 248x48
+20:22:12 -- [PANEL]    [ImageButton] Appearance  visible true  on screen false  size 248x48
+20:22:12 -- [PANEL]    [ImageButton] GM  visible true  on screen false  size 248x51
+20:22:12 -- [PANEL]    [ImageButton] Trade  visible true  on screen false  size 248x51
+20:22:12 -- [PANEL]    [ImageButton] Inbox  visible true  on screen false  size 248x51
+20:22:12 -- [PANEL]    [ImageButton] Players  visible true  on screen false  size 248x51
+20:22:12 -- [PANEL]    [ImageButton] Friends  visible true  on screen false  size 248x51
+20:22:12 -- [PANEL]    [ImageButton] Guild  visible true  on screen false  size 248x51
+20:22:12 -- [PANEL]    [ImageButton] Store  visible true  on screen false  size 248x51
+20:22:12 -- [PANEL]    [ImageButton] Stats  visible true  on screen false  size 248x51
+20:22:12 -- [PANEL]    [ImageButton] Map  visible true  on screen false  size 248x51
+20:22:12 -- [PANEL]    [ImageButton] Quest  visible true  on screen false  size 248x51
+20:22:12 -- [PANEL]    [ImageButton] Fishdex  visible true  on screen false  size 248x51
+20:22:12 -- [PANEL]    [ImageButton] Options  visible true  on screen false  size 248x51
+20:22:12 -- [PANEL]    [ImageButton] Help  visible true  on screen false  size 248x51
+20:22:12 -- [PANEL]    [ImageButton] Owned  visible true  on screen false  size 248x51
+20:22:12 -- [PANEL]    [ImageButton] Logout  visible true  on screen false  size 248x51
+20:22:12 -- [PANEL]    [ImageButton] Items  visible true  on screen false  size 0x50
+20:22:12 -- [PANEL]    [ImageButton] Skills  visible true  on screen false  size 0x50
+20:22:12 -- [PANEL]    [ImageButton] Equipment  visible true  on screen false  size 0x50
+20:22:12 -- [PANEL]    [ImageButton] Appearance  visible true  on screen false  size 0x50
+20:22:12 -- [PANEL]    [ImageButton] Close  visible n/a  on screen false  size 30x36
+20:22:12 -- [PANEL]    [TextButton] Direct  visible n/a  on screen false  size 101x19  text "| Store"
+20:22:12 -- [PANEL]    [TextButton] ScreenOffButton  visible true  on screen false  size 101x22
+20:22:12 -- [PANEL]    [TextButton] ScreenOnButton  visible true  on screen false  size 101x22
+20:22:12 -- [PANEL]    [ImageButton] Cancel  visible n/a  on screen false  size 26x28
+20:22:12 -- [PANEL]    [TextButton] Direct  visible n/a  on screen false  size 101x19  text "| Owned"
+20:22:12 -- [PANEL]    [ImageButton] Close  visible n/a  on screen false  size 30x36
+20:22:12 -- [PANEL]    [ImageButton] Leave  visible true  on screen false  size 60x44
+20:22:12 -- [PANEL]    [ImageButton] Close  visible n/a  on screen false  size 30x36
+20:22:12 -- [PANEL] -- C0. list as it is now
+20:22:12 -- [PANEL]    children 23   cards 21   ChildAdded seen 0
+20:22:12 -- [PANEL]    Beginner Sword  type "One-Handed"  Skill 1  worn nil
+20:22:12 -- [PANEL]    Master Steel Sword  type "One-Handed"  Skill 10  worn true
+20:22:12 -- [PANEL]    Iron Rapier  type "Rapier"  Skill 1  worn nil
+20:22:12 -- [PANEL]    Fists  type "Melee"  Skill 1  worn nil
+20:22:12 -- [PANEL]    Iron Dagger  type "Dagger"  Skill 1  worn nil
+20:22:12 -- [PANEL] -- C1. Equip tab press: does it rebuild the cards, and how fast
+20:22:12 -- [PANEL]    tab [ImageButton] Equipment  visible true  on screen false  size 0x50
+20:22:12 -- [PANEL]    pressed via MouseButton1Down   first card after 0.00s   cards 21 -> 21   ChildAdded +0   now 0.49s
+20:22:12 -- [PANEL] -- C2. Filter press: does it refill the list, and how fast
+20:22:12 -- [PANEL]    filter [ImageButton] Dagger  visible true  on screen false  size 31x44
+20:22:13 -- [PANEL]    pressed via MouseButton1Down   list changed after 0.00s   cards 21 -> 21   ChildAdded +2
+20:22:13 -- [PANEL]    pressed again   cards 21   ChildAdded +2
+20:22:13 -- [PANEL] -- C3. Does the list keep its cards with the page put away
+20:22:13 -- [PANEL]    menu showing now: true   page visible: false
+20:22:14 -- [PANEL]    menu pressed   menu showing: true   page visible: false   cards 21
+20:22:14 -- [PANEL]    filter pressed with the page away: via MouseButton1Down   changed after 0.00s   cards 21 -> 21   ChildAdded +22
+20:22:14 -- [AIC] heartbeat: AutoQuest took 14.9 ms in one frame (39 features, 0.8 ms each on average)
+20:22:14 -- [PANEL] -- D. equip button: bound on screen vs hidden
+20:22:14 -- [PANEL]    card Beginner Sword  type "One-Handed"  Skill 1  worn nil
+20:22:14 -- [PANEL]    hidden: Beginner Sword  visible true  on screen false  size 72x45  click conns 0  down conns 0  activated conns 1
+20:22:15 -- [PANEL]    shown: Beginner Sword  visible true  on screen false  size 72x45  click conns 0  down conns 0  activated conns 1
+20:22:15 -- [PANEL] -- E. a press with the page hidden
+20:22:15 -- [PANEL]    page away: menu showing true   page visible false
+20:22:15 -- [PANEL]    pressed Beginner Sword via Activated   worn Master Steel Sword -> Beginner Sword   after 0.25s (0.25s)
+20:22:15 -- [PANEL]    RESULT: a hidden press DOES equip. The menu can be skipped once the cards exist.
+20:22:17 -- [AIC] heartbeat: AutoQuest took 16.7 ms in one frame (39 features, 0.7 ms each on average)
+20:22:18 -- [PANEL]    WARNING: could not put "Master Steel Sword" back automatically. Press Equip Now in the Gear tab.
+20:22:18 -- [PANEL] -- F. what this means
+20:22:18 -- [PANEL]    cards in the list now: 21   ChildAdded events seen: 46
+20:22:18 -- [PANEL]    filters: 10   menu showing: true   page visible: false
+20:22:18 -- [PANEL]    done in 6.36s — paste every [PANEL] line
+20:22:20 -- [AIC] heartbeat: AutoQuest took 14.0 ms in one frame (39 features, 0.8 ms each on average)
+20:22:23 -- [AIC] heartbeat: AutoQuest took 14.4 ms in one frame (39 features, 0.7 ms each on average)
+20:22:26 -- [AIC] heartbeat: AutoQuest took 13.6 ms in one frame (39 features, 0.8 ms each on average)
+20:22:29 -- [AIC] heartbeat: AutoQuest took 12.9 ms in one frame (39 features, 0.8 ms each on average)
+20:22:30 -- [PANEL] FrontRight found: true   menu showing: true
+20:22:30 -- [PANEL] equipment page visible: true   frameB: true   list: true   filters: true
+20:22:30 -- [PANEL] cards already built: 21
+20:22:30 -- [PANEL] -- A. FrontRight children
+20:22:30 -- [PANEL]    [Frame] Menu  visible true  on screen true  size 1920x999   children 2
+20:22:30 -- [PANEL]       [CanvasGroup] MidFrames  visible true  on screen true  size 355x314   children 8
+20:22:30 -- [PANEL]       [CanvasGroup] Frames  visible true  on screen true  size 979x639   children 18
+20:22:30 -- [PANEL] -- A2. FrontRight deep scan, names only (depth 4)
+20:22:30 -- [PANEL]   Menu  [Frame]  visible true  on screen true
+20:22:30 -- [PANEL]     MidFrames  [CanvasGroup]  visible true  on screen true
+20:22:30 -- [PANEL]       Arrow  [ImageLabel]  visible true  on screen true
+20:22:30 -- [PANEL]       Player-PageLayout  [Frame]  visible n/a  on screen false
+20:22:30 -- [PANEL]         Items  [ImageButton]  visible true  on screen false
+20:22:30 -- [PANEL]         Skills  [ImageButton]  visible true  on screen false
+20:22:30 -- [PANEL]         Equipment  [ImageButton]  visible true  on screen false
+20:22:30 -- [PANEL]         Appearance  [ImageButton]  visible true  on screen false
+20:22:30 -- [PANEL]         UIPageLayout  [UIPageLayout]  visible n/a  on screen false
+20:22:30 -- [PANEL]       UIGradient  [UIGradient]  visible n/a  on screen true
+20:22:30 -- [PANEL]       Message  [Frame]  visible n/a  on screen false
+20:22:30 -- [PANEL]         UIListLayout  [UIListLayout]  visible n/a  on screen false
+20:22:30 -- [PANEL]         GM  [ImageButton]  visible true  on screen false
+20:22:30 -- [PANEL]         Trade  [ImageButton]  visible true  on screen false
+20:22:30 -- [PANEL]         Inbox  [ImageButton]  visible true  on screen false
+20:22:30 -- [PANEL]       Players  [Frame]  visible n/a  on screen false
+20:22:30 -- [PANEL]         UIListLayout  [UIListLayout]  visible n/a  on screen false
+20:22:30 -- [PANEL]         Players  [ImageButton]  visible true  on screen false
+20:22:30 -- [PANEL]         Friends  [ImageButton]  visible true  on screen false
+20:22:30 -- [PANEL]         Guild  [ImageButton]  visible true  on screen false
+20:22:30 -- [PANEL]         Store  [ImageButton]  visible true  on screen false
+20:22:30 -- [PANEL]       Data  [Frame]  visible n/a  on screen false
+20:22:30 -- [PANEL]         UIListLayout  [UIListLayout]  visible n/a  on screen false
+20:22:30 -- [PANEL]         Stats  [ImageButton]  visible true  on screen false
+20:22:30 -- [PANEL]         Map  [ImageButton]  visible true  on screen false
+20:22:30 -- [PANEL]         Quest  [ImageButton]  visible true  on screen false
+20:22:30 -- [PANEL]         Fishdex  [ImageButton]  visible true  on screen false
+20:22:30 -- [PANEL]       Settings  [Frame]  visible n/a  on screen false
+20:22:30 -- [PANEL]         UIListLayout  [UIListLayout]  visible n/a  on screen false
+20:22:30 -- [PANEL]         Options  [ImageButton]  visible true  on screen false
+20:22:30 -- [PANEL]         Help  [ImageButton]  visible true  on screen false
+20:22:30 -- [PANEL]         Owned  [ImageButton]  visible true  on screen false
+20:22:30 -- [PANEL]         Logout  [ImageButton]  visible true  on screen false
+20:22:30 -- [PANEL]       Player  [Frame]  visible true  on screen true
+20:22:30 -- [PANEL]         Items  [ImageButton]  visible true  on screen true
+20:22:30 -- [PANEL]         Skills  [ImageButton]  visible true  on screen true
+20:22:30 -- [PANEL]         Equipment  [ImageButton]  visible true  on screen true
+20:22:30 -- [PANEL]         Appearance  [ImageButton]  visible true  on screen true
+20:22:30 -- [PANEL]         UIListLayout  [UIListLayout]  visible n/a  on screen true
+20:22:30 -- [PANEL]     Frames  [CanvasGroup]  visible true  on screen true
+20:22:30 -- [PANEL]       Trade  [Frame]  visible n/a  on screen false
+20:22:30 -- [PANEL]         UIListLayout  [UIListLayout]  visible n/a  on screen false
+20:22:30 -- [PANEL]         FrameB  [Frame]  visible true  on screen false
+20:22:30 -- [PANEL]         UIStroke  [UIStroke]  visible n/a  on screen false
+20:22:30 -- [PANEL]       Friends  [Frame]  visible n/a  on screen false
+20:22:30 -- [PANEL]         UIListLayout  [UIListLayout]  visible n/a  on screen false
+20:22:30 -- [PANEL]         FrameB  [Frame]  visible true  on screen false
+20:22:30 -- [PANEL]         UIStroke  [UIStroke]  visible n/a  on screen false
+20:22:30 -- [PANEL]         SearchBar  [Frame]  visible true  on screen false
+20:22:30 -- [PANEL]         Top  [Frame]  visible true  on screen false
+20:22:30 -- [PANEL]         Bottom  [Frame]  visible n/a  on screen false
+20:22:30 -- [PANEL]       Owned  [Frame]  visible n/a  on screen false
+20:22:30 -- [PANEL]         3dEdges  [Frame]  visible true  on screen false
+20:22:30 -- [PANEL]         UIStroke  [UIStroke]  visible n/a  on screen false
+20:22:30 -- [PANEL]         Hover  [Frame]  visible n/a  on screen false
+20:22:30 -- [PANEL]         FrameB  [Frame]  visible true  on screen false
+20:22:30 -- [PANEL]       Equipment  [Frame]  visible true  on screen true
+20:22:30 -- [PANEL]         UIListLayout  [UIListLayout]  visible n/a  on screen true
+20:22:30 -- [PANEL]         FrameB  [Frame]  visible true  on screen true
+20:22:30 -- [PANEL]         UIStroke  [UIStroke]  visible n/a  on screen true
+20:22:30 -- [PANEL]         Bottom  [Frame]  visible n/a  on screen false
+20:22:30 -- [PANEL]         SearchBar  [Frame]  visible true  on screen true
+20:22:30 -- [PANEL]         Top  [Frame]  visible true  on screen true
+20:22:30 -- [PANEL]       Guild  [Frame]  visible n/a  on screen false
+20:22:30 -- [PANEL]         UIListLayout  [UIListLayout]  visible n/a  on screen false
+20:22:30 -- [PANEL]         FrameB  [Frame]  visible true  on screen false
+20:22:30 -- [PANEL]         UIStroke  [UIStroke]  visible n/a  on screen false
+20:22:30 -- [PANEL]       Arrow  [ImageLabel]  visible true  on screen true
+20:22:30 -- [PANEL]       Quest  [Frame]  visible n/a  on screen false
+20:22:30 -- [PANEL]         FrameB  [Frame]  visible true  on screen false
+20:22:30 -- [PANEL]         UIStroke  [UIStroke]  visible n/a  on screen false
+20:22:30 -- [PANEL]         UIListLayout  [UIListLayout]  visible n/a  on screen false
+20:22:30 -- [PANEL]       UIGradient  [UIGradient]  visible n/a  on screen true
+20:22:30 -- [PANEL]       GM  [Frame]  visible n/a  on screen false
+20:22:30 -- [PANEL]         UIListLayout  [UIListLayout]  visible n/a  on screen false
+20:22:30 -- [PANEL]         FrameB  [Frame]  visible true  on screen false
+20:22:30 -- [PANEL]         UIStroke  [UIStroke]  visible n/a  on screen false
+20:22:30 -- [PANEL]       Store  [Frame]  visible n/a  on screen false
+20:22:30 -- [PANEL]         3dEdges  [Frame]  visible true  on screen false
+20:22:30 -- [PANEL]         UIStroke  [UIStroke]  visible n/a  on screen false
+20:22:30 -- [PANEL]         Hover  [Frame]  visible n/a  on screen false
+20:22:30 -- [PANEL]         FrameB  [Frame]  visible true  on screen false
+20:22:30 -- [PANEL]       Items  [Frame]  visible n/a  on screen false
+20:22:30 -- [PANEL]         UIListLayout  [UIListLayout]  visible n/a  on screen false
+20:22:30 -- [PANEL]         FrameB  [Frame]  visible true  on screen false
+20:22:30 -- [PANEL]         UIStroke  [UIStroke]  visible n/a  on screen false
+20:22:30 -- [PANEL]         Bottom  [Frame]  visible n/a  on screen false
+20:22:30 -- [PANEL]         Top  [Frame]  visible true  on screen false
+20:22:30 -- [PANEL]         SearchBar  [Frame]  visible true  on screen false
+20:22:30 -- [PANEL]       Players  [Frame]  visible n/a  on screen false
+20:22:30 -- [PANEL]         UIListLayout  [UIListLayout]  visible n/a  on screen false
+20:22:30 -- [PANEL]         FrameB  [Frame]  visible true  on screen false
+20:22:30 -- [PANEL]         UIStroke  [UIStroke]  visible n/a  on screen false
+20:22:30 -- [PANEL]         SearchBar  [Frame]  visible true  on screen false
+20:22:30 -- [PANEL]         Top  [Frame]  visible true  on screen false
+20:22:30 -- [PANEL]         Bottom  [Frame]  visible n/a  on screen false
+20:22:30 -- [PANEL]       Map  [Frame]  visible n/a  on screen false
+20:22:30 -- [PANEL]         UIListLayout  [UIListLayout]  visible n/a  on screen false
+20:22:30 -- [PANEL]         FrameB  [Frame]  visible true  on screen false
+20:22:30 -- [PANEL]         UIStroke  [UIStroke]  visible n/a  on screen false
+20:22:30 -- [PANEL]       Skills  [Frame]  visible n/a  on screen false
+20:22:30 -- [PANEL]         UIListLayout  [UIListLayout]  visible n/a  on screen false
+20:22:30 -- [PANEL]         FrameB  [Frame]  visible true  on screen false
+20:22:30 -- [PANEL]         UIStroke  [UIStroke]  visible n/a  on screen false
+20:22:30 -- [PANEL]         Bottom  [Frame]  visible n/a  on screen false
+20:22:30 -- [PANEL]         Top  [Frame]  visible true  on screen false
+20:22:30 -- [PANEL]         SearchBar  [Frame]  visible true  on screen false
+20:22:30 -- [PANEL]       Stats  [Frame]  visible n/a  on screen false
+20:22:30 -- [PANEL]         UIListLayout  [UIListLayout]  visible n/a  on screen false
+20:22:30 -- [PANEL]         FrameB  [Frame]  visible true  on screen false
+20:22:30 -- [PANEL]         UIStroke  [UIStroke]  visible n/a  on screen false
+20:22:30 -- [PANEL]       Help  [Frame]  visible n/a  on screen false
+20:22:30 -- [PANEL]         UIListLayout  [UIListLayout]  visible n/a  on screen false
+20:22:30 -- [PANEL]         FrameB  [Frame]  visible true  on screen false
+20:22:30 -- [PANEL]         UIStroke  [UIStroke]  visible n/a  on screen false
+20:22:30 -- [PANEL]       Appearance  [Frame]  visible n/a  on screen false
+20:22:30 -- [PANEL]         UIListLayout  [UIListLayout]  visible n/a  on screen false
+20:22:30 -- [PANEL]         FrameB  [Frame]  visible true  on screen false
+20:22:30 -- [PANEL]         UIStroke  [UIStroke]  visible n/a  on screen false
+20:22:30 -- [PANEL]       Options  [Frame]  visible n/a  on screen false
+20:22:30 -- [PANEL]         UIListLayout  [UIListLayout]  visible n/a  on screen false
+20:22:30 -- [PANEL]         FrameB  [Frame]  visible true  on screen false
+20:22:30 -- [PANEL]         UIStroke  [UIStroke]  visible n/a  on screen false
+20:22:30 -- [PANEL] -- B. Equipment page children
+20:22:30 -- [PANEL]    [UIListLayout] UIListLayout  visible n/a  on screen true
+20:22:30 -- [PANEL]    [Frame] FrameB  visible true  on screen true  size 406x560
+20:22:30 -- [PANEL]    [UIStroke] UIStroke  visible n/a  on screen true
+20:22:30 -- [PANEL]    [Frame] Bottom  visible n/a  on screen false  size 0x0
+20:22:30 -- [PANEL]    [Frame] SearchBar  visible true  on screen true  size 389x31
+20:22:30 -- [PANEL]    [Frame] Top  visible true  on screen true  size 416x1
+20:22:30 -- [PANEL] -- B2. FrameB children (the row above the list)
+20:22:30 -- [PANEL]    [UIStroke] UIStroke  visible n/a  on screen true
+20:22:30 -- [PANEL]    [Frame] Shadow  visible true  on screen true  size 406x19
+20:22:30 -- [PANEL]    [Frame] Shadow  visible n/a  on screen false  size 406x19
+20:22:30 -- [PANEL]    [Frame] Filters  visible true  on screen true  size 345x44
+20:22:30 -- [PANEL]    [Frame] Sort  visible true  on screen true  size 60x44
+20:22:30 -- [PANEL]    [Folder] Temp  visible n/a  on screen true
+20:22:30 -- [PANEL]    [UIGradient] UIGradient-Curved  visible n/a  on screen true
+20:22:30 -- [PANEL]    [UIGradient] UIGradient-Linear  visible n/a  on screen true
+20:22:30 -- [PANEL]    [UIGradient] UIGradient-CurvedNew  visible n/a  on screen true
+20:22:30 -- [PANEL]    [ScrollingFrame] List  visible true  on screen true  size 406x501
+20:22:30 -- [PANEL] -- B3. Filters: what a filter button is
+20:22:30 -- [PANEL]    [Frame] Filters  visible true  on screen true  size 345x44
+20:22:30 -- [PANEL]    [UIListLayout] UIListLayout  visible n/a  on screen true   children 0
+20:22:30 -- [PANEL]    [ImageButton] Dagger  visible true  on screen true  size 31x44   children 0
+20:22:30 -- [PANEL]    [ImageButton] UpperHeadwear  visible true  on screen true  size 31x44   children 0
+20:22:30 -- [PANEL]    [ImageButton] One-Handed  visible true  on screen true  size 31x44   children 0
+20:22:30 -- [PANEL]    [ImageButton] Outfit  visible true  on screen true  size 31x44   children 0
+20:22:30 -- [PANEL]    [ImageButton] Rapier  visible true  on screen true  size 31x44   children 0
+20:22:30 -- [PANEL]    [ImageButton] Shield  visible true  on screen true  size 31x44   children 0
+20:22:30 -- [PANEL]    [ImageButton] Two-Handed  visible true  on screen true  size 31x44   children 0
+20:22:30 -- [PANEL]    [ImageButton] LowerHeadwear  visible true  on screen true  size 31x44   children 0
+20:22:30 -- [PANEL]    [ImageButton] Melee  visible true  on screen true  size 31x44   children 0
+20:22:30 -- [PANEL] -- B4. Every button on the page that could open or refill it
+20:22:30 -- [PANEL]    [ImageButton] Items  visible true  on screen false  size 0x234
+20:22:30 -- [PANEL]    [ImageButton] Skills  visible true  on screen false  size 0x234
+20:22:30 -- [PANEL]    [ImageButton] Equipment  visible true  on screen false  size 0x234
+20:22:30 -- [PANEL]    [ImageButton] Appearance  visible true  on screen false  size 0x234
+20:22:30 -- [PANEL]    [ImageButton] GM  visible true  on screen false  size 0x50
+20:22:30 -- [PANEL]    [ImageButton] Trade  visible true  on screen false  size 0x50
+20:22:30 -- [PANEL]    [ImageButton] Inbox  visible true  on screen false  size 0x50
+20:22:30 -- [PANEL]    [ImageButton] Players  visible true  on screen false  size 0x50
+20:22:30 -- [PANEL]    [ImageButton] Friends  visible true  on screen false  size 0x50
+20:22:30 -- [PANEL]    [ImageButton] Guild  visible true  on screen false  size 0x50
+20:22:30 -- [PANEL]    [ImageButton] Store  visible true  on screen false  size 0x50
+20:22:30 -- [PANEL]    [ImageButton] Stats  visible true  on screen false  size 0x50
+20:22:30 -- [PANEL]    [ImageButton] Map  visible true  on screen false  size 0x50
+20:22:30 -- [PANEL]    [ImageButton] Quest  visible true  on screen false  size 0x50
+20:22:30 -- [PANEL]    [ImageButton] Fishdex  visible true  on screen false  size 0x50
+20:22:30 -- [PANEL]    [ImageButton] Options  visible true  on screen false  size 0x50
+20:22:30 -- [PANEL]    [ImageButton] Help  visible true  on screen false  size 0x50
+20:22:30 -- [PANEL]    [ImageButton] Owned  visible true  on screen false  size 0x50
+20:22:30 -- [PANEL]    [ImageButton] Logout  visible true  on screen false  size 0x50
+20:22:30 -- [PANEL]    [ImageButton] Items  visible true  on screen true  size 248x50
+20:22:30 -- [PANEL]    [ImageButton] Skills  visible true  on screen true  size 248x50
+20:22:30 -- [PANEL]    [ImageButton] Equipment  visible true  on screen true  size 248x50
+20:22:30 -- [PANEL]    [ImageButton] Appearance  visible true  on screen true  size 248x50
+20:22:30 -- [PANEL]    [ImageButton] Close  visible n/a  on screen false  size 30x36
+20:22:30 -- [PANEL]    [TextButton] Direct  visible n/a  on screen false  size 101x19  text "| Store"
+20:22:30 -- [PANEL]    [TextButton] ScreenOffButton  visible true  on screen false  size 101x22
+20:22:30 -- [PANEL]    [TextButton] ScreenOnButton  visible true  on screen false  size 101x22
+20:22:30 -- [PANEL]    [ImageButton] Cancel  visible n/a  on screen false  size 26x28
+20:22:30 -- [PANEL]    [TextButton] Direct  visible n/a  on screen false  size 101x19  text "| Owned"
+20:22:30 -- [PANEL]    [ImageButton] Close  visible n/a  on screen false  size 30x36
+20:22:30 -- [PANEL]    [ImageButton] Leave  visible true  on screen false  size 60x44
+20:22:30 -- [PANEL]    [ImageButton] Close  visible n/a  on screen false  size 30x36
+20:22:30 -- [PANEL] -- C0. list as it is now
+20:22:30 -- [PANEL]    children 23   cards 21   ChildAdded seen 0
+20:22:30 -- [PANEL]    Fists  type "Melee"  Skill 1  worn nil
+20:22:30 -- [PANEL]    Iron Dagger  type "Dagger"  Skill 1  worn nil
+20:22:30 -- [PANEL]    Swamp Coat  type "LowerHeadwear"  Level 18  worn true
+20:22:30 -- [PANEL]    Wooden Shield  type "Shield"  Level 1  worn nil
+20:22:30 -- [PANEL]    Iron Greatsword  type "Two-Handed"  Skill 1  worn nil
+20:22:30 -- [PANEL] -- C1. Equip tab press: does it rebuild the cards, and how fast
+20:22:30 -- [PANEL]    tab [ImageButton] Equipment  visible true  on screen true  size 248x50
+20:22:31 -- [PANEL]    pressed via MouseButton1Down   first card after 0.00s   cards 21 -> 21   ChildAdded +0   now 0.50s
+20:22:31 -- [PANEL] -- C2. Filter press: does it refill the list, and how fast
+20:22:31 -- [PANEL]    filter [ImageButton] Dagger  visible true  on screen false  size 31x44
+20:22:31 -- [PANEL]    pressed via MouseButton1Down   list changed after 0.00s   cards 21 -> 21   ChildAdded +2
+20:22:32 -- [PANEL]    pressed again   cards 21   ChildAdded +2
+20:22:32 -- [PANEL] -- C3. Does the list keep its cards with the page put away
+20:22:32 -- [PANEL]    menu showing now: true   page visible: false
+20:22:32 -- [AIC] heartbeat: AutoQuest took 18.6 ms in one frame (39 features, 1.0 ms each on average)
+20:22:32 -- [PANEL]    menu pressed   menu showing: true   page visible: false   cards 21
+20:22:32 -- [PANEL]    filter pressed with the page away: via MouseButton1Down   changed after 0.00s   cards 21 -> 21   ChildAdded +22
+20:22:33 -- [PANEL] -- D. equip button: bound on screen vs hidden
+20:22:33 -- [PANEL]    card Fists  type "Melee"  Skill 1  worn nil
+20:22:33 -- [PANEL]    hidden: Fists  visible true  on screen false  size 72x45  click conns 0  down conns 0  activated conns 1
+20:22:33 -- [PANEL]    shown: Fists  visible true  on screen false  size 72x45  click conns 0  down conns 0  activated conns 1
+20:22:33 -- [PANEL] -- E. a press with the page hidden
+20:22:34 -- [PANEL]    page away: menu showing true   page visible false
+20:22:34 -- [PANEL]    pressed Fists via Activated   worn Beginner Sword -> Fists   after 0.27s (0.27s)
+20:22:34 -- [PANEL]    RESULT: a hidden press DOES equip. The menu can be skipped once the cards exist.
+20:22:34 -- [AIC] heartbeat: AutoQuest took 15.0 ms in one frame (39 features, 0.8 ms each on average)
+20:22:37 -- [PANEL]    WARNING: could not put "Beginner Sword" back automatically. Press Equip Now in the Gear tab.
+20:22:37 -- [PANEL] -- F. what this means
+20:22:37 -- [PANEL]    cards in the list now: 21   ChildAdded events seen: 46
+20:22:37 -- [PANEL]    filters: 10   menu showing: true   page visible: false
+20:22:37 -- [PANEL]    done in 6.37s — paste every [PANEL] line
+20:22:37 -- [AIC] heartbeat: AutoQuest took 12.5 ms in one frame (39 features, 0.7 ms each on average)

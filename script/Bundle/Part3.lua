@@ -252,15 +252,15 @@ local CONFIG = Context.CONFIG
 local AICProfile = Context.AICProfile
 local SaveConfig = Context.SaveConfig
 local Logger = Context.Logger
-local OPEN_WAIT = 2
-local CARD_WAIT = 2.5
-local VERIFY_WAIT = 2.5
-local ATTEMPT_WAIT = 1.2
-local POLL = 0.1
-local CLICK_SETTLE = 0.35
+local OPEN_WAIT = 1.5
+local CARD_WAIT = 1.5
+local REFILL_WAIT = 0.5
+local VERIFY_WAIT = 1.2
+local ATTEMPT_WAIT = 0.45
+local POLL = 0.08
+local CLICK_SETTLE = 0.1
 local STATUS_SLOTS = 3
 local EQUIP_ATTEMPTS = 2
-local PAGE_TABS = { "Stats", "Skills", "Items", "Owned", "Appearance", "Map", "Players", "Friends", "Guild", "Trade", "Store", "Quest", "Options", "Help", "GM" }
 local MENU_BUTTONS = {
 { "DeviceGui", "ConsolePC", "MenuButton" },
 { "DeviceGui", "Mobile", "MobileMenuButton" },
@@ -270,6 +270,7 @@ local TAB_PATHS = {
 { "GameGui", "MenuGui-NEW", "FrontRight", "Menu", "MidFrames", "Player-PageLayout", "Equipment" },
 }
 local LIST_PATH = { "GameGui", "MenuGui-NEW", "FrontRight", "Menu", "Frames", "Equipment", "FrameB", "List" }
+local FILTERS_PATH = { "GameGui", "MenuGui-NEW", "FrontRight", "Menu", "Frames", "Equipment", "FrameB", "Filters" }
 local PAGE_PATH = { "GameGui", "MenuGui-NEW", "FrontRight", "Menu", "Frames", "Equipment" }
 local MENU_PATH = { "GameGui", "MenuGui-NEW" }
 local SKILL_BY_TYPE = {
@@ -471,6 +472,16 @@ return Tab
 end
 end
 return nil
+end
+local function FilterButtons()
+local Frame = Follow(GetPlayerGui(), FILTERS_PATH)
+local Found = {}
+for _, Child in ipairs(Frame and Frame:GetChildren() or {}) do
+if IsA(Child, "GuiButton") and Child.Visible ~= false then
+table.insert(Found, Child)
+end
+end
+return Found
 end
 local function WaitUntil(Check, Seconds)
 local Deadline = os.clock() + Seconds
@@ -994,6 +1005,16 @@ end
 end
 return false
 end
+local function CardCount()
+local List = GetList()
+local Total = 0
+for _, Child in ipairs(List and List:GetChildren() or {}) do
+if IsCard(Child) then
+Total += 1
+end
+end
+return Total
+end
 local function IsPageShowing()
 local Page = GetPage()
 return Page ~= nil and Page.Visible == true and IsShowing(Page)
@@ -1001,16 +1022,61 @@ end
 local function ReadyToClick()
 return HasCards() and IsPageShowing()
 end
-local function EnsureCards()
-if ReadyToClick() then
-return true, "open"
+local function RefillList(Card)
+local Filters = FilterButtons()
+if #Filters == 0 then
+return false
 end
+local Ordered = {}
+for _, Filter in ipairs(Filters) do
+table.insert(Ordered, Filter)
+end
+local Wanted = Card and NormalizeName(Card.Type) or ""
+if Wanted ~= "" then
+for Index, Filter in ipairs(Ordered) do
+if NormalizeName(Filter.Name) == Wanted then
+table.remove(Ordered, Index)
+table.insert(Ordered, 1, Filter)
+break
+end
+end
+end
+local function There()
+if not Card then
+return HasCards()
+end
+for _, Live in ipairs(LiveCards(Card.Name)) do
+if SameItem(Live, Card) then
+return true
+end
+end
+return false
+end
+for Index, Filter in ipairs(Ordered) do
+local Before = CardCount()
+PressNow(Filter)
+if WaitUntil(function()
+return There() or CardCount() ~= Before
+end, REFILL_WAIT) and There() then
+return true
+end
+if Index < #Ordered then
+PressNow(Filter)
+task.wait(CLICK_SETTLE)
+end
+end
+return There()
+end
+local function OpenPanel()
 local Tab = FindEquipmentTab()
 local MenuButton = FindMenuButton()
 if not Tab and not MenuButton then
 return false, "no tab"
 end
-if Tab then
+if Tab and ReadyToClick() then
+return true, "open"
+end
+if Tab and not IsPageShowing() then
 PressNow(Tab)
 if WaitUntil(ReadyToClick, CARD_WAIT) then
 return true, "tab"
@@ -1026,13 +1092,22 @@ return Open ~= nil and IsShowing(Open)
 end, OPEN_WAIT)
 end
 Tab = FindEquipmentTab()
-if Tab then
+if Tab and not IsPageShowing() then
 PressNow(Tab)
 end
 if WaitUntil(ReadyToClick, CARD_WAIT) then
 return true, "opened"
 end
+if RefillList() and WaitUntil(ReadyToClick, CARD_WAIT) then
+return true, "filter"
+end
 return false, Tab and "empty" or "no tab"
+end
+local function EnsureCards()
+if HasCards() then
+return true, IsPageShowing() and "open" or "hidden"
+end
+return OpenPanel()
 end
 local function FocusCard(Card, Force)
 local Node = LiveCard(Card)
@@ -1044,26 +1119,11 @@ PressNow(Node)
 task.wait(CLICK_SETTLE)
 return LiveCard(Card)
 end
-local function RebuildPanel()
-local Tab = FindEquipmentTab()
-if Tab and Tab.Parent then
-local Other
-for _, Name in ipairs(PAGE_TABS) do
-local Candidate = Tab.Parent:FindFirstChild(Name)
-if Candidate and Candidate ~= Tab and IsA(Candidate, "GuiButton") then
-Other = Candidate
-break
+local function RebuildPanel(Card)
+if not IsPageShowing() then
+OpenPanel()
 end
-end
-if Other then
-PressNow(Other)
-task.wait(CLICK_SETTLE)
-end
-end
-if Tab then
-PressNow(Tab)
-end
-EnsureCards()
+return RefillList(Card)
 end
 local function PressSlot(Slot, Card, Force)
 local Node = FocusCard(Card, Force)
@@ -1107,7 +1167,7 @@ if Wearing(Card, Slot) then
 return true, "ok"
 end
 SetStatus(string.format("RETRYING  ·  %s -> %s", Slot.Label, Card.Name))
-RebuildPanel()
+RebuildPanel(Card)
 end
 SetStatus(string.format("EQUIPPING  ·  %s -> %s", Slot.Label, Card.Name))
 local Took, Why, Instead = PressSlot(Slot, Card, Attempt > 1)

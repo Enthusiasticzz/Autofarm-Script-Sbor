@@ -49,25 +49,34 @@ return {
 
         --// Seconds to wait for the menu, the cards, and the game to write the
         --// equipped item back into PlayerStats.
-        local OPEN_WAIT = 2
-        local CARD_WAIT = 2.5
-        local VERIFY_WAIT = 2.5
+        local OPEN_WAIT = 1.5
+        local CARD_WAIT = 1.5
+        --// How long a filter press gets to rebuild the list. Short on
+        --// purpose: a filter that does not list the card is followed by the
+        --// next one, and waiting the full card timeout on each of a dozen
+        --// filters would cost seconds.
+        local REFILL_WAIT = 0.5
+        --// How long the game is given to undo an equip at the end of a pass.
+        local VERIFY_WAIT = 1.2
         --// How long one delivery style gets before the next is tried. An
-        --// equip the game accepts shows up at once; this only has to outlast
-        --// the frame the handler runs on.
-        local ATTEMPT_WAIT = 1.2
-        local POLL = 0.1
-        --// Between the first button and the opposite one on a failed equip.
-        local CLICK_SETTLE = 0.35
+        --// equip the game accepts is applied on the frame its handler runs
+        --// on, so this only has to outlast a frame or two: giving each of
+        --// three signals a full 1.2 s was most of why a pass felt slow.
+        --// A press that is merely late is still caught by the end-of-pass
+        --// read, which is what puts an item the game undid back on the
+        --// report.
+        local ATTEMPT_WAIT = 0.45
+        local POLL = 0.08
+        --// Between selecting a card and pressing its equip button, and
+        --// between the presses of a refill: one frame of work each, not the
+        --// third of a second that was only ever a guess.
+        local CLICK_SETTLE = 0.1
         --// How many slot results the status line keeps before "…".
         local STATUS_SLOTS = 3
         --// Presses per slot. The second comes after the panel is rebuilt,
         --// which is what fixes a press that landed on the item that moved
         --// into the card's place.
         local EQUIP_ATTEMPTS = 2
-        --// Other pages in the menu, used only to make the Equipment page
-        --// build its cards again (see RebuildPanel).
-        local PAGE_TABS = { "Stats", "Skills", "Items", "Owned", "Appearance", "Map", "Players", "Friends", "Guild", "Trade", "Store", "Quest", "Options", "Help", "GM" }
 
         local MENU_BUTTONS = {
             { "DeviceGui", "ConsolePC", "MenuButton" },
@@ -80,6 +89,12 @@ return {
             { "GameGui", "MenuGui-NEW", "FrontRight", "Menu", "MidFrames", "Player-PageLayout", "Equipment" },
         }
         local LIST_PATH = { "GameGui", "MenuGui-NEW", "FrontRight", "Menu", "Frames", "Equipment", "FrameB", "List" }
+        --// The page's own filter buttons ("Dagger", "One-Handed", ...).
+        --// Pressing one refills the list from the page itself, which is the
+        --// only rebuild that does not have to leave the Equipment page;
+        --// switching to another page tab and back was what kept landing the
+        --// pass on Skills.
+        local FILTERS_PATH = { "GameGui", "MenuGui-NEW", "FrontRight", "Menu", "Frames", "Equipment", "FrameB", "Filters" }
         local PAGE_PATH = { "GameGui", "MenuGui-NEW", "FrontRight", "Menu", "Frames", "Equipment" }
         --// The menu itself: its button toggles it, so it is only pressed when
         --// the menu is not already showing.
@@ -351,6 +366,21 @@ return {
             end
 
             return nil
+        end
+
+        --// The filter buttons on the Equipment page. A press refills the
+        --// list, which is how the panel builds its cards in the first place.
+        local function FilterButtons()
+            local Frame = Follow(GetPlayerGui(), FILTERS_PATH)
+            local Found = {}
+
+            for _, Child in ipairs(Frame and Frame:GetChildren() or {}) do
+                if IsA(Child, "GuiButton") and Child.Visible ~= false then
+                    table.insert(Found, Child)
+                end
+            end
+
+            return Found
         end
 
         ------------------------------------------------------------------------
@@ -1149,9 +1179,26 @@ return {
             return false
         end
 
-        --// The cards outlive the page that showed them, so a list with cards
-        --// in it is not the same as an Equipment page you can press. The
-        --// game ignores a button on a page that is not showing.
+        --// How many cards the list holds. A filter press that changes it has
+        --// rebuilt the list, which is all a refill has to wait for.
+        local function CardCount()
+            local List = GetList()
+            local Total = 0
+
+            for _, Child in ipairs(List and List:GetChildren() or {}) do
+                if IsCard(Child) then
+                    Total += 1
+                end
+            end
+
+            return Total
+        end
+
+        --// Whether the Equipment page is drawn right now. A list with cards in
+        --// it is not enough on its own - the game keeps the cards after the
+        --// page is hidden - but a press with the page away is still tried and
+        --// verified (see EnsureCards), so this only decides when the slow path
+        --// has to open the page first.
         local function IsPageShowing()
             local Page = GetPage()
 
@@ -1162,23 +1209,100 @@ return {
             return HasCards() and IsPageShowing()
         end
 
-        --// Selects the Equipment page, opening the menu only when the page
-        --// cannot be reached without it. True once cards are readable on a
-        --// page that is actually showing.
-        local function EnsureCards()
-            if ReadyToClick() then
-                return true, "open"
+        --// Presses filters until the cards are built again. Card is the item
+        --// that has to be on the page afterwards; without one, any card will
+        --// do. True once it is.
+        --//
+        --// This is the page's own refill. Switching to another page tab and
+        --// back did the same job, but it left the pass on whatever page it
+        --// picked (Skills, most of the time) and cost two page loads.
+        local function RefillList(Card)
+            local Filters = FilterButtons()
+
+            if #Filters == 0 then
+                return false
             end
 
+            local Ordered = {}
+
+            for _, Filter in ipairs(Filters) do
+                table.insert(Ordered, Filter)
+            end
+
+            --// The filter for the card's own Type is tried first: a Dagger
+            --// filter is certain to leave the dagger card on the page.
+            local Wanted = Card and NormalizeName(Card.Type) or ""
+
+            if Wanted ~= "" then
+                for Index, Filter in ipairs(Ordered) do
+                    if NormalizeName(Filter.Name) == Wanted then
+                        table.remove(Ordered, Index)
+                        table.insert(Ordered, 1, Filter)
+                        break
+                    end
+                end
+            end
+
+            local function There()
+                if not Card then
+                    return HasCards()
+                end
+
+                for _, Live in ipairs(LiveCards(Card.Name)) do
+                    if SameItem(Live, Card) then
+                        return true
+                    end
+                end
+
+                return false
+            end
+
+            for Index, Filter in ipairs(Ordered) do
+                local Before = CardCount()
+
+                PressNow(Filter)
+
+                --// Waits only for the list to be rebuilt, then looks for the
+                --// card at once: a filter that does not list it is not worth
+                --// the full card timeout.
+                if WaitUntil(function()
+                    return There() or CardCount() ~= Before
+                end, REFILL_WAIT) and There() then
+                    return true
+                end
+
+                --// Filtered to something the card is not in: pressing the
+                --// same filter again is what puts the whole list back, so
+                --// the next press starts from every card again.
+                if Index < #Ordered then
+                    PressNow(Filter)
+                    task.wait(CLICK_SETTLE)
+                end
+            end
+
+            return There()
+        end
+
+        --// The page, showing, with cards on it. This is the slow path: it is
+        --// only taken when the list is empty (the game builds the cards when
+        --// the panel is opened or a filter changes) or when a press with the
+        --// menu shut did not take.
+        local function OpenPanel()
             local Tab = FindEquipmentTab()
             local MenuButton = FindMenuButton()
 
-            --// Neither control exists: no point waiting two seconds twice.
+            --// Neither control exists: no point waiting twice.
             if not Tab and not MenuButton then
                 return false, "no tab"
             end
 
-            if Tab then
+            if Tab and ReadyToClick() then
+                return true, "open"
+            end
+
+            --// Pressing the tab of the page that is already showing does
+            --// nothing, so only press it when it is not showing.
+            if Tab and not IsPageShowing() then
                 PressNow(Tab)
 
                 if WaitUntil(ReadyToClick, CARD_WAIT) then
@@ -1201,7 +1325,7 @@ return {
 
             Tab = FindEquipmentTab()
 
-            if Tab then
+            if Tab and not IsPageShowing() then
                 PressNow(Tab)
             end
 
@@ -1209,7 +1333,29 @@ return {
                 return true, "opened"
             end
 
+            --// The page is showing but no card is readable on it: a filter
+            --// press is what makes the game fill the list.
+            if RefillList() and WaitUntil(ReadyToClick, CARD_WAIT) then
+                return true, "filter"
+            end
+
             return false, Tab and "empty" or "no tab"
+        end
+
+        --// Selects the Equipment page, opening the menu only when the cards
+        --// cannot be read without it.
+        --//
+        --// Cards already in the list count, page showing or not: the game
+        --// keeps them after the page is hidden, and a press is verified
+        --// against PlayerStats, so trying one with the menu shut costs
+        --// nothing when the game accepts it and one failed press, once, when
+        --// it does not - the retry opens the page.
+        local function EnsureCards()
+            if HasCards() then
+                return true, IsPageShowing() and "open" or "hidden"
+            end
+
+            return OpenPanel()
         end
 
         --// The card the equip button acts on is the one the page is showing:
@@ -1232,37 +1378,20 @@ return {
             return LiveCard(Card)
         end
 
-        --// Shows another page and comes back, so the game builds the cards
-        --// again in the order they are in now. The panel lists the equipped
-        --// items first and re-sorts itself after every equip, so a card that
-        --// was built before that can be bound to the item that moved into its
-        --// place.
-        local function RebuildPanel()
-            local Tab = FindEquipmentTab()
-
-            if Tab and Tab.Parent then
-                local Other
-
-                for _, Name in ipairs(PAGE_TABS) do
-                    local Candidate = Tab.Parent:FindFirstChild(Name)
-
-                    if Candidate and Candidate ~= Tab and IsA(Candidate, "GuiButton") then
-                        Other = Candidate
-                        break
-                    end
-                end
-
-                if Other then
-                    PressNow(Other)
-                    task.wait(CLICK_SETTLE)
-                end
+        --// Makes the game build the cards again, so every button is bound to
+        --// the card it is drawn on. The panel lists the equipped items first
+        --// and re-sorts itself after every equip, so a card that was built
+        --// before that can be bound to the item that moved into its place.
+        --//
+        --// Card is the item that has to be on the page afterwards; the retry
+        --// only presses when it can find it again. Nothing here presses
+        --// another page's tab.
+        local function RebuildPanel(Card)
+            if not IsPageShowing() then
+                OpenPanel()
             end
 
-            if Tab then
-                PressNow(Tab)
-            end
-
-            EnsureCards()
+            return RefillList(Card)
         end
 
         --// One press on the slot's own button - E is slot 1, E2 is slot 2 -
@@ -1340,7 +1469,7 @@ return {
                     end
 
                     SetStatus(string.format("RETRYING  ·  %s -> %s", Slot.Label, Card.Name))
-                    RebuildPanel()
+                    RebuildPanel(Card)
                 end
 
                 SetStatus(string.format("EQUIPPING  ·  %s -> %s", Slot.Label, Card.Name))
