@@ -55,6 +55,7 @@ $profileSettings = Module-Source "Features/ProfileSettings.lua" "script/Features
 $profileSerialization = Module-Source "Core/ProfileManager_Serialization.lua" "script/Core/ProfileManager_Serialization.lua"
 $webhook = Module-Source "Features/Webhook.lua" "script/Features/Webhook.lua"
 $bossNavigator = Module-Source "Features/BossNavigator.lua" "script/Features/BossNavigator.lua"
+$bossEvade = Module-Source "Features/BossNavigator_Evade.lua" "script/Features/BossNavigator_Evade.lua"
 $probe = Get-Content (Join-Path $PSScriptRoot "BootProbe.lua") -Raw
 
 # The stub keeps its world in locals (the UI smoke test runs in the same chunk).
@@ -103,6 +104,7 @@ $combined += "`nlocal ProfileSettingsModule = (function()`n" + $profileSettings 
 $combined += "`nlocal ProfileSerializationModule = (function()`n" + $profileSerialization + "`nend)()`n"
 $combined += "`nlocal WebhookModule = (function()`n" + $webhook + "`nend)()`n"
 $combined += "`nlocal BossNavigatorModule = (function()`n" + $bossNavigator + "`nend)()`n"
+$combined += "`nlocal BossEvadeModule = (function()`n" + $bossEvade + "`nend)()`n"
 $combined += "`n" + $probe
 
 $outDir = Join-Path $PSScriptRoot "output"

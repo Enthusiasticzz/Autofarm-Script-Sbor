@@ -2976,7 +2976,7 @@ local AICConfig = Context.AICConfig
 local AICCombat = Context.AICCombat
 local AICCombatUtils = Context.AICCombatUtils
 local AICFeature = Context.AICFeature
-local FeatureState = Context.FeatureState
+local FeatureState = Context.FeatureState or Context.Feature
 local Boss = AICFeature.BossNav
 assert(type(Boss) == "table", "BossNavigator_Evade: BossNavigator did not publish BossNav")
 local REQUIRED = {

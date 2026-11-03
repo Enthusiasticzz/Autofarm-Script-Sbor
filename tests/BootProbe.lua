@@ -331,6 +331,15 @@ if not BossNavOk then
     error("BOSSNAVIGATOR START ERROR:\n" .. tostring(BossNavErr))
 end
 
+--// The hold lives in Features/BossNavigator_Evade.lua now and reads the route
+--// through AICFeature.BossNav; starting it here is what proves that seam is
+--// complete at boot instead of the first time a stranger walks in.
+local BossEvadeOk, BossEvadeErr = xpcall(BossEvadeModule.Start, debug.traceback, Context)
+
+if not BossEvadeOk then
+    error("BOSSNAVIGATOR_EVADE START ERROR:\n" .. tostring(BossEvadeErr))
+end
+
 --// The title of a section is its first row. A control given a negative
 --// LayoutOrder to get above the other rows lands above the title too, which is
 --// exactly what a section split is supposed to avoid.
