@@ -55,12 +55,19 @@ return {
         --// How long one delivery style gets before the next is tried. An
         --// equip the game accepts shows up at once; this only has to outlast
         --// the frame the handler runs on.
-        local ATTEMPT_WAIT = 0.9
+        local ATTEMPT_WAIT = 1.2
         local POLL = 0.1
         --// Between the first button and the opposite one on a failed equip.
         local CLICK_SETTLE = 0.35
         --// How many slot results the status line keeps before "…".
         local STATUS_SLOTS = 3
+        --// Presses per slot. The second comes after the panel is rebuilt,
+        --// which is what fixes a press that landed on the item that moved
+        --// into the card's place.
+        local EQUIP_ATTEMPTS = 2
+        --// Other pages in the menu, used only to make the Equipment page
+        --// build its cards again (see RebuildPanel).
+        local PAGE_TABS = { "Stats", "Skills", "Items", "Owned", "Appearance", "Map", "Players", "Friends", "Guild", "Trade", "Store", "Quest", "Options", "Help", "GM" }
 
         local MENU_BUTTONS = {
             { "DeviceGui", "ConsolePC", "MenuButton" },
@@ -671,6 +678,21 @@ return {
         --// Player numbers
         ------------------------------------------------------------------------
 
+        --// Every worn slot at once. PlayerStats is the game's own state, and
+        --// one equip can move more than the slot that was pressed, so the
+        --// whole set is read rather than only the field that was aimed at.
+        local function ReadWorn()
+            local Worn = {}
+            local PlayerStats = GetPlayerStats()
+
+            for _, Slot in ipairs(SLOTS) do
+                local Field = PlayerStats and PlayerStats:FindFirstChild(Slot.Field)
+                Worn[Slot.Id] = ReadName(Field)
+            end
+
+            return Worn
+        end
+
         local function ReadStats()
             local Stats = { Level = 0, Worn = {}, Owned = {}, Found = false }
             local PlayerStats = GetPlayerStats()
@@ -707,10 +729,7 @@ return {
                 end
             end
 
-            for _, Slot in ipairs(SLOTS) do
-                local Field = PlayerStats:FindFirstChild(Slot.Field)
-                Stats.Worn[Slot.Id] = ReadName(Field)
-            end
+            Stats.Worn = ReadWorn()
 
             --// "Name|2,Name|1": what is owned. The panel should only hold
             --// owned items, and this makes sure a stale card cannot win.
@@ -841,18 +860,48 @@ return {
             return Cards
         end
 
-        --// The live card for a name. The game rebuilds the list when an item
-        --// goes on, so a card read before the last equip may no longer be in
-        --// the panel, and pressing its buttons would reach nothing.
-        local function LiveCard(Card)
+        --// Every card in the panel with this name. The game can hold two
+        --// cards under one name (two "Swamp Wanderer" outfits, level 15 and
+        --// level 19), so a name on its own does not name an item.
+        local function LiveCards(Name)
             local List = GetList()
-            local Found = List and List:FindFirstChild(Card.Name)
+            local Matches = {}
 
-            if Found and IsCard(Found) then
-                return Found
+            for _, Child in ipairs(List and List:GetChildren() or {}) do
+                if Child.Name == Name and IsCard(Child) then
+                    table.insert(Matches, ReadCard(Child))
+                end
             end
 
-            return Card.Card
+            return Matches
+        end
+
+        --// Same name, same type, same requirement: the level is what tells
+        --// two same-named items apart.
+        local function SameItem(A, B)
+            return A.Name == B.Name and A.Type == B.Type and A.Amount == B.Amount
+        end
+
+        --// The live card for this item, not merely for this name. The game
+        --// rebuilds the list when an item goes on, so a card read before the
+        --// last equip may no longer be in the panel; pressing its buttons
+        --// would reach nothing, or the card that took its place. Looking the
+        --// name up alone reached the first same-named card, which is how a
+        --// level-19 outfit ended up pressing the level-15 one.
+        local function LiveCard(Card)
+            local Untaken
+
+            for _, Live in ipairs(LiveCards(Card.Name)) do
+                if SameItem(Live, Card) then
+                    if Live.Equipped then
+                        return Live.Card
+                    end
+
+                    Untaken = Untaken or Live.Card
+                end
+            end
+
+            return Untaken or Card.Card
         end
 
         local function MeetsRequirement(Card, Stats)
@@ -1019,16 +1068,46 @@ return {
             local PlayerStats = GetPlayerStats()
             local Field = PlayerStats and PlayerStats:FindFirstChild(Slot.Field)
 
-            --// PlayerStats is the worn state the game itself keeps; the
-            --// card's own marker is only a fallback, and only on the card
-            --// that is in the panel now.
-            if Field and ReadName(Field) == Card.Name then
-                return true
+            --// PlayerStats is the worn state the game itself keeps, so it is
+            --// the only proof. A card's own isEquipped flips the moment a
+            --// press reaches it, before the game has accepted the item, and
+            --// the pass used to count that as a success.
+            if not Field or ReadName(Field) ~= Card.Name then
+                return false
             end
 
-            local Node = LiveCard(Card)
+            --// Two items can share a name: the panel marks the one that is
+            --// on, and that marker says which of them it is.
+            local Marked, AnyMarked = false, false
 
-            return ReadBool(Node and Node:FindFirstChild("isEquipped"))
+            for _, Live in ipairs(LiveCards(Card.Name)) do
+                if Live.Equipped then
+                    AnyMarked = true
+
+                    if SameItem(Live, Card) then
+                        Marked = true
+                    end
+                end
+            end
+
+            return not AnyMarked or Marked
+        end
+
+        --// The snapshot's isEquipped flags are from the moment the pass
+        --// began; after each equip the worn names are the truth, so the flags
+        --// are brought up to date instead of going stale for the rest of it.
+        local function SyncEquipped(Cards, Worn)
+            local On = {}
+
+            for _, Name in pairs(Worn) do
+                if Name ~= "" then
+                    On[Name] = true
+                end
+            end
+
+            for _, Card in ipairs(Cards) do
+                Card.Equipped = On[Card.Name] == true
+            end
         end
 
         ------------------------------------------------------------------------
@@ -1131,52 +1210,146 @@ return {
         --// The card the equip button acts on is the one the page is showing:
         --// a card that is not on display is selected first, so the press
         --// cannot land on the item the page was showing before it.
-        local function FocusCard(Card)
+        local function FocusCard(Card, Force)
             local Node = LiveCard(Card)
             local Flag = Node and Node:FindFirstChild("onDisplay")
 
-            if not Flag or ReadBool(Flag) then
+            if not Node or (Flag and ReadBool(Flag) and not Force) then
                 return Node
             end
 
-            PressUntil(Node, function()
-                local Live = LiveCard(Card)
-                local Marker = Live and Live:FindFirstChild("onDisplay")
+            PressNow(Node)
 
-                return Marker ~= nil and ReadBool(Marker)
-            end)
+            --// Selecting is a press of its own: give the page the beat it
+            --// needs before the equip button is pressed.
+            task.wait(CLICK_SETTLE)
 
             return LiveCard(Card)
         end
 
-        local function EquipSlot(Slot, Card)
-            local Order = { Slot.Button or "E", Slot.Button == "E2" and "E" or "E2" }
-            local Node = FocusCard(Card)
-            local Detail = "no button"
+        --// Shows another page and comes back, so the game builds the cards
+        --// again in the order they are in now. The panel lists the equipped
+        --// items first and re-sorts itself after every equip, so a card that
+        --// was built before that can be bound to the item that moved into its
+        --// place.
+        local function RebuildPanel()
+            local Tab = FindEquipmentTab()
 
-            for Index, ButtonName in ipairs(Order) do
-                if Index > 1 then
-                    task.wait(CLICK_SETTLE)
-                    Node = LiveCard(Card)
+            if Tab and Tab.Parent then
+                local Other
+
+                for _, Name in ipairs(PAGE_TABS) do
+                    local Candidate = Tab.Parent:FindFirstChild(Name)
+
+                    if Candidate and Candidate ~= Tab and IsA(Candidate, "GuiButton") then
+                        Other = Candidate
+                        break
+                    end
                 end
 
-                local Buttons = Node and Node:FindFirstChild("Buttons")
-                local Button = Buttons and Buttons:FindFirstChild(ButtonName)
-
-                if Button then
-                    local Took, Why = PressUntil(Button, function()
-                        return Wearing(Card, Slot)
-                    end)
-
-                    if Took then
-                        return true, ButtonName
-                    end
-
-                    Detail = Why
+                if Other then
+                    PressNow(Other)
+                    task.wait(CLICK_SETTLE)
                 end
             end
 
-            return false, Detail
+            if Tab then
+                PressNow(Tab)
+            end
+
+            EnsureCards()
+        end
+
+        --// One press on the slot's own button - E is slot 1, E2 is slot 2 -
+        --// and a read of what the game did with it. Returns whether the item
+        --// went on, what was tried, and what the game put on instead.
+        --//
+        --// The other slot's button is never pressed: E2 on a weapon is the
+        --// off hand, so using it as a retry moves the item somewhere the
+        --// slot was not asked for.
+        local function PressSlot(Slot, Card, Force)
+            local Node = FocusCard(Card, Force)
+            local Buttons = Node and Node:FindFirstChild("Buttons")
+            local Button = Buttons and Buttons:FindFirstChild(Slot.Button or "E")
+
+            if not Button then
+                return false, "no button", nil
+            end
+
+            local Before = ReadWorn()
+            local Took, Why = PressUntil(Button, function()
+                return Wearing(Card, Slot)
+            end)
+            local After = ReadWorn()
+            local Put = After[Slot.Id]
+
+            --// One line per slot, always printed: without it a pass that
+            --// pressed nothing and a pass that pressed the wrong card look
+            --// the same from the outside.
+            Logger.info(
+                "equip %s: %s (was %s) via %s -> %s",
+                Slot.Label,
+                Card.Name,
+                Before[Slot.Id] ~= "" and Before[Slot.Id] or "empty",
+                tostring(Why),
+                Put ~= "" and Put or "empty"
+            )
+
+            if Took then
+                return true, Why, nil
+            end
+
+            --// The item landing in a different slot is a real answer, and
+            --// one worth naming: a one-handed pressed with E while the main
+            --// hand is full can end up in the off hand instead.
+            for _, Other in ipairs(SLOTS) do
+                if Other.Id ~= Slot.Id and After[Other.Id] == Card.Name then
+                    return false, "landed in " .. Other.Label, nil
+                end
+            end
+
+            --// The game took the press and put a different item on: that is
+            --// worth naming, because a second press of the same button is
+            --// what would move it back, not what would fix it.
+            if Put ~= "" and Put ~= Before[Slot.Id] then
+                return false, Why, Put
+            end
+
+            return false, Why, nil
+        end
+
+        --// Two attempts per slot: the second after the panel is rebuilt, with
+        --// the card selected first. That is what fixes a press that landed on
+        --// the item that had moved into the card's place, and it is harmless
+        --// when the first attempt simply did not reach the game.
+        local function EquipSlot(Slot, Card)
+            local Detail, Put
+
+            for Attempt = 1, EQUIP_ATTEMPTS do
+                if Attempt > 1 then
+                    --// The game can apply the last press after the wait gave
+                    --// up on it: pressing again would take the item back off
+                    --// when the button toggles.
+                    if Wearing(Card, Slot) then
+                        return true, "ok"
+                    end
+
+                    SetStatus(string.format("RETRYING  ·  %s -> %s", Slot.Label, Card.Name))
+                    RebuildPanel()
+                end
+
+                SetStatus(string.format("EQUIPPING  ·  %s -> %s", Slot.Label, Card.Name))
+
+                local Took, Why, Instead = PressSlot(Slot, Card, Attempt > 1)
+
+                if Took then
+                    return true, "ok"
+                end
+
+                Detail, Put = Why, Instead
+            end
+
+            return false, Put and ("put " .. Put .. " on") or tostring(Detail)
         end
 
         --// Key is the stat the slot was actually ranked on, so the number
@@ -1278,13 +1451,22 @@ return {
                     --// there is nothing to do and nothing to name.
                     if Card then
                         if Equip then
-                            SetStatus(string.format("EQUIPPING  ·  %s -> %s", Slot.Label, Card.Name))
-
                             local Took, Detail = EquipSlot(Slot, Card)
 
                             if Took then
-                                table.insert(Changed, Slot.Label .. " -> " .. Describe(Slot, Card, Why))
-                                Stats.Worn[Slot.Id] = Card.Name
+                                table.insert(Changed, {
+                                    Id = Slot.Id,
+                                    Label = Slot.Label,
+                                    Name = Card.Name,
+                                    Text = Slot.Label .. " -> " .. Describe(Slot, Card, Why),
+                                })
+
+                                --// One equip can move more than the slot that
+                                --// was pressed, so every worn field is read
+                                --// again instead of assuming only this one
+                                --// changed.
+                                Stats.Worn = ReadWorn()
+                                SyncEquipped(Cards, Stats.Worn)
                                 Used[Card.Name] = true
                             else
                                 --// Why it did not take matters: a press that
@@ -1293,22 +1475,46 @@ return {
                                 table.insert(Failed, string.format("%s (%s, %s)", Slot.Label, Card.Name, tostring(Detail)))
                             end
                         else
-                            table.insert(Changed, Slot.Label .. " -> " .. Describe(Slot, Card, Why))
+                            table.insert(Changed, {
+                                Id = Slot.Id,
+                                Label = Slot.Label,
+                                Name = Card.Name,
+                                Text = Slot.Label .. " -> " .. Describe(Slot, Card, Why),
+                            })
                             Used[Card.Name] = true
                         end
                     end
                 end
             end
 
+            --// A pass can look right for a second and be undone: a card marks
+            --// itself on the moment it is pressed, and the game can put the old
+            --// item back after that. The worn state is read once more, so the
+            --// readout says what is actually on.
+            local Reverted = {}
+
+            if Equip and #Changed > 0 then
+                task.wait(VERIFY_WAIT)
+
+                local Worn = ReadWorn()
+
+                for _, Entry in ipairs(Changed) do
+                    if Worn[Entry.Id] ~= Entry.Name then
+                        local Now = Worn[Entry.Id] ~= "" and Worn[Entry.Id] or "empty"
+                        table.insert(Reverted, Entry.Label .. " -> " .. Now)
+                    end
+                end
+            end
+
             local Parts = {}
 
-            for Index, Text in ipairs(Changed) do
+            for Index, Entry in ipairs(Changed) do
                 if Index > STATUS_SLOTS then
                     table.insert(Parts, "…")
                     break
                 end
 
-                table.insert(Parts, Text)
+                table.insert(Parts, Entry.Text)
             end
 
             if #Parts == 0 then
@@ -1321,26 +1527,61 @@ return {
                 table.insert(Parts, "FAILED " .. table.concat(Failed, ", "))
             end
 
+            if #Reverted > 0 then
+                table.insert(Parts, "PUT BACK " .. table.concat(Reverted, ", "))
+            end
+
             --// Nothing went on is not "DONE": the readout used to claim it
-            --// for a pass whose every press was refused.
+            --// for a pass whose every press was refused, and it must not
+            --// claim it for one the game undid either.
             local Prefix = "WOULD EQUIP"
 
             if Equip then
-                Prefix = #Changed > 0 and "DONE" or (#Failed > 0 and "NOT EQUIPPED" or "DONE")
+                if #Changed == 0 then
+                    Prefix = #Failed > 0 and "NOT EQUIPPED" or "DONE"
+                elseif #Reverted >= #Changed then
+                    Prefix = "NOT EQUIPPED"
+                elseif #Reverted > 0 then
+                    Prefix = "PARTLY EQUIPPED"
+                else
+                    Prefix = "DONE"
+                end
             end
 
             SetStatus(string.format("%s  ·  %d cards  ·  %s", Prefix, #Cards, table.concat(Parts, "  ·  ")))
 
             if Equip then
                 if #Changed > 0 then
-                    Notify(table.concat(Changed, "  ·  "))
+                    local Text = {}
+
+                    for _, Entry in ipairs(Changed) do
+                        table.insert(Text, Entry.Text)
+                    end
+
+                    local Message = table.concat(Text, "  ·  ")
+
+                    if #Failed > 0 then
+                        Message = Message .. "  ·  could not equip " .. table.concat(Failed, ", ")
+                    end
+
+                    if #Reverted > 0 then
+                        Message = Message .. "  ·  the game put back " .. table.concat(Reverted, ", ")
+                    end
+
+                    Notify(Message)
                 elseif #Failed > 0 then
-                    Notify("Could not press the equip button for " .. table.concat(Failed, ", ") .. ".")
+                    Notify("Could not equip " .. table.concat(Failed, ", ") .. ".")
                 else
                     Notify(string.format("Nothing better than what is worn (%d cards read).", #Cards))
                 end
             else
-                Notify(#Changed > 0 and table.concat(Changed, "  ·  ") or "Nothing better than what is worn.")
+                local Text = {}
+
+                for _, Entry in ipairs(Changed) do
+                    table.insert(Text, Entry.Text)
+                end
+
+                Notify(#Text > 0 and table.concat(Text, "  ·  ") or "Nothing better than what is worn.")
             end
         end
 

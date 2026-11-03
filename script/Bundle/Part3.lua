@@ -255,10 +255,12 @@ local Logger = Context.Logger
 local OPEN_WAIT = 2
 local CARD_WAIT = 2.5
 local VERIFY_WAIT = 2.5
-local ATTEMPT_WAIT = 0.9
+local ATTEMPT_WAIT = 1.2
 local POLL = 0.1
 local CLICK_SETTLE = 0.35
 local STATUS_SLOTS = 3
+local EQUIP_ATTEMPTS = 2
+local PAGE_TABS = { "Stats", "Skills", "Items", "Owned", "Appearance", "Map", "Players", "Friends", "Guild", "Trade", "Store", "Quest", "Options", "Help", "GM" }
 local MENU_BUTTONS = {
 { "DeviceGui", "ConsolePC", "MenuButton" },
 { "DeviceGui", "Mobile", "MobileMenuButton" },
@@ -683,6 +685,15 @@ end
 end
 return false, Sent and "ignored" or "no click"
 end
+local function ReadWorn()
+local Worn = {}
+local PlayerStats = GetPlayerStats()
+for _, Slot in ipairs(SLOTS) do
+local Field = PlayerStats and PlayerStats:FindFirstChild(Slot.Field)
+Worn[Slot.Id] = ReadName(Field)
+end
+return Worn
+end
 local function ReadStats()
 local Stats = { Level = 0, Worn = {}, Owned = {}, Found = false }
 local PlayerStats = GetPlayerStats()
@@ -710,10 +721,7 @@ Stats[Key] = Value
 end
 end
 end
-for _, Slot in ipairs(SLOTS) do
-local Field = PlayerStats:FindFirstChild(Slot.Field)
-Stats.Worn[Slot.Id] = ReadName(Field)
-end
+Stats.Worn = ReadWorn()
 local Inventory = PlayerStats:FindFirstChild("Inventory")
 local Text = Inventory and Inventory.Value
 if type(Text) == "string" then
@@ -804,13 +812,30 @@ end
 end
 return Cards
 end
-local function LiveCard(Card)
+local function LiveCards(Name)
 local List = GetList()
-local Found = List and List:FindFirstChild(Card.Name)
-if Found and IsCard(Found) then
-return Found
+local Matches = {}
+for _, Child in ipairs(List and List:GetChildren() or {}) do
+if Child.Name == Name and IsCard(Child) then
+table.insert(Matches, ReadCard(Child))
 end
-return Card.Card
+end
+return Matches
+end
+local function SameItem(A, B)
+return A.Name == B.Name and A.Type == B.Type and A.Amount == B.Amount
+end
+local function LiveCard(Card)
+local Untaken
+for _, Live in ipairs(LiveCards(Card.Name)) do
+if SameItem(Live, Card) then
+if Live.Equipped then
+return Live.Card
+end
+Untaken = Untaken or Live.Card
+end
+end
+return Untaken or Card.Card
 end
 local function MeetsRequirement(Card, Stats)
 if Card.Amount == nil then
@@ -922,11 +947,30 @@ end
 local function Wearing(Card, Slot)
 local PlayerStats = GetPlayerStats()
 local Field = PlayerStats and PlayerStats:FindFirstChild(Slot.Field)
-if Field and ReadName(Field) == Card.Name then
-return true
+if not Field or ReadName(Field) ~= Card.Name then
+return false
 end
-local Node = LiveCard(Card)
-return ReadBool(Node and Node:FindFirstChild("isEquipped"))
+local Marked, AnyMarked = false, false
+for _, Live in ipairs(LiveCards(Card.Name)) do
+if Live.Equipped then
+AnyMarked = true
+if SameItem(Live, Card) then
+Marked = true
+end
+end
+end
+return not AnyMarked or Marked
+end
+local function SyncEquipped(Cards, Worn)
+local On = {}
+for _, Name in pairs(Worn) do
+if Name ~= "" then
+On[Name] = true
+end
+end
+for _, Card in ipairs(Cards) do
+Card.Equipped = On[Card.Name] == true
+end
 end
 local function SetStatus(Text)
 if S.Status then
@@ -992,41 +1036,89 @@ return true, "opened"
 end
 return false, Tab and "empty" or "no tab"
 end
-local function FocusCard(Card)
+local function FocusCard(Card, Force)
 local Node = LiveCard(Card)
 local Flag = Node and Node:FindFirstChild("onDisplay")
-if not Flag or ReadBool(Flag) then
+if not Node or (Flag and ReadBool(Flag) and not Force) then
 return Node
 end
-PressUntil(Node, function()
-local Live = LiveCard(Card)
-local Marker = Live and Live:FindFirstChild("onDisplay")
-return Marker ~= nil and ReadBool(Marker)
-end)
+PressNow(Node)
+task.wait(CLICK_SETTLE)
 return LiveCard(Card)
 end
-local function EquipSlot(Slot, Card)
-local Order = { Slot.Button or "E", Slot.Button == "E2" and "E" or "E2" }
-local Node = FocusCard(Card)
-local Detail = "no button"
-for Index, ButtonName in ipairs(Order) do
-if Index > 1 then
-task.wait(CLICK_SETTLE)
-Node = LiveCard(Card)
+local function RebuildPanel()
+local Tab = FindEquipmentTab()
+if Tab and Tab.Parent then
+local Other
+for _, Name in ipairs(PAGE_TABS) do
+local Candidate = Tab.Parent:FindFirstChild(Name)
+if Candidate and Candidate ~= Tab and IsA(Candidate, "GuiButton") then
+Other = Candidate
+break
 end
+end
+if Other then
+PressNow(Other)
+task.wait(CLICK_SETTLE)
+end
+end
+if Tab then
+PressNow(Tab)
+end
+EnsureCards()
+end
+local function PressSlot(Slot, Card, Force)
+local Node = FocusCard(Card, Force)
 local Buttons = Node and Node:FindFirstChild("Buttons")
-local Button = Buttons and Buttons:FindFirstChild(ButtonName)
-if Button then
+local Button = Buttons and Buttons:FindFirstChild(Slot.Button or "E")
+if not Button then
+return false, "no button", nil
+end
+local Before = ReadWorn()
 local Took, Why = PressUntil(Button, function()
 return Wearing(Card, Slot)
 end)
+local After = ReadWorn()
+local Put = After[Slot.Id]
+Logger.info(
+"equip %s: %s (was %s) via %s -> %s",
+Slot.Label,
+Card.Name,
+Before[Slot.Id] ~= "" and Before[Slot.Id] or "empty",
+tostring(Why),
+Put ~= "" and Put or "empty"
+)
 if Took then
-return true, ButtonName
+return true, Why, nil
 end
-Detail = Why
+for _, Other in ipairs(SLOTS) do
+if Other.Id ~= Slot.Id and After[Other.Id] == Card.Name then
+return false, "landed in " .. Other.Label, nil
 end
 end
-return false, Detail
+if Put ~= "" and Put ~= Before[Slot.Id] then
+return false, Why, Put
+end
+return false, Why, nil
+end
+local function EquipSlot(Slot, Card)
+local Detail, Put
+for Attempt = 1, EQUIP_ATTEMPTS do
+if Attempt > 1 then
+if Wearing(Card, Slot) then
+return true, "ok"
+end
+SetStatus(string.format("RETRYING  ·  %s -> %s", Slot.Label, Card.Name))
+RebuildPanel()
+end
+SetStatus(string.format("EQUIPPING  ·  %s -> %s", Slot.Label, Card.Name))
+local Took, Why, Instead = PressSlot(Slot, Card, Attempt > 1)
+if Took then
+return true, "ok"
+end
+Detail, Put = Why, Instead
+end
+return false, Put and ("put " .. Put .. " on") or tostring(Detail)
 end
 local function Describe(Slot, Card, Key)
 local Shown = Key and StatOf(Card, Key) or nil
@@ -1091,29 +1183,50 @@ Statless += 1
 end
 if Card then
 if Equip then
-SetStatus(string.format("EQUIPPING  ·  %s -> %s", Slot.Label, Card.Name))
 local Took, Detail = EquipSlot(Slot, Card)
 if Took then
-table.insert(Changed, Slot.Label .. " -> " .. Describe(Slot, Card, Why))
-Stats.Worn[Slot.Id] = Card.Name
+table.insert(Changed, {
+Id = Slot.Id,
+Label = Slot.Label,
+Name = Card.Name,
+Text = Slot.Label .. " -> " .. Describe(Slot, Card, Why),
+})
+Stats.Worn = ReadWorn()
+SyncEquipped(Cards, Stats.Worn)
 Used[Card.Name] = true
 else
 table.insert(Failed, string.format("%s (%s, %s)", Slot.Label, Card.Name, tostring(Detail)))
 end
 else
-table.insert(Changed, Slot.Label .. " -> " .. Describe(Slot, Card, Why))
+table.insert(Changed, {
+Id = Slot.Id,
+Label = Slot.Label,
+Name = Card.Name,
+Text = Slot.Label .. " -> " .. Describe(Slot, Card, Why),
+})
 Used[Card.Name] = true
 end
 end
 end
 end
+local Reverted = {}
+if Equip and #Changed > 0 then
+task.wait(VERIFY_WAIT)
+local Worn = ReadWorn()
+for _, Entry in ipairs(Changed) do
+if Worn[Entry.Id] ~= Entry.Name then
+local Now = Worn[Entry.Id] ~= "" and Worn[Entry.Id] or "empty"
+table.insert(Reverted, Entry.Label .. " -> " .. Now)
+end
+end
+end
 local Parts = {}
-for Index, Text in ipairs(Changed) do
+for Index, Entry in ipairs(Changed) do
 if Index > STATUS_SLOTS then
 table.insert(Parts, "…")
 break
 end
-table.insert(Parts, Text)
+table.insert(Parts, Entry.Text)
 end
 if #Parts == 0 then
 Parts[1] = Statless > 0 and "NOTHING RANKABLE" or "ALREADY BEST"
@@ -1121,21 +1234,47 @@ end
 if #Failed > 0 then
 table.insert(Parts, "FAILED " .. table.concat(Failed, ", "))
 end
+if #Reverted > 0 then
+table.insert(Parts, "PUT BACK " .. table.concat(Reverted, ", "))
+end
 local Prefix = "WOULD EQUIP"
 if Equip then
-Prefix = #Changed > 0 and "DONE" or (#Failed > 0 and "NOT EQUIPPED" or "DONE")
+if #Changed == 0 then
+Prefix = #Failed > 0 and "NOT EQUIPPED" or "DONE"
+elseif #Reverted >= #Changed then
+Prefix = "NOT EQUIPPED"
+elseif #Reverted > 0 then
+Prefix = "PARTLY EQUIPPED"
+else
+Prefix = "DONE"
+end
 end
 SetStatus(string.format("%s  ·  %d cards  ·  %s", Prefix, #Cards, table.concat(Parts, "  ·  ")))
 if Equip then
 if #Changed > 0 then
-Notify(table.concat(Changed, "  ·  "))
+local Text = {}
+for _, Entry in ipairs(Changed) do
+table.insert(Text, Entry.Text)
+end
+local Message = table.concat(Text, "  ·  ")
+if #Failed > 0 then
+Message = Message .. "  ·  could not equip " .. table.concat(Failed, ", ")
+end
+if #Reverted > 0 then
+Message = Message .. "  ·  the game put back " .. table.concat(Reverted, ", ")
+end
+Notify(Message)
 elseif #Failed > 0 then
-Notify("Could not press the equip button for " .. table.concat(Failed, ", ") .. ".")
+Notify("Could not equip " .. table.concat(Failed, ", ") .. ".")
 else
 Notify(string.format("Nothing better than what is worn (%d cards read).", #Cards))
 end
 else
-Notify(#Changed > 0 and table.concat(Changed, "  ·  ") or "Nothing better than what is worn.")
+local Text = {}
+for _, Entry in ipairs(Changed) do
+table.insert(Text, Entry.Text)
+end
+Notify(#Text > 0 and table.concat(Text, "  ·  ") or "Nothing better than what is worn.")
 end
 end
 local function StartPass(Equip)
