@@ -30,6 +30,41 @@ if not win then
     return
 end
 
+Check("custom icon assets", function()
+    --// The real client downloads each PNG once, caches it, and hands the path
+    --// to getcustomasset. Mock that path without touching the disk.
+    local old = {
+        getcustomasset = getcustomasset,
+        writefile = writefile,
+        isfile = isfile,
+        isfolder = isfolder,
+        makefolder = makefolder,
+        httpGet = game.HttpGet,
+    }
+    local written
+    local ok, err = pcall(function()
+        getcustomasset = function(path) return "rbxasset://" .. path end
+        writefile = function(path, body) written = { path = path, body = body } end
+        isfile = function() return false end
+        isfolder = function() return false end
+        makefolder = function() end
+        game.HttpGet = function() return "\137PNG\r\n\26\n" .. string.rep("x", 100) end
+
+        Library.IconFiles.TestIcon = "Test.png"
+        local asset = win:Icon("TestIcon", "rbxassetid://fallback")
+        Expect(asset == "rbxasset://GildedArchives/Icons/Test.png", "custom icon path: " .. tostring(asset))
+        Expect(written and written.path == "GildedArchives/Icons/Test.png", "icon was not cached")
+        Expect(written.body:sub(1, 8) == "\137PNG\r\n\26\n", "PNG bytes changed")
+    end)
+
+    Library.IconFiles.TestIcon = nil
+    win._iconCache.TestIcon = nil
+    getcustomasset, writefile, isfile, isfolder, makefolder = old.getcustomasset, old.writefile, old.isfile, old.isfolder, old.makefolder
+    game.HttpGet = old.httpGet
+
+    if not ok then error(err) end
+end)
+
 Check("theme aliases", function()
     Expect(win.Sidebar.BackgroundTransparency == 1, "sidebar covers the rounded window corner")
     Expect(win.Theme.Cyan == win.Theme.Accent, "Cyan alias")

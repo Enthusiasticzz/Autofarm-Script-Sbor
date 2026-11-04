@@ -1906,3 +1906,8 @@ Asked and answered from play, then applied:
 
 - **Added:** the supplied Roblox image IDs to all 14 tabs, including **Profile Settings** and the library's **Settings** tab, and to the eight sidebar quick actions. **Auto Smithing** had no separate ID, so it reuses the **Crafting** icon.
 - Checks: `luau-compile` clean on `Core/Runtime.lua`, `Core/Bootstrap.lua`, `Features/ProfileSettings.lua` and `UI/Utils.lua`; bundle rebuilt; `run-bundle-check` 0 compile failures; `run-boot-probe` asserts every Runtime/Profile Settings tab image and passes; `run-ui-smoke` asserts the status-icon and Settings-tab images and passes; `git diff --check` clean. Asset rendering still needs a client check.
+
+## v4.26 — Load tab icons from `Tab-Icons`
+
+- **Fixed:** the supplied IDs are Decals, not Image assets, and the uploads are restricted, so `ImageLabel.Image` silently rendered nothing. Tab and quick-action icons now resolve their matching `Tab-Icons/*.png` through the executor's `getcustomasset` API, caching the files locally. The supplied asset IDs remain as a fallback when the API is unavailable.
+- Checks: compile touched modules; rebuild; bundle check; boot probe; UI smoke; `git diff --check`.

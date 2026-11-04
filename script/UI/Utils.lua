@@ -149,6 +149,39 @@ end
 
 local HasFS = (typeof(writefile) == "function") and (typeof(readfile) == "function") and (typeof(isfolder) == "function")
 
+--// Tab and quick-action icons live in Tab-Icons/ as white PNGs. Roblox's
+--// ImageLabel needs the underlying Image asset, not a Decal, and restricted
+--// images do not load in another experience, so the executor's custom asset
+--// path is tried first. The supplied asset IDs stay as a fallback.
+local IconBase = "https://raw.githubusercontent.com/Enthusiasticzz/Autofarm-Script-Sbor/main/Tab-Icons/"
+local IconCache = "GildedArchives/Icons/"
+local IconWarningShown = false
+
+Library.IconFiles = {
+	Status = "Status.png",
+	Farming = "Farming.png",
+	Bosses = "Bosses.png",
+	ESP = "ESP.png",
+	Mining = "Mining.png",
+	Crafting = "Crafting.png",
+	Party = "Party.png",
+	Server = "Server.png",
+	Teleport = "Teleport.png",
+	Quest = "Quest.png",
+	Gear = "Armor.png",
+	Utility = "Utilities.png",
+	ProfileSettings = "Profile-Settings.png",
+	Settings = "Settings.png",
+	AutoFarm = "Farming.png",
+	AutoBlock = "Auto-Block.png",
+	SafeCombat = "Safe-Combat.png",
+	AutoSkill = "Auto-Skill.png",
+	AutoMining = "Mining.png",
+	AutoSmithing = "Crafting.png",
+	WaypointLoop = "Waypoint-Loop.png",
+	BossRoute = "Boss-Route.png",
+}
+
 local function Encode(v)
 	local t = typeof(v)
 	if t == "Color3" then return { _t = "c", v.R, v.G, v.B }
@@ -487,6 +520,82 @@ function Library:_checkMark(box)
 			else f.BackgroundTransparency = on and 0 or 1 end
 		end
 	end
+end
+
+local function IconWarning(message)
+	if IconWarningShown then return end
+	IconWarningShown = true
+	if type(warn) == "function" then
+		warn("[Gilded Archives] " .. message)
+	end
+end
+
+-- Resolve a Tab-Icons/ PNG through getcustomasset. The first run downloads
+-- and caches it; later runs reuse the file. Any unavailable executor API or
+-- network failure falls back to the caller's asset ID.
+local function LoadCustomIcon(name)
+	local file = Library.IconFiles[name]
+	if not file then return nil end
+
+	if type(getcustomasset) ~= "function" then
+		IconWarning("getcustomasset is unavailable; using fallback icon IDs.")
+		return nil
+	end
+
+	local path = IconCache .. file
+	local cached = false
+	if type(isfile) == "function" then
+		local ok, value = pcall(isfile, path)
+		cached = ok and value == true
+	end
+
+	if not cached then
+		if type(writefile) ~= "function" then
+			IconWarning("writefile is unavailable; using fallback icon IDs.")
+			return nil
+		end
+		local ok, body = pcall(function()
+			return game:HttpGet(IconBase .. file, true)
+		end)
+		if not ok or type(body) ~= "string" or string.sub(body, 1, 8) ~= "\137PNG\r\n\26\n" then
+			IconWarning("could not download " .. file .. "; using fallback icon IDs: " .. tostring(body))
+			return nil
+		end
+
+		local wrote = pcall(function()
+			if type(makefolder) == "function" then
+				if type(isfolder) ~= "function" or not isfolder("GildedArchives") then
+					makefolder("GildedArchives")
+				end
+				if type(isfolder) ~= "function" or not isfolder(IconCache) then
+					makefolder(IconCache)
+				end
+			end
+			writefile(path, body)
+		end)
+		if not wrote then
+			IconWarning("could not cache " .. file .. "; using fallback icon IDs.")
+			return nil
+		end
+	end
+
+	local ok, asset = pcall(getcustomasset, path)
+	if ok and type(asset) == "string" and asset ~= "" then
+		return asset
+	end
+	IconWarning("could not resolve " .. file .. "; using fallback icon IDs.")
+end
+
+-- Icons are loaded once per window; a failed custom asset is not retried for
+-- every tab that shares the same file.
+function Library:Icon(name, fallback)
+	self._iconCache = self._iconCache or {}
+	local asset = self._iconCache[name]
+	if asset == nil then
+		asset = LoadCustomIcon(name) or fallback
+		self._iconCache[name] = asset
+	end
+	return asset
 end
 
 -- icon slot used by tabs and status icons: Icon (asset id) | Glyph (text) | placeholder shape
@@ -2983,7 +3092,7 @@ end
 function Library:_BuildSettingsTab()
 	if self.SettingsTab then return self.SettingsTab end
 
-	local tab = self:AddTab{ Name = "Settings", Icon = "rbxassetid://93565715244756", Description = "Menu, cursor and config options." }
+	local tab = self:AddTab{ Name = "Settings", Icon = self:Icon("Settings", "rbxassetid://93565715244756"), Description = "Menu, cursor and config options." }
 	self.SettingsTab = tab
 
 	local fontChoices = self:_GetFontChoices()

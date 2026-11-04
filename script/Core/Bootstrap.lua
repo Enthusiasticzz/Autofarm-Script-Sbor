@@ -384,16 +384,16 @@ return {
         --// never built a toggle is skipped rather than faked.
         do
             local STATUS = {
-                { Label = "Auto Farm", Feature = "AutoFarm", Icon = "rbxassetid://133374538392505" },
-                { Label = "Auto Block", Feature = "AutoBlock", Icon = "rbxassetid://125587936929367" },
-                { Label = "Safe Combat", Feature = "SafeCombat", Icon = "rbxassetid://107856876586024" },
-                { Label = "Auto Skill", Feature = "AutoSkill", Icon = "rbxassetid://72965291026814" },
-                { Label = "Auto Mining", Feature = "AutoMining", Icon = "rbxassetid://72830736643456" },
+                { Label = "Auto Farm", Feature = "AutoFarm", Icon = UI:Icon("AutoFarm", "rbxassetid://133374538392505") },
+                { Label = "Auto Block", Feature = "AutoBlock", Icon = UI:Icon("AutoBlock", "rbxassetid://125587936929367") },
+                { Label = "Safe Combat", Feature = "SafeCombat", Icon = UI:Icon("SafeCombat", "rbxassetid://107856876586024") },
+                { Label = "Auto Skill", Feature = "AutoSkill", Icon = UI:Icon("AutoSkill", "rbxassetid://72965291026814") },
+                { Label = "Auto Mining", Feature = "AutoMining", Icon = UI:Icon("AutoMining", "rbxassetid://72830736643456") },
                 --// Auto Smithing had no ID of its own in the icon set; it is the
                 --// crafting quick action, so it shares the Crafting tab icon.
-                { Label = "Auto Smithing", Feature = "AutoSmithing", Icon = "rbxassetid://86086981959623" },
-                { Label = "Waypoint Loop", Feature = "WaypointLoop", Icon = "rbxassetid://123378225199598" },
-                { Label = "Boss Route", Feature = "BossRoute", Icon = "rbxassetid://126073685852021" },
+                { Label = "Auto Smithing", Feature = "AutoSmithing", Icon = UI:Icon("AutoSmithing", "rbxassetid://86086981959623") },
+                { Label = "Waypoint Loop", Feature = "WaypointLoop", Icon = UI:Icon("WaypointLoop", "rbxassetid://123378225199598") },
+                { Label = "Boss Route", Feature = "BossRoute", Icon = UI:Icon("BossRoute", "rbxassetid://126073685852021") },
             }
 
             local Icons = {}
