@@ -404,6 +404,7 @@ assert(SectionTitle(boss.EvadeAddSection) == "Add A Hiding Spot", "the add-a-spo
 assert(SectionTitle(boss.BlockSection) == "Auto Block", "the auto block title is not at the top of its section")
 assert(SectionTitle(boss.WhitelistSection) == "Block Whitelist", "the whitelist title is not at the top of its section")
 assert(boss.BlockSection.Tab == boss.FarmTab, "auto block is not on the farming tab")
+assert(boss.BossBoundsVisualToggle, "fight bounds toggle missing")
 assert(boss.BossDuoSyncToggle, "duo sync toggle missing")
 assert(boss.BossDuoNameBox, "duo sync name box missing")
 assert(boss.BossDuoSyncToggle:Get() == false, "duo sync started on")

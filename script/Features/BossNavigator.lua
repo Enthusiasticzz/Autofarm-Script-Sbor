@@ -344,52 +344,108 @@ return {
             end
         end
 
-        local function RefreshBoundsVisual(Stop)
+        --// The corners are saved from the character's root, which sits about
+        --// three studs above the floor, so a wall built on that height hangs
+        --// in the air. Probe down for the floor under the box and stand the
+        --// walls on it; a box over a void falls back to the root offset the
+        --// path markers use.
+        local function GetBoundsFloorY(Rect)
+            local NewParams = RaycastParams and RaycastParams.new
+
+            if not workspace.Raycast or not NewParams then
+                return (Rect.Y or 0) - 2.9
+            end
+
+            local Params = NewParams()
+
+            if not Params then
+                return (Rect.Y or 0) - 2.9
+            end
+
+            Params.FilterType = Enum.RaycastFilterType.Exclude
+            Params.FilterDescendantsInstances = {
+                Player and Player.Character,
+            }
+            Params.IgnoreWater = true
+
+            local OriginY = (Rect.Y or 0) + 2
+            local Samples = {
+                Vector3.new((Rect.MinX + Rect.MaxX) / 2, 0, (Rect.MinZ + Rect.MaxZ) / 2),
+                Vector3.new(Rect.MinX, 0, Rect.MinZ),
+                Vector3.new(Rect.MinX, 0, Rect.MaxZ),
+                Vector3.new(Rect.MaxX, 0, Rect.MinZ),
+                Vector3.new(Rect.MaxX, 0, Rect.MaxZ),
+            }
+            local FloorY
+
+            for _, Sample in ipairs(Samples) do
+                local Hit = workspace:Raycast(
+                    Vector3.new(Sample.X, OriginY, Sample.Z),
+                    Vector3.new(0, -200, 0),
+                    Params
+                )
+
+                --// The lowest hit is the floor: one corner over a step, or
+                --// a boss in the middle, cannot lift the whole box onto it.
+                if Hit and (not FloorY or Hit.Position.Y < FloorY) then
+                    FloorY = Hit.Position.Y
+                end
+            end
+
+            return FloorY or ((Rect.Y or 0) - 2.9)
+        end
+
+        --// Every stop's box, not just the selected one: the panels are a map
+        --// aid, so the whole route stays visible whichever stop is edited.
+        local function RefreshBoundsVisuals(Stops)
             ClearBoundsVisual()
 
             if CONFIG.BOSS_BOUNDS_VISIBLE == false then
                 return
             end
 
-            local Rect = GetBoundsRect(Stop)
-
-            if not Rect then
-                return
-            end
-
             local Height = 12
             local Thick = 0.4
-            local MidX = (Rect.MinX + Rect.MaxX) / 2
-            local MidZ = (Rect.MinZ + Rect.MaxZ) / 2
-            local Width = Rect.MaxX - Rect.MinX
-            local Depth = Rect.MaxZ - Rect.MinZ
-            local Y = (Rect.Y or 0) + Height / 2
 
-            BoundsVisualFolder = Instance.new("Folder")
-            BoundsVisualFolder.Name = "AICBossBoundsVisuals"
-            BoundsVisualFolder.Parent = workspace
+            for Index, Stop in ipairs(Stops or {}) do
+                local Rect = GetBoundsRect(Stop)
 
-            local function Wall(Name, Size, Position)
-                local Panel = Instance.new("Part")
+                if Rect then
+                    if not BoundsVisualFolder then
+                        BoundsVisualFolder = Instance.new("Folder")
+                        BoundsVisualFolder.Name = "AICBossBoundsVisuals"
+                        BoundsVisualFolder.Parent = workspace
+                    end
 
-                Panel.Name = Name
-                Panel.Anchored = true
-                Panel.CanCollide = false
-                Panel.CanTouch = false
-                Panel.CanQuery = false
-                Panel.CastShadow = false
-                Panel.Material = Enum.Material.Neon
-                Panel.Color = Color3.fromRGB(255, 120, 40)
-                Panel.Transparency = 0.8
-                Panel.Size = Size
-                Panel.CFrame = CFrame.new(Position)
-                Panel.Parent = BoundsVisualFolder
+                    local MidX = (Rect.MinX + Rect.MaxX) / 2
+                    local MidZ = (Rect.MinZ + Rect.MaxZ) / 2
+                    local Width = Rect.MaxX - Rect.MinX
+                    local Depth = Rect.MaxZ - Rect.MinZ
+                    local Y = GetBoundsFloorY(Rect) + Height / 2
+
+                    local function Wall(Name, Size, Position)
+                        local Panel = Instance.new("Part")
+
+                        Panel.Name = string.format("Bounds%d_%s", Index, Name)
+                        Panel.Anchored = true
+                        Panel.CanCollide = false
+                        Panel.CanTouch = false
+                        Panel.CanQuery = false
+                        Panel.CastShadow = false
+                        Panel.Material = Enum.Material.Neon
+                        Panel.Color = Color3.fromRGB(255, 120, 40)
+                        Panel.Transparency = 0.8
+                        Panel.Size = Size
+                        Panel.CFrame = CFrame.new(Position)
+                        Panel.Parent = BoundsVisualFolder
+                    end
+
+                    Wall("North", Vector3.new(Width, Height, Thick), Vector3.new(MidX, Y, Rect.MaxZ))
+                    Wall("South", Vector3.new(Width, Height, Thick), Vector3.new(MidX, Y, Rect.MinZ))
+                    Wall("East", Vector3.new(Thick, Height, Depth), Vector3.new(Rect.MaxX, Y, MidZ))
+                    Wall("West", Vector3.new(Thick, Height, Depth), Vector3.new(Rect.MinX, Y, MidZ))
+                end
             end
-
-            Wall("BoundsNorth", Vector3.new(Width, Height, Thick), Vector3.new(MidX, Y, Rect.MaxZ))
-            Wall("BoundsSouth", Vector3.new(Width, Height, Thick), Vector3.new(MidX, Y, Rect.MinZ))
-            Wall("BoundsEast", Vector3.new(Thick, Height, Depth), Vector3.new(Rect.MaxX, Y, MidZ))
-            Wall("BoundsWest", Vector3.new(Thick, Height, Depth), Vector3.new(Rect.MinX, Y, MidZ))
         end
         --// The boss's emitters and sounds are listed again this often. Once a
         --// second is enough: the boss tool is equipped a frame or two after
@@ -1274,6 +1330,10 @@ return {
         local function RefreshEditor()
             local Stop = SelectedStop()
 
+            --// Draw every box before the selected-stop check: the panels are
+            --// not tied to which stop is being edited.
+            RefreshBoundsVisuals(GetStops())
+
             if not Stop then
                 return
             end
@@ -1317,7 +1377,6 @@ return {
             end
 
             AICUI.RefreshBossBoundsList()
-            RefreshBoundsVisual(Stop)
             if UIRef.BossPromptToggle then
                 UIRef.BossPromptToggle:Set(Stop.Prompt == true, true)
             end
@@ -4006,6 +4065,23 @@ return {
             end,
         }
 
+        --// Every saved box is drawn at once, so this belongs with the route
+        --// controls rather than inside Selected Stop.
+        UIRef.BossBoundsVisualToggle = UIRef.BossSection:AddToggle{
+            Name = "Show Fight Bounds",
+            Default = CONFIG.BOSS_BOUNDS_VISIBLE ~= false,
+            Callback = function(Value)
+                CONFIG.BOSS_BOUNDS_VISIBLE = Value == true
+                AICProfile.WriteGlobalStore()
+                RefreshBoundsVisuals(GetStops())
+                SetStatus(
+                    CONFIG.BOSS_BOUNDS_VISIBLE
+                        and "FIGHT BOUNDS SHOWN"
+                        or "FIGHT BOUNDS HIDDEN"
+                )
+            end,
+        }
+
         UIRef.BossSection:AddColorPicker{
             Name = "Boss Path Color",
             Default = Color3.fromHex(CONFIG.BOSS_PATH_COLOR or "4F7CF5"),
@@ -4368,21 +4444,6 @@ return {
 
                 Stop.Bounds = nil
                 Commit("FIGHT BOUNDS CLEARED")
-            end,
-        }
-
-        UIRef.BossBoundsVisualToggle = UIRef.BossEditorSection:AddToggle{
-            Name = "Show Fight Bounds",
-            Default = CONFIG.BOSS_BOUNDS_VISIBLE ~= false,
-            Callback = function(Value)
-                CONFIG.BOSS_BOUNDS_VISIBLE = Value == true
-                AICProfile.WriteGlobalStore()
-                RefreshBoundsVisual(SelectedStop())
-                SetStatus(
-                    CONFIG.BOSS_BOUNDS_VISIBLE
-                        and "FIGHT BOUNDS SHOWN"
-                        or "FIGHT BOUNDS HIDDEN"
-                )
             end,
         }
 

@@ -144,28 +144,64 @@ BoundsVisualFolder:Destroy()
 BoundsVisualFolder = nil
 end
 end
-local function RefreshBoundsVisual(Stop)
+local function GetBoundsFloorY(Rect)
+local NewParams = RaycastParams and RaycastParams.new
+if not workspace.Raycast or not NewParams then
+return (Rect.Y or 0) - 2.9
+end
+local Params = NewParams()
+if not Params then
+return (Rect.Y or 0) - 2.9
+end
+Params.FilterType = Enum.RaycastFilterType.Exclude
+Params.FilterDescendantsInstances = {
+Player and Player.Character,
+}
+Params.IgnoreWater = true
+local OriginY = (Rect.Y or 0) + 2
+local Samples = {
+Vector3.new((Rect.MinX + Rect.MaxX) / 2, 0, (Rect.MinZ + Rect.MaxZ) / 2),
+Vector3.new(Rect.MinX, 0, Rect.MinZ),
+Vector3.new(Rect.MinX, 0, Rect.MaxZ),
+Vector3.new(Rect.MaxX, 0, Rect.MinZ),
+Vector3.new(Rect.MaxX, 0, Rect.MaxZ),
+}
+local FloorY
+for _, Sample in ipairs(Samples) do
+local Hit = workspace:Raycast(
+Vector3.new(Sample.X, OriginY, Sample.Z),
+Vector3.new(0, -200, 0),
+Params
+)
+if Hit and (not FloorY or Hit.Position.Y < FloorY) then
+FloorY = Hit.Position.Y
+end
+end
+return FloorY or ((Rect.Y or 0) - 2.9)
+end
+local function RefreshBoundsVisuals(Stops)
 ClearBoundsVisual()
 if CONFIG.BOSS_BOUNDS_VISIBLE == false then
 return
 end
-local Rect = GetBoundsRect(Stop)
-if not Rect then
-return
-end
 local Height = 12
 local Thick = 0.4
+for Index, Stop in ipairs(Stops or {}) do
+local Rect = GetBoundsRect(Stop)
+if Rect then
+if not BoundsVisualFolder then
+BoundsVisualFolder = Instance.new("Folder")
+BoundsVisualFolder.Name = "AICBossBoundsVisuals"
+BoundsVisualFolder.Parent = workspace
+end
 local MidX = (Rect.MinX + Rect.MaxX) / 2
 local MidZ = (Rect.MinZ + Rect.MaxZ) / 2
 local Width = Rect.MaxX - Rect.MinX
 local Depth = Rect.MaxZ - Rect.MinZ
-local Y = (Rect.Y or 0) + Height / 2
-BoundsVisualFolder = Instance.new("Folder")
-BoundsVisualFolder.Name = "AICBossBoundsVisuals"
-BoundsVisualFolder.Parent = workspace
+local Y = GetBoundsFloorY(Rect) + Height / 2
 local function Wall(Name, Size, Position)
 local Panel = Instance.new("Part")
-Panel.Name = Name
+Panel.Name = string.format("Bounds%d_%s", Index, Name)
 Panel.Anchored = true
 Panel.CanCollide = false
 Panel.CanTouch = false
@@ -178,10 +214,12 @@ Panel.Size = Size
 Panel.CFrame = CFrame.new(Position)
 Panel.Parent = BoundsVisualFolder
 end
-Wall("BoundsNorth", Vector3.new(Width, Height, Thick), Vector3.new(MidX, Y, Rect.MaxZ))
-Wall("BoundsSouth", Vector3.new(Width, Height, Thick), Vector3.new(MidX, Y, Rect.MinZ))
-Wall("BoundsEast", Vector3.new(Thick, Height, Depth), Vector3.new(Rect.MaxX, Y, MidZ))
-Wall("BoundsWest", Vector3.new(Thick, Height, Depth), Vector3.new(Rect.MinX, Y, MidZ))
+Wall("North", Vector3.new(Width, Height, Thick), Vector3.new(MidX, Y, Rect.MaxZ))
+Wall("South", Vector3.new(Width, Height, Thick), Vector3.new(MidX, Y, Rect.MinZ))
+Wall("East", Vector3.new(Thick, Height, Depth), Vector3.new(Rect.MaxX, Y, MidZ))
+Wall("West", Vector3.new(Thick, Height, Depth), Vector3.new(Rect.MinX, Y, MidZ))
+end
+end
 end
 local SKILL_SCAN_INTERVAL = 1
 local NAME_SCAN_RADIUS = 300
@@ -681,6 +719,7 @@ end
 end
 local function RefreshEditor()
 local Stop = SelectedStop()
+RefreshBoundsVisuals(GetStops())
 if not Stop then
 return
 end
@@ -720,7 +759,6 @@ UIRef.BossBoundsLabel:Set("FIGHT BOUNDS:  NONE  (DODGE RUNS FREELY)")
 end
 end
 AICUI.RefreshBossBoundsList()
-RefreshBoundsVisual(Stop)
 if UIRef.BossPromptToggle then
 UIRef.BossPromptToggle:Set(Stop.Prompt == true, true)
 end
@@ -2419,6 +2457,20 @@ RefreshBossVisuals()
 AICProfile.WriteGlobalStore()
 end,
 }
+UIRef.BossBoundsVisualToggle = UIRef.BossSection:AddToggle{
+Name = "Show Fight Bounds",
+Default = CONFIG.BOSS_BOUNDS_VISIBLE ~= false,
+Callback = function(Value)
+CONFIG.BOSS_BOUNDS_VISIBLE = Value == true
+AICProfile.WriteGlobalStore()
+RefreshBoundsVisuals(GetStops())
+SetStatus(
+CONFIG.BOSS_BOUNDS_VISIBLE
+and "FIGHT BOUNDS SHOWN"
+or "FIGHT BOUNDS HIDDEN"
+)
+end,
+}
 UIRef.BossSection:AddColorPicker{
 Name = "Boss Path Color",
 Default = Color3.fromHex(CONFIG.BOSS_PATH_COLOR or "4F7CF5"),
@@ -2690,20 +2742,6 @@ return
 end
 Stop.Bounds = nil
 Commit("FIGHT BOUNDS CLEARED")
-end,
-}
-UIRef.BossBoundsVisualToggle = UIRef.BossEditorSection:AddToggle{
-Name = "Show Fight Bounds",
-Default = CONFIG.BOSS_BOUNDS_VISIBLE ~= false,
-Callback = function(Value)
-CONFIG.BOSS_BOUNDS_VISIBLE = Value == true
-AICProfile.WriteGlobalStore()
-RefreshBoundsVisual(SelectedStop())
-SetStatus(
-CONFIG.BOSS_BOUNDS_VISIBLE
-and "FIGHT BOUNDS SHOWN"
-or "FIGHT BOUNDS HIDDEN"
-)
 end,
 }
 UIRef.BossWaitBox = AddStopBox("Wait At Spot (s)", function(Stop, Value)

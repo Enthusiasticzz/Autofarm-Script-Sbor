@@ -562,8 +562,9 @@ unlike the route above them.
   all four; removing one drops it back to `CORNER n/4` and the dodge runs free
   until the fourth is placed again. **Clear Fight Bounds** removes the whole box.
   The corners are saved on the stop and follow the profile. **Show Fight Bounds**
-  draws the box as four translucent orange walls (12 studs tall) around the
-  selected stop; off hides them without clearing the corners.
+  (Route Controls) draws every saved box as four translucent orange walls (12
+  studs tall, stood on the floor) at once, whichever stop is selected; off hides
+  them without clearing the corners.
 - **Duo Sync** — holds every boss stop until your duo is within 35 studs, then
   starts **Wait At Spot**; a stop with that wait at 0 still waits for them. The
   timer starts when they arrive, and stepping out and back restarts it. Uses

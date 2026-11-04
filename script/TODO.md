@@ -1867,3 +1867,10 @@ Asked and answered from play, then applied:
 - **Duo:** `BOSS_DUO_NAME` (**Duo Username** in Route Controls); blank falls back to `DISCORD_DUO` from the Webhook section. The local player is never matched, and a dead or unloaded duo does not count as there.
 - **Every stop:** the gate is in the one place a stop's wait starts, so it applies with Wait 0, with a wait, and on the stop the route walks back to after a death.
 - Checks: `luau-compile` clean on `Core/SaveConfig.lua`, `Features/BossNavigator.lua` and `UI/Descriptions.lua`; bundle rebuilt (6 parts, 84 modules); `run-bundle-check` 0 compile failures; `run-boot-probe` passes (including the new toggle/name-box assertions); `run-ui-smoke` 0 failed checks. Not run in game.
+
+## v4.19 — All Fight Boxes, On The Floor
+
+- **Fixed:** **Show Fight Bounds** now draws every stop's saved box at once, not only the selected stop's; selecting another stop no longer swaps the panels. The boxes are rebuilt from the live place config after any stop edit, add/remove/reorder, profile load, or toggle, so they follow the config rather than the editor selection.
+- **Fixed:** the panels stand on the floor under the box (lowest of a centre and four-corner raycast) instead of at the average clicked corner, which was the character's root height and left them floating roughly three studs up. A box with no floor below falls back to the root offset.
+- **UI:** **Show Fight Bounds** moved from **Selected Stop** to **Route Controls** because it is route-wide.
+- Checks: `luau-compile` clean on `Features/BossNavigator.lua`; bundle rebuilt; `run-bundle-check` 0 compile failures; `run-boot-probe` passes; `run-ui-smoke` 0 failed checks. Not run in game.
