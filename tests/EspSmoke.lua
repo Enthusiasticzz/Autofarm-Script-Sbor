@@ -45,9 +45,12 @@ local function run(useDrawing, ownCharacter)
         return { Remove = function(self) self.Removed = true; self.Visible = false end }
     end } or nil
     local cleanup
+    local startup = { IntroDone = true }
+    local menu = { Root = { Visible = false }, Gui = { Enabled = true } }
     local feature = EspModule.Start({
         Services = { Players = Players }, Player = Players.LocalPlayer,
         UIRef = {}, AICUI = {}, CONFIG = {},
+        Startup = startup, UI = menu,
         Lifetime = { OnEnd = function(fn) cleanup = fn end },
     })
     feature.S.Kinds.Player.Enabled = true
@@ -71,6 +74,29 @@ local function run(useDrawing, ownCharacter)
     assert(text(parts.Bottom):find("Lv 250",1,true) and text(parts.Bottom):find("100 studs",1,true), "metadata is missing")
     assert(y(parts.Name) < y(parts.Hp) and y(parts.Hp)+18 <= 270, "name/health overlap the box")
     assert(y(parts.Bottom) >= 330, "metadata overlaps the box")
+    local function textVisible()
+        return useDrawing and parts.Name.Draw.Visible or not useDrawing and parts.Name.Gui.Visible
+    end
+    -- Cover every rendering primitive, including optional box styles, while
+    -- keeping the existing entry so closing the menu restores it immediately.
+    entry.BoxLines = { { Visible = true } }
+    entry.BoxShadow = { { Visible = true } }
+    entry.Frame = Instance.new("Frame", Services.CoreGui)
+    entry.ShadowFrame = Instance.new("Frame", Services.CoreGui)
+    menu.Root.Visible = true
+    render()
+    assert(not entry.Highlight.Enabled and not textVisible(), "ESP shows through the menu")
+    assert(not entry.BoxLines[1].Visible and not entry.BoxShadow[1].Visible, "Drawing box shows through the menu")
+    assert(not entry.Frame.Visible and not entry.ShadowFrame.Visible, "GUI box shows through the menu")
+    entry.BoxLines, entry.BoxShadow = nil, nil
+    menu.Root.Visible = false
+    startup.IntroDone = false
+    render()
+    assert(not entry.Highlight.Enabled and not textVisible(), "ESP shows through the intro")
+    startup.IntroDone = true
+    render()
+    assert(entry.Highlight.Enabled and textVisible(), "ESP did not resume when the menu/intro closed")
+    assert(feature.S.Entries[target] == entry, "UI visibility rebuilt the ESP entry")
     feature.S.Settings.Range = 50
     render()
     assert(not entry.Highlight.Enabled, "out-of-range outline is still visible")

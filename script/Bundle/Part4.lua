@@ -5598,7 +5598,7 @@ Gui.Name = "AICEsp"
 Gui.IgnoreGuiInset = true
 Gui.ResetOnSpawn = false
 Gui.ClipToDeviceSafeArea = false
-Gui.DisplayOrder = 999999
+Gui.DisplayOrder = 900 -- Below the main menu (1000) and intro.
 local Parented = false
 if type(gethui) == "function" then
 local Ok, Hui = pcall(gethui)
@@ -6098,9 +6098,36 @@ local function SetLine(Line, X1, Y1, X2, Y2)
 Line.From = Vector2.new(X1, Y1)
 Line.To = Vector2.new(X2, Y2)
 end
+local function CoveredByUI()
+local Startup = Context.Startup
+if Startup and not Startup.IntroDone then return true end
+local UI = Context.UI
+if not UI or UI.Destroyed then return false end
+if UI.Root and UI.Gui then
+return UI.Gui.Enabled and UI.Root.Visible and not UI._minimized
+end
+return type(UI.IsOpen) == "function" and UI:IsOpen()
+end
+local function HideDrawings()
+for _, Entry in pairs(S.Entries) do
+if Entry.Highlight then Entry.Highlight.Enabled = false end
+if Entry.Frame then Entry.Frame.Visible = false end
+if Entry.ShadowFrame then Entry.ShadowFrame.Visible = false end
+for _, Lines in ipairs({ Entry.BoxLines or {}, Entry.BoxShadow or {} }) do
+for _, Line in ipairs(Lines) do Line.Visible = false end
+end
+for _, Part in ipairs(Entry.TextParts or {}) do
+if Part.Draw then Part.Draw.Visible = false end
+if Part.Gui then Part.Gui.Visible = false end
+end
+end
+end
 local function UpdateDrawings()
 local Camera = workspace.CurrentCamera
-if not Camera then return end
+if CoveredByUI() or not Camera then
+HideDrawings()
+return
+end
 local CameraPosition = Camera.CFrame.Position
 local Viewport = Camera.ViewportSize
 local Range = S.Settings.Range
