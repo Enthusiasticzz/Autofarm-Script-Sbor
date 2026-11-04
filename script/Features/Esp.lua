@@ -3,10 +3,8 @@
 -- Each enabled kind draws either an outline (Highlight) or a 2D box, never
 -- both. Name and health form a compact block above the box; level, mob EXP
 -- and distance share one line below it. Outlines live in Workspace.
--- Boxes and labels are drawn
--- with the executor's Drawing API when it has one, because a Drawing object
--- costs no GUI work per frame; otherwise they fall back to Frames and
--- TextLabels inside that same ScreenGui.
+-- Boxes and labels share a GUI layer below every menu. Fully covered targets
+-- are culled; partially covered targets remain behind the window surfaces.
 --
 -- The box look follows the reference ESPs: a black backing behind a thinner
 -- coloured box, and corner brackets instead of a closed box if that style is
@@ -46,13 +44,11 @@ return {
         --// Label text is refreshed this often from the render loop, so it
         --// reads live instead of at the scan's rate.
         local LABEL_INTERVAL = 0.25
+        local OUTLINE_BUDGET = 96 -- Leave native Highlight slots for the game.
         --// Every piece of text is the same pixel size at any distance, like
         --// the popular ESP libraries. Change this one number to resize all
         --// of it.
         local TEXT_SIZE = 14
-        --// The Drawing font the text uses: UI, System, Plex or Monospace
-        --// (some executors also have Roboto, Legacy, SourceSans, RobotoMono).
-        local TEXT_FONT_NAME = "Plex"
 
         local KINDS = { "Player", "Mob", "Weapon" }
         local TITLES = { Player = "Players", Mob = "Mobs", Weapon = "Weapons" }
@@ -85,6 +81,7 @@ return {
             },
             Timer = 0,
             LabelRefresh = 0,
+            OutlineCount = 0,
         }
         for _, Kind in ipairs(KINDS) do
             S.Kinds[Kind] = {
@@ -184,6 +181,7 @@ return {
 
         local function Remove(Target, Entry)
             if Entry.Highlight then pcall(function() Entry.Highlight:Destroy() end) end
+            if Entry.CountedOutline then S.OutlineCount -= 1; Entry.CountedOutline = false end
             if Entry.Frame then pcall(function() Entry.Frame:Destroy() end) end
             if Entry.ShadowFrame then pcall(function() Entry.ShadowFrame:Destroy() end) end
             if Entry.TextParts then
@@ -296,10 +294,11 @@ return {
             Gui.IgnoreGuiInset = true
             Gui.ResetOnSpawn = false
             Gui.ClipToDeviceSafeArea = false
-            Gui.DisplayOrder = 900 -- Below the main menu (1000) and intro.
+            local Menu = Context.UI and Context.UI.Gui
+            Gui.DisplayOrder = Menu and ((tonumber(Menu.DisplayOrder) or 1000) - 1) or 900
 
-            local Parented = false
-            if type(gethui) == "function" then
+            local Parented = Menu and TryParent(Gui, Menu.Parent) or false
+            if not Parented and type(gethui) == "function" then
                 local Ok, Hui = pcall(gethui)
                 if Ok then Parented = TryParent(Gui, Hui) end
             end
@@ -321,81 +320,6 @@ return {
 
             Root, HighlightFolder = Gui, Folder
             return Root
-        end
-
-        ----------------------------------------------------------------------
-        -- Drawing API
-        ----------------------------------------------------------------------
-
-        --// Drawing draws straight to the screen instead of through the GUI, so
-        --// a box costs four property writes a frame rather than a Frame, its
-        --// UIStroke and a TextLabel each. It is an executor feature, so it is
-        --// probed once and every piece falls back to the GUI on its own.
-        local DrawingApi
-        do
-            local Ok, Api = pcall(function() return Drawing end)
-            if Ok and Api and (type(Api) == "table" or type(Api) == "userdata") then
-                local HasNew, NewFn = pcall(function() return Api.new end)
-                if HasNew and type(NewFn) == "function" then
-                    DrawingApi = Api
-                end
-            end
-        end
-
-        --// Some executors expose a Drawing table whose objects accept writes
-        --// but never render (a stub, or an API that needs a different name).
-        --// Creating an object is not enough to trust it: write a property and
-        --// read it back, so a dead API falls through to the GUI instead of
-        --// silently drawing nothing.
-        local function ProbeDrawing(ClassName)
-            if not DrawingApi then return false end
-
-            local OkNew, Object = pcall(DrawingApi.new, ClassName)
-            if not OkNew or not Object then return false end
-
-            local OkWrite = pcall(function() Object.Visible = true end)
-            local OkRead, Back = pcall(function() return Object.Visible end)
-            pcall(function() Object:Remove() end)
-
-            return OkWrite and OkRead and Back == true
-        end
-
-        local LineSupported = ProbeDrawing("Line")
-        local TextSupported = ProbeDrawing("Text")
-
-        --// The default Drawing font (UI) is thin and plain. The font is picked
-        --// by name from the executor's own Drawing.Fonts table; when that
-        --// table or the name is missing, the usual numbers are used instead.
-        local FONT_NUMBERS = { UI = 0, System = 1, Plex = 2, Monospace = 3 }
-        local TextFont = FONT_NUMBERS[TEXT_FONT_NAME] or 2
-        do
-            local Ok, Font = pcall(function() return DrawingApi.Fonts[TEXT_FONT_NAME] end)
-            if Ok and Font ~= nil then
-                TextFont = Font
-            end
-        end
-
-        local function NewLine()
-            if not LineSupported then return nil end
-            local Ok, Line = pcall(DrawingApi.new, "Line")
-            if Ok then return Line end
-            return nil
-        end
-
-        local function NewText()
-            if not TextSupported then return nil end
-            local Ok, Text = pcall(DrawingApi.new, "Text")
-            if Ok then return Text end
-            return nil
-        end
-
-        --// Drawing objects differ between executors, so each property is set
-        --// on its own. One unsupported property must not skip the rest (a
-        --// Text whose Transparency never got set is an invisible label).
-        local function SetProps(Object, Props)
-            for Key, Value in pairs(Props) do
-                pcall(function() Object[Key] = Value end)
-            end
         end
 
         ----------------------------------------------------------------------
@@ -729,22 +653,28 @@ return {
         end
 
         local function MakeLines(Count, Color, Thickness)
-            if not LineSupported then return nil end
-
             local List = {}
             for Index = 1, Count do
-                local Line = NewLine()
-                if not Line then
-                    DisposeLines(List)
-                    return nil
-                end
-
-                SetProps(Line, {
-                    Color = Color,
-                    Thickness = Thickness,
-                    Transparency = 1,
-                    Visible = false,
+                local Frame = Instance.new("Frame")
+                Frame.Name = "EspEdge"
+                Frame.BorderSizePixel = 0
+                Frame.BackgroundColor3 = Color
+                Frame.AnchorPoint = Vector2.new(0, .5)
+                Frame.Visible = false
+                Frame.ZIndex = Color == BLACK and 1 or 2
+                Frame.Parent = Root
+                local Data = { Gui = Frame, Thickness = Thickness, Length = 0 }
+                local Line = setmetatable({}, {
+                    __index = Data,
+                    __newindex = function(_, Key, Value)
+                        Data[Key] = Value
+                        if Key == "Visible" then Frame.Visible = Value
+                        elseif Key == "Color" then Frame.BackgroundColor3 = Value
+                        elseif Key == "Thickness" then Frame.Size = UDim2.fromOffset(Data.Length, Value)
+                        end
+                    end,
                 })
+                Data.Remove = function() Frame:Destroy() end
                 List[Index] = Line
             end
             return List
@@ -754,13 +684,37 @@ return {
             local Highlight = Instance.new("Highlight")
             Highlight.Name = Kind
             Highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-            Highlight.FillTransparency = 1
+            Highlight.FillColor = C.Color
+            -- Keep a practically invisible fill pass active as well as the
+            -- outline, rather than relying on an outline-only render pass.
+            Highlight.FillTransparency = .999
             Highlight.Enabled = false
             Highlight.OutlineColor = C.Color
             Highlight.OutlineTransparency = 0
             Highlight.Adornee = Target
-            Highlight.Parent = HighlightFolder
+            Highlight.Parent = Target
             Entry.Highlight = Highlight
+            Entry.CountedOutline = true
+            S.OutlineCount += 1
+        end
+
+        local function EnsureOutline(Entry, Target, C, Kind)
+            local Camera, Anchor = workspace.CurrentCamera, Entry.Anchor
+            local InRange = Camera and Anchor and Anchor.Parent
+                and (Anchor.Position - Camera.CFrame.Position).Magnitude <= S.Settings.Range
+                and (not Entry.Humanoid or Entry.Humanoid.Health > 0)
+            if InRange and Entry.Highlight and Entry.Highlight.Parent == Target then return end
+            if Entry.Highlight then pcall(function() Entry.Highlight:Destroy() end) end
+            if Entry.CountedOutline then S.OutlineCount -= 1; Entry.CountedOutline = false end
+            Entry.Highlight = nil
+            -- Disabled and out-of-range Highlights still consume engine slots.
+            -- Do not allocate them for the whole map and starve nearby players.
+            if not InRange or S.OutlineCount >= OUTLINE_BUDGET then return end
+            local Ok, Error = pcall(AddOutline, Entry, Target, C, Kind)
+            if not Ok and not Entry.OutlineError then
+                warn("[AIC] ESP outline failed for " .. tostring(Target.Name) .. ": " .. tostring(Error))
+            end
+            Entry.OutlineError = not Ok and tostring(Error) or nil
         end
 
         local function AddBox(Entry, Target, C, Kind)
@@ -817,21 +771,7 @@ return {
             for _, Key in ipairs(Keys) do
                 local Part = { Key = Key, Lines = 1, Empty = true }
 
-                local DrawText = NewText()
-                if DrawText then
-                    SetProps(DrawText, {
-                        Color = C.Color,
-                        Size = TEXT_SIZE,
-                        Font = TextFont,
-                        Center = true,
-                        Transparency = 1,
-                        Visible = false,
-                    })
-                    --// Outline is not on every executor's Text object.
-                    pcall(function() DrawText.Outline = true end)
-                    pcall(function() DrawText.OutlineColor = BLACK end)
-                    Part.Draw = DrawText
-                else
+                do
                     local Text = Instance.new("TextLabel")
                     Text.Name = Kind .. Key .. "Label"
                     Text.BackgroundTransparency = 1
@@ -866,7 +806,8 @@ return {
             local C = S.Kinds[Kind]
             if not (C.Outline or C.Box or C.Label) then return end
 
-            local Entry = { Kind = Kind, Humanoid = Target:FindFirstChildOfClass("Humanoid") }
+            local Entry = { Kind = Kind, Humanoid = Target:FindFirstChildOfClass("Humanoid"),
+                Owner = Kind == "Player" and Players:GetPlayerFromCharacter(Target) or nil }
 
             --// Measured first so the label can carry the distance straight away.
             if C.Box or C.Label or C.Outline then
@@ -875,7 +816,7 @@ return {
 
             --// Each piece is built on its own so one failure can't stop the other.
             if C.Outline then
-                pcall(AddOutline, Entry, Target, C, Kind)
+                EnsureOutline(Entry, Target, C, Kind)
             end
             if C.Box then
                 pcall(AddBox, Entry, Target, C, Kind)
@@ -890,7 +831,8 @@ return {
         --// Drops entries whose target has gone, or whose kind is now off.
         local function Prune()
             for Target, Entry in pairs(S.Entries) do
-                if Target.Parent == nil or not IsEnabled(Entry.Kind) then
+                if Target.Parent == nil or not IsEnabled(Entry.Kind)
+                    or (Entry.Owner and Entry.Owner.Character ~= Target) then
                     Remove(Target, Entry)
                 end
             end
@@ -919,8 +861,11 @@ return {
             local WantWeapon = IsEnabled("Weapon")
 
             if WantPlayer or WantWeapon then
-                for _, Child in ipairs(workspace:GetChildren()) do
-                    if Child:IsA("Model") and Child:FindFirstChildOfClass("Humanoid") then
+                -- The roster includes your own rig and nested character models;
+                -- NPCs must not use up the player outlines' native render slots.
+                for _, Owner in ipairs(Players:GetPlayers()) do
+                    local Child = Owner.Character
+                    if Child and Child.Parent and Child:IsA("Model") then
                         if WantPlayer then
                             Mark(Child, "Player")
                         end
@@ -966,6 +911,14 @@ return {
             end
 
             Prune()
+            for Target, Entry in pairs(S.Entries) do
+                if Target.Parent and S.Kinds[Entry.Kind].Outline then
+                    if not Entry.Humanoid or not Entry.Humanoid.Parent then
+                        Entry.Humanoid = Target:FindFirstChildOfClass("Humanoid")
+                    end
+                    EnsureOutline(Entry, Target, S.Kinds[Entry.Kind], Entry.Kind)
+                end
+            end
         end
 
         ----------------------------------------------------------------------
@@ -988,21 +941,35 @@ return {
         end
 
         local function SetLine(Line, X1, Y1, X2, Y2)
+            if Line.Gui then
+                local DX, DY = X2 - X1, Y2 - Y1
+                Line.Length = math.sqrt(DX * DX + DY * DY)
+                Line.Gui.Position = UDim2.fromOffset(X1, Y1)
+                Line.Gui.Size = UDim2.fromOffset(Line.Length, Line.Thickness)
+                Line.Gui.Rotation = math.deg(math.atan2(DY, DX))
+                return
+            end
             Line.From = Vector2.new(X1, Y1)
             Line.To = Vector2.new(X2, Y2)
         end
 
         local function MenuBounds()
             local UI = Context.UI
+            if UI and not UI.Destroyed and type(UI.GetOcclusionRects) == "function" then
+                return UI:GetOcclusionRects()
+            end
             if not UI or UI.Destroyed or not UI.Root or not UI.Gui
-                or not UI.Gui.Enabled or not UI.Root.Visible then return nil end
+                or not UI.Gui.Enabled or not UI.Root.Visible then return {} end
             local At, Size = UI.Root.AbsolutePosition, UI.Root.AbsoluteSize
-            if not At or not Size or Size.X <= 0 or Size.Y <= 0 then return nil end
-            return At.X, At.Y, At.X + Size.X, At.Y + Size.Y
+            if not At or not Size or Size.X <= 0 or Size.Y <= 0 then return {} end
+            return { { At.X, At.Y, At.X + Size.X, At.Y + Size.Y } }
         end
 
-        local function Overlaps(X1, Y1, X2, Y2, MX1, MY1, MX2, MY2)
-            return MX1 ~= nil and X1 < MX2 and X2 > MX1 and Y1 < MY2 and Y2 > MY1
+        local function Covered(X1, Y1, X2, Y2, Rects)
+            for _, Rect in ipairs(Rects) do
+                if X1 >= Rect[1] and Y1 >= Rect[2] and X2 <= Rect[3] and Y2 <= Rect[4] then return true end
+            end
+            return false
         end
 
         local function HideDrawings()
@@ -1037,7 +1004,7 @@ return {
             local CameraPosition = Camera.CFrame.Position
             local Viewport = Camera.ViewportSize
             local Range = S.Settings.Range
-            local MX1, MY1, MX2, MY2 = MenuBounds()
+            local Occluders = MenuBounds()
 
             for Target, Entry in pairs(S.Entries) do
                 local Frame, ShadowFrame = Entry.Frame, Entry.ShadowFrame
@@ -1073,7 +1040,9 @@ return {
 
                     local Thickness = ThicknessFor(Distance)
                     local Edge = Thickness + 2
-                    if X1 and Overlaps(X1 - Edge, Y1 - Edge, X2 + Edge, Y2 + Edge, MX1, MY1, MX2, MY2) then
+                    -- Cull only a target completely covered by a window. Partial
+                    -- overlap stays rendered below it, right up to its edge.
+                    if X1 and Covered(X1 - Edge, Y1 - Edge, X2 + Edge, Y2 + Edge, Occluders) then
                         X1 = nil
                         if Entry.Highlight then Entry.Highlight.Enabled = false end
                     end
@@ -1161,7 +1130,7 @@ return {
                             local Show = X1 ~= nil and not Part.Empty
                             local Key = Part.Key
                             local Y = X1 and (Key == "Bottom" and BottomY or (TopY + (Key == "Hp" and RowHeight or 0)))
-                            if Show and Overlaps(CenterX - BlockWidth * .5, Y, CenterX + BlockWidth * .5, Y + RowHeight, MX1, MY1, MX2, MY2) then
+                            if Show and Covered(CenterX - BlockWidth * .5, Y, CenterX + BlockWidth * .5, Y + RowHeight, Occluders) then
                                 Show = false
                             end
 

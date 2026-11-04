@@ -883,6 +883,28 @@ end
 function Library:IsOpen()
 	return self._open == true and self._minimized ~= true
 end
+
+-- Only visible window surfaces, not transparent fullscreen layout holders.
+-- ESP can cull fully covered targets while ordinary GUI ordering handles
+-- partial overlap with the main window, floating tools and popups.
+function Library:GetOcclusionRects()
+	local rects, seen = {}, {}
+	if not self.Gui.Enabled then return rects end
+	local function add(object)
+		if not object or seen[object] or not object.Parent or not object.Visible then return end
+		seen[object] = true
+		local at, size = object.AbsolutePosition, object.AbsoluteSize
+		if size.X > 0 and size.Y > 0 then
+			table.insert(rects, { at.X, at.Y, at.X + size.X, at.Y + size.Y })
+		end
+	end
+	add(self.Root)
+	for _, child in ipairs(self.Gui:GetChildren()) do
+		if child:IsA("GuiObject") and child.BackgroundTransparency < 1 then add(child) end
+	end
+	if self.Root.Visible then add(self._popup); add(self._popupFloat) end
+	return rects
+end
 --// Open and close are a real movement in both directions, and which movement
 --// is the player's choice (Settings tab, saved as UI_MENU_ANIMATION):
 --//   Pop     a small scale pop with a Back overshoot - the default

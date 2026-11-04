@@ -683,6 +683,24 @@ end
 function Library:IsOpen()
 return self._open == true and self._minimized ~= true
 end
+function Library:GetOcclusionRects()
+local rects, seen = {}, {}
+if not self.Gui.Enabled then return rects end
+local function add(object)
+if not object or seen[object] or not object.Parent or not object.Visible then return end
+seen[object] = true
+local at, size = object.AbsolutePosition, object.AbsoluteSize
+if size.X > 0 and size.Y > 0 then
+table.insert(rects, { at.X, at.Y, at.X + size.X, at.Y + size.Y })
+end
+end
+add(self.Root)
+for _, child in ipairs(self.Gui:GetChildren()) do
+if child:IsA("GuiObject") and child.BackgroundTransparency < 1 then add(child) end
+end
+if self.Root.Visible then add(self._popup); add(self._popupFloat) end
+return rects
+end
 function Library:SetStartupHidden(hidden)
 self.StartupHidden = hidden == true
 if not self.StartupHidden then

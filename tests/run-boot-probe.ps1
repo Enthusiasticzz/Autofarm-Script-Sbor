@@ -28,7 +28,7 @@ if ($FromBundle) {
 
     for ($index = 1; $index -le $partCount; $index++) {
         $text = Get-Content (Join-Path $bundleDir ("Part{0}.lua" -f $index)) -Raw
-        $entries = [regex]::Matches($text, '(?s)\["([^"]+)"\] = \[======\]\r?\n(.*?)\r?\n\]======\],')
+        $entries = [regex]::Matches($text, '(?s)\["([^"]+)"\] = \[======\[\r?\n(.*?)\r?\n\]======\],')
 
         foreach ($entry in $entries) {
             $Packed[$entry.Groups[1].Value] = $entry.Groups[2].Value

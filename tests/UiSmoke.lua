@@ -412,6 +412,23 @@ Check("search", function()
     win:_search("")
 end)
 
+Check("ESP occluders include main and floating windows", function()
+    local window = Library.new{ Title = "Occlusion" }
+    window.Root.AbsolutePosition = Vector2.new(20,20)
+    window.Root.AbsoluteSize = Vector2.new(200,200)
+    local floating = Instance.new("Frame", window.Gui)
+    floating.Visible = true
+    floating.BackgroundTransparency = 0
+    floating.AbsolutePosition = Vector2.new(300,20)
+    floating.AbsoluteSize = Vector2.new(200,200)
+    Expect(#window:GetOcclusionRects() == 2, "main or floating window omitted from coverage")
+    window.Root.Visible = false
+    Expect(#window:GetOcclusionRects() == 1, "hiding the main window lost the floating window")
+    window.Gui.Enabled = false
+    Expect(#window:GetOcclusionRects() == 0, "disabled UI still occludes the world")
+    window:Destroy()
+end)
+
 Check("section search keeps context and matches category names", function()
     local t = win:AddTab{ Name = "Organized", Description = "Grouped controls" }
     local s = t:AddSection{ Title = "Recovery", Description = "Health thresholds" }
