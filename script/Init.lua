@@ -352,6 +352,8 @@ print(string.format("[AIC] %s  (from %s)", TITLE, BASE))
 --// fetching takes the first half of the bar, starting modules the rest.
 local UI = nil
 local FETCH_SHARE = 0.5
+local Startup = { Ready = false, Failed = false, IntroDone = false }
+Context.Startup = Startup
 
 local function report(Fraction, Text)
     if UI then
@@ -360,6 +362,9 @@ local function report(Fraction, Text)
 end
 
 local function fail(Message)
+    Startup.Failed = true
+    if Startup.CancelIntro then Startup.CancelIntro() end
+    if UI then UI:SetStartupHidden(false) end
     --// The first line names the module, the last line of a traceback is the
     --// error itself. The loader only has room for a line, so it shows both
     --// and the whole traceback goes to the console.
@@ -473,7 +478,7 @@ local function fetchParallel(Paths)
 end
 
 local function createWindow(Utils)
-    local Window = Utils.new{ Title = TITLE, ManualLoading = true }
+    local Window = Utils.new{ Title = TITLE, ManualLoading = true, InitiallyHidden = true }
 
     --// A run that was stopped while still loading must not leave its window
     --// behind: an orphan window keeps drawing, keeps taking the mouse and no
@@ -777,10 +782,10 @@ local function loadRemote()
     return Specs
 end
 
---// Play the cinematic before creating any menu window. Intro is deliberately
---// separate from feature startup: it yields until its exit fade and cleanup
---// finish. An unsupported visual effect must not prevent the menu loading.
-do
+--// The cinematic and boot run concurrently. Keep the window hidden while
+--// modules initialize and the heartbeat starts; Intro waits for Ready before
+--// its exit fade. Only a real boot error bypasses the cinematic for diagnostics.
+task.spawn(function()
     local Ok, Error = xpcall(function()
         local Intro
         if ROOT then
@@ -793,6 +798,7 @@ do
                 Intro = Chunk()
             end
         end
+        if not Lifetime.Alive or Startup.Failed then return end
         if type(Intro) == "table" and type(Intro.Start) == "function" then
             Intro.Start(Context)
         else
@@ -800,10 +806,12 @@ do
         end
     end, debug.traceback)
     if not Ok then warn("[AIC] Intro failed: " .. tostring(Error)) end
-end
+    Startup.IntroDone = true
+end)
 
 if not Lifetime.Alive then return nil end
 
+local function boot()
 local Specs = ROOT and loadLocal() or loadRemote()
 local SpecCount = 0
 
@@ -1000,7 +1008,7 @@ end)
 
 if Context.UI then
     local Ok, Error = pcall(function()
-        Context.UI:FinishLoading()
+        Context.UI:FinishLoading(true)
     end)
 
     if not Ok then
@@ -1008,4 +1016,24 @@ if Context.UI then
     end
 end
 
+-- The heartbeat is already running. Reveal only after the intro has removed
+-- its screen and blur, including when the intro finished early or failed.
+Startup.Ready = true
+while not Startup.IntroDone and Lifetime.Alive do
+    task.wait()
+end
+if Lifetime.Alive and Context.UI then
+    Context.UI:SetStartupHidden(false)
+end
+
 return Context
+end
+
+-- Unexpected compile/require errors must also dismiss the intro and expose
+-- boot diagnostics instead of leaving the cinematic waiting for Ready forever.
+local BootOk, BootResult = xpcall(boot, debug.traceback)
+if not BootOk then
+    if not Startup.Failed then fail(BootResult) end
+    error(BootResult, 0)
+end
+return BootResult

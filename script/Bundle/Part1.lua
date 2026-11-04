@@ -312,6 +312,7 @@ end)
 end
 end)
 end)
+if o.InitiallyHidden then self:SetStartupHidden(true) end
 if o.ManualLoading then
 self:_buildLoader()
 end
@@ -682,7 +683,14 @@ end
 function Library:IsOpen()
 return self._open == true and self._minimized ~= true
 end
+function Library:SetStartupHidden(hidden)
+self.StartupHidden = hidden == true
+self.Gui.Enabled = not self.StartupHidden
+self.CursorGui.Enabled = not self.StartupHidden
+self.Root.Visible = not self.StartupHidden
+end
 function Library:Toggle(state)
+if self.StartupHidden then return end
 if state == nil then state = not self._open end
 if state == self._open then return end
 self._open = state
@@ -1394,10 +1402,14 @@ outline.Transparency = .45
 win:Themed(outline, { Color = "Border" })
 New("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, Parent = sec.Frame })
 if so.Title then
-local r = sec:_row(36, true)
+local r = sec:_row(40, true)
 sec.Header = r
 r.Name = "SectionHeading"
+r.BackgroundTransparency = .55
+win:Themed(r, { BackgroundColor3 = "Element" })
 win:Label(r, so.Title, { Bold = true, TextSize = 14, Position = UDim2.fromOffset(14,0), SizeUDim = UDim2.new(1,-28,1,0) })
+local rule = New("Frame", { Name = "HeaderDivider", BorderSizePixel = 0, BackgroundTransparency = .25, Position = UDim2.new(0,14,1,-1), Size = UDim2.new(1,-28,0,1), Parent = r })
+win:Themed(rule, { BackgroundColor3 = "Border" })
 win:_attachTip(r, so.Title, so.Description)
 sec._lastRow = nil
 end
@@ -1469,7 +1481,7 @@ Library.Section = Section
 function Section:_row(h, noSeparator)
 self._n += 1
 local r = New("Frame", { Size = UDim2.new(1,0,0,h), BackgroundTransparency = 1, LayoutOrder = self._n, Parent = self.Frame })
-if self._n > 1 and not noSeparator then
+if self._n > 1 and not noSeparator and not (self.Header and self._n == 2) then
 local l = New("Frame", { Size = UDim2.new(1,0,0,1), BorderSizePixel = 0, Parent = r })
 self.Win:Themed(l, { BackgroundColor3 = "Border" })
 end
@@ -2054,7 +2066,7 @@ end
 end
 function Library:_stepCursor()
 local mode = self.Cursor.Mode
-local show = mode == "Always" or (mode == "Menu open" and self.Root.Visible)
+local show = not self.StartupHidden and (mode == "Always" or (mode == "Menu open" and self.Root.Visible))
 if show then
 local m = UIS:GetMouseLocation()
 self.CursorHolder.Position = UDim2.fromOffset(m.X, m.Y)
@@ -2839,9 +2851,12 @@ end
 self.ErrorPanel = { Sheet = sheet, Text = body }
 return self.ErrorPanel
 end
-function Library:FinishLoading()
+function Library:FinishLoading(instant)
 local boot = self.Loader
-if boot and not boot.Finishing then
+if boot and instant then
+boot.Sheet:Destroy()
+self.Loader = nil
+elseif boot and not boot.Finishing then
 boot.Finishing = true
 task.spawn(function()
 self:Tween(boot.Fill, { Size = UDim2.fromScale(1, 1) }, .3, Enum.EasingStyle.Quart)

@@ -362,6 +362,22 @@ Check("tab switching", function()
     end
 end)
 
+Check("startup keeps the menu hidden while features initialize", function()
+    local hidden = Library.new{ Title = "Startup", ManualLoading = true, InitiallyHidden = true }
+    Expect(not hidden.Gui.Enabled and not hidden.Root.Visible, "startup exposed the menu")
+    hidden:Toggle(false)
+    hidden:Toggle(true)
+    Expect(not hidden.Root.Visible, "a hotkey exposed the booting menu")
+    hidden:SetCursor{ Mode = "Always" }
+    hidden:_stepCursor()
+    Expect(not hidden.CursorHolder.Visible, "startup exposed the custom cursor")
+    hidden:FinishLoading(true)
+    Expect(hidden.Loader == nil, "intro completion would reveal a second loader")
+    hidden:SetStartupHidden(false)
+    Expect(hidden.Gui.Enabled and hidden.Root.Visible, "ready menu was not revealed")
+    hidden:Destroy()
+end)
+
 Check("search", function()
     win:_search("auto")
     win:_search("")

@@ -22,8 +22,9 @@ Behind the scenes it fetches `UI/Utils.lua` and the bundle parts built from the
 time and starts them in dependency order. It needs an executor (`loadstring`,
 `game:HttpGet`, `LocalPlayer`/`PlayerGui`).
 
-Startup plays `Intro.lua` first, removes its cinematic and blur, then creates
-the menu and loads the features. The intro plays once per script execution;
+Startup plays `Intro.lua` while loading the modules and starting the heartbeat
+behind it. Once startup is ready, the intro fades out, removes its blur and
+reveals the menu. The intro plays once per script execution;
 reopening the menu with its hotkey does not replay it.
 
 
