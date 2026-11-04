@@ -6098,15 +6098,16 @@ local function SetLine(Line, X1, Y1, X2, Y2)
 Line.From = Vector2.new(X1, Y1)
 Line.To = Vector2.new(X2, Y2)
 end
-local function CoveredByUI()
-local Startup = Context.Startup
-if Startup and not Startup.IntroDone then return true end
+local function MenuBounds()
 local UI = Context.UI
-if not UI or UI.Destroyed then return false end
-if UI.Root and UI.Gui then
-return UI.Gui.Enabled and UI.Root.Visible and not UI._minimized
+if not UI or UI.Destroyed or not UI.Root or not UI.Gui
+or not UI.Gui.Enabled or not UI.Root.Visible then return nil end
+local At, Size = UI.Root.AbsolutePosition, UI.Root.AbsoluteSize
+if not At or not Size or Size.X <= 0 or Size.Y <= 0 then return nil end
+return At.X, At.Y, At.X + Size.X, At.Y + Size.Y
 end
-return type(UI.IsOpen) == "function" and UI:IsOpen()
+local function Overlaps(X1, Y1, X2, Y2, MX1, MY1, MX2, MY2)
+return MX1 ~= nil and X1 < MX2 and X2 > MX1 and Y1 < MY2 and Y2 > MY1
 end
 local function HideDrawings()
 for _, Entry in pairs(S.Entries) do
@@ -6124,13 +6125,14 @@ end
 end
 local function UpdateDrawings()
 local Camera = workspace.CurrentCamera
-if CoveredByUI() or not Camera then
+if (Context.Startup and not Context.Startup.IntroDone) or not Camera then
 HideDrawings()
 return
 end
 local CameraPosition = Camera.CFrame.Position
 local Viewport = Camera.ViewportSize
 local Range = S.Settings.Range
+local MX1, MY1, MX2, MY2 = MenuBounds()
 for Target, Entry in pairs(S.Entries) do
 local Frame, ShadowFrame = Entry.Frame, Entry.ShadowFrame
 local TextParts = Entry.TextParts
@@ -6155,6 +6157,11 @@ if X1 and (X2 < 0 or Y2 < 0 or X1 > Viewport.X or Y1 > Viewport.Y) then
 X1 = nil
 end
 local Thickness = ThicknessFor(Distance)
+local Edge = Thickness + 2
+if X1 and Overlaps(X1 - Edge, Y1 - Edge, X2 + Edge, Y2 + Edge, MX1, MY1, MX2, MY2) then
+X1 = nil
+if Entry.Highlight then Entry.Highlight.Enabled = false end
+end
 local TextSize = TextSizeFor()
 local Style = Entry.BoxStyle or "Full"
 local Count = Style == "Corners" and 8 or 4
@@ -6228,6 +6235,9 @@ for _, Part in ipairs(TextParts) do
 local Show = X1 ~= nil and not Part.Empty
 local Key = Part.Key
 local Y = X1 and (Key == "Bottom" and BottomY or (TopY + (Key == "Hp" and RowHeight or 0)))
+if Show and Overlaps(CenterX - BlockWidth * .5, Y, CenterX + BlockWidth * .5, Y + RowHeight, MX1, MY1, MX2, MY2) then
+Show = false
+end
 if Part.Draw then
 if Show then
 Part.Draw.Size = TextSize
@@ -7319,184 +7329,6 @@ end
 end
 AICUI.RefreshMineZonePicker()
 return Module
-end,
-}
-]======],
-	["Features/MobBrowser.lua"] = [======[
-return {
-Name = "MobBrowser",
-IsFeature = true,
-Dependencies = {"Runtime", "Components", "BrowserShell", "DetailKit", "MobDictionary", "MobDetail"},
-Start = function(Context)
-local UIRef = Context.UIRef
-local Kit = Context.DetailKit
-local Dictionary = Context.MobDictionary
-local Detail = Context.MobDetail
-local FormatNumber = Kit.FormatNumber
-local REFRESH_INTERVAL = 1
-local FILTERS = { "ALL", "MOBS", "BOSSES", "LIVE" }
-local Browser = {
-Name = "MobBrowser",
-IsFeature = true,
-S = {
-LastRefresh = 0,
-},
-}
-local S = Browser.S
-local function MatchesFilter(Entry, Filter)
-if Filter == "MOBS" then
-return Entry.Kind == "Mob"
-elseif Filter == "BOSSES" then
-return Entry.Kind == "Boss"
-elseif Filter == "LIVE" then
-return Dictionary:GetLive(Entry.Name) > 0
-end
-return true
-end
-local function DescribeRow(Entry)
-local Parts = { string.upper(Entry.Kind) }
-local Level = Dictionary.GetStat(Entry, "Config.LVL")
-local Health = Dictionary.GetStat(Entry, "Humanoid.MaxHealth")
-local Count = Dictionary:GetLive(Entry.Name)
-local Drops = Dictionary:GetDrops(Entry.Name)
-if type(Level) == "number" then
-table.insert(Parts, "LV " .. FormatNumber(Level))
-end
-if Health then
-table.insert(Parts, "HP " .. FormatNumber(Health))
-end
-if Drops and #Drops > 0 then
-table.insert(Parts, #Drops .. (#Drops == 1 and " DROP" or " DROPS"))
-end
-if Count > 0 then
-table.insert(Parts, string.format("● %d LIVE", Count))
-end
-if Detail.IsInPriority(Entry.Name) then
-table.insert(Parts, "✓")
-end
-local Filled, _, ThreatColor = Detail.DescribeThreat(Entry)
-return {
-Info = table.concat(Parts, "  ·  "),
-InfoColor = Count > 0 and Kit.GOOD_COLOR or nil,
-Accent = Detail.GetKindColor(Entry),
-Bar = Filled / Detail.THREAT_SEGMENTS,
-BarColor = ThreatColor,
-}
-end
-local Shell = Context.BrowserShell.New({
-Title = "MOB DICTIONARY",
-Subtitle = "Every mob and boss  //  drops with your Luck  //  add to Enemy Priority",
-Width = 760,
-Height = 520,
-MinWidth = 580,
-MinHeight = 380,
-SearchPlaceholder = "SEARCH MOB...",
-ReloadText = "↻  RELOAD",
-OnReload = function()
-Browser:Reload()
-end,
-GetItems = function()
-return Dictionary:GetAll()
-end,
-GetChips = function(Entries)
-local Chips = {}
-for _, Filter in ipairs(FILTERS) do
-local Count = 0
-for _, Entry in ipairs(Entries) do
-if MatchesFilter(Entry, Filter) then
-Count += 1
-end
-end
-table.insert(Chips, { Key = Filter, Text = string.format("%s  %d", Filter, Count) })
-end
-return Chips
-end,
-MatchesChip = MatchesFilter,
-DescribeRow = DescribeRow,
-GetSelected = function()
-return Detail:GetSelected()
-end,
-OnSelect = function(Name)
-Browser:Select(Name)
-end,
-GetEmptyText = function(Count)
-if Dictionary.S.Loading then
-return "Loading..."
-elseif Count == 0 then
-return Dictionary.S.Error and "Mob dictionary unavailable" or "No mobs found"
-end
-return "No mobs match the filters"
-end,
-})
-function Browser:Refresh()
-if not Shell:IsOpen() then
-return
-end
-S.LastRefresh = os.clock()
-Dictionary:ScanLive()
-Shell:RefreshList()
-Detail:Refresh()
-end
-function Browser:Select(Name)
-Detail:Select(Name)
-Browser:Refresh()
-end
-Dictionary.S.OnLoaded = function()
-if not Shell.Built then
-return
-end
-Shell:ResetRows()
-local Selected = Detail:GetSelected()
-if not Selected or not Dictionary:Get(Selected) then
-local First = Dictionary:GetAll()[1]
-Selected = First and First.Name or nil
-end
-Detail:Select(Selected)
-Browser:Refresh()
-end
-function Browser:Reload()
-Dictionary:Load()
-if Shell.Built then
-Shell:RefreshList()
-Detail:Rebuild()
-end
-end
-function Browser:Open()
-if not Shell:Open() then
-return
-end
-Detail:Build(Shell.DetailScroll)
-if not Dictionary.S.Loaded and not Dictionary.S.Loading then
-Browser:Reload()
-else
-Detail:Rebuild()
-end
-Browser:Refresh()
-end
-function Browser:Toggle()
-if Shell:IsOpen() then
-Shell:Close()
-else
-Browser:Open()
-end
-end
-function Browser:Update()
-if Shell:IsOpen() and os.clock() - S.LastRefresh >= REFRESH_INTERVAL then
-Browser:Refresh()
-end
-end
-function Browser:BuildLateUI()
-if UIRef.TargetSection then
-local Button = UIRef.TargetSection:AddButton{
-Name = "Open Mob Dictionary",
-Callback = function()
-Browser:Toggle()
-end,
-}
-Button.Row.LayoutOrder = 90
-end
-end
-return Browser
 end,
 }
 ]======],

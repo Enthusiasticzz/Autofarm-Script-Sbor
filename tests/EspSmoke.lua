@@ -46,7 +46,9 @@ local function run(useDrawing, ownCharacter)
     end } or nil
     local cleanup
     local startup = { IntroDone = true }
-    local menu = { Root = { Visible = false }, Gui = { Enabled = true } }
+    local menu = { Root = {
+        Visible = false, AbsolutePosition = Vector2.new(350,240), AbsoluteSize = Vector2.new(100,120),
+    }, Gui = { Enabled = true } }
     local feature = EspModule.Start({
         Services = { Players = Players }, Player = Players.LocalPlayer,
         UIRef = {}, AICUI = {}, CONFIG = {},
@@ -89,6 +91,14 @@ local function run(useDrawing, ownCharacter)
     assert(not entry.BoxLines[1].Visible and not entry.BoxShadow[1].Visible, "Drawing box shows through the menu")
     assert(not entry.Frame.Visible and not entry.ShadowFrame.Visible, "GUI box shows through the menu")
     entry.BoxLines, entry.BoxShadow = nil, nil
+    menu.Root.AbsolutePosition = Vector2.new(10,10)
+    render()
+    assert(entry.Highlight.Enabled and textVisible(), "an open menu hides ESP outside its bounds")
+    menu.Root.AbsolutePosition = Vector2.new(360,337)
+    menu.Root.AbsoluteSize = Vector2.new(80,30)
+    render()
+    assert(entry.Highlight.Enabled and textVisible(), "a covered metadata line hides the entire target")
+    assert(not (useDrawing and parts.Bottom.Draw.Visible or not useDrawing and parts.Bottom.Gui.Visible), "metadata is drawn through the menu")
     menu.Root.Visible = false
     startup.IntroDone = false
     render()

@@ -992,17 +992,17 @@ return {
             Line.To = Vector2.new(X2, Y2)
         end
 
-        local function CoveredByUI()
-            local Startup = Context.Startup
-            if Startup and not Startup.IntroDone then return true end
+        local function MenuBounds()
             local UI = Context.UI
-            if not UI or UI.Destroyed then return false end
-            -- Keep ESP hidden through the close tween, until the window is
-            -- actually gone. A minimized title bar does not cover the world.
-            if UI.Root and UI.Gui then
-                return UI.Gui.Enabled and UI.Root.Visible and not UI._minimized
-            end
-            return type(UI.IsOpen) == "function" and UI:IsOpen()
+            if not UI or UI.Destroyed or not UI.Root or not UI.Gui
+                or not UI.Gui.Enabled or not UI.Root.Visible then return nil end
+            local At, Size = UI.Root.AbsolutePosition, UI.Root.AbsoluteSize
+            if not At or not Size or Size.X <= 0 or Size.Y <= 0 then return nil end
+            return At.X, At.Y, At.X + Size.X, At.Y + Size.Y
+        end
+
+        local function Overlaps(X1, Y1, X2, Y2, MX1, MY1, MX2, MY2)
+            return MX1 ~= nil and X1 < MX2 and X2 > MX1 and Y1 < MY2 and Y2 > MY1
         end
 
         local function HideDrawings()
@@ -1025,8 +1025,9 @@ return {
         local function UpdateDrawings()
             local Camera = workspace.CurrentCamera
             -- Drawing objects cannot be placed behind a ScreenGui by ZIndex.
-            -- Suspend both render paths while the intro/menu covers the world.
-            if CoveredByUI() or not Camera then
+            -- The full-screen intro hides everything; the menu hides only
+            -- overlapping targets/labels, leaving the rest of the world visible.
+            if (Context.Startup and not Context.Startup.IntroDone) or not Camera then
                 HideDrawings()
                 return
             end
@@ -1036,6 +1037,7 @@ return {
             local CameraPosition = Camera.CFrame.Position
             local Viewport = Camera.ViewportSize
             local Range = S.Settings.Range
+            local MX1, MY1, MX2, MY2 = MenuBounds()
 
             for Target, Entry in pairs(S.Entries) do
                 local Frame, ShadowFrame = Entry.Frame, Entry.ShadowFrame
@@ -1070,6 +1072,11 @@ return {
                     end
 
                     local Thickness = ThicknessFor(Distance)
+                    local Edge = Thickness + 2
+                    if X1 and Overlaps(X1 - Edge, Y1 - Edge, X2 + Edge, Y2 + Edge, MX1, MY1, MX2, MY2) then
+                        X1 = nil
+                        if Entry.Highlight then Entry.Highlight.Enabled = false end
+                    end
                     local TextSize = TextSizeFor()
                     local Style = Entry.BoxStyle or "Full"
                     local Count = Style == "Corners" and 8 or 4
@@ -1154,6 +1161,9 @@ return {
                             local Show = X1 ~= nil and not Part.Empty
                             local Key = Part.Key
                             local Y = X1 and (Key == "Bottom" and BottomY or (TopY + (Key == "Hp" and RowHeight or 0)))
+                            if Show and Overlaps(CenterX - BlockWidth * .5, Y, CenterX + BlockWidth * .5, Y + RowHeight, MX1, MY1, MX2, MY2) then
+                                Show = false
+                            end
 
                             if Part.Draw then
                                 if Show then
