@@ -2987,6 +2987,68 @@ return {
             return true
         end
 
+        --// How close the duo has to be before a stop starts. Wide enough to
+        --// cover a boss room's doorway, narrow enough that a player across the
+        --// map is not counted as standing there.
+        local DUO_NEAR_DISTANCE = 35
+
+        local function TrimText(Value)
+            return tostring(Value or ""):gsub("^%s*(.-)%s*$", "%1")
+        end
+
+        --// The name Duo Sync waits for. The Route Controls box wins; blank
+        --// falls back to the Duo Username already used by the Webhook, so a
+        --// duo only has to be named once.
+        local function GetDuoName()
+            local Name = TrimText(CONFIG.BOSS_DUO_NAME)
+
+            if Name == "" then
+                Name = TrimText(CONFIG.DISCORD_DUO)
+            end
+
+            return Name
+        end
+
+        local function GetDuoRoot()
+            local Name = GetDuoName()
+
+            if Name == "" then
+                return nil
+            end
+
+            local Lower = string.lower(Name)
+
+            for _, Other in ipairs(Players:GetPlayers()) do
+                if Other ~= Player then
+                    local OtherName = string.lower(tostring(Other.Name or ""))
+                    local DisplayName = string.lower(tostring(Other.DisplayName or ""))
+
+                    if OtherName == Lower or DisplayName == Lower then
+                        local Character = Other.Character
+                        local Root = Character and Character:FindFirstChild("HumanoidRootPart")
+                        local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
+
+                        if Root and Humanoid and (tonumber(Humanoid.Health) or 0) > 0 then
+                            return Root
+                        end
+                    end
+                end
+            end
+
+            return nil
+        end
+
+        local function IsDuoNear(RootPart)
+            local DuoRoot = GetDuoRoot()
+
+            if not DuoRoot then
+                return false
+            end
+
+            return AICCombatUtils.GetHorizontalDistance(RootPart.Position, DuoRoot.Position)
+                <= DUO_NEAR_DISTANCE
+        end
+
         local function ApproachStep(Stop, Now)
             local _, Humanoid, RootPart = Runtime:GetCharacter()
 
@@ -3186,11 +3248,25 @@ return {
                     --// spawn to wait for.
                     local Wait = S.SkipSpotWait and 0 or (tonumber(Stop.Wait) or 0)
 
-                    if Wait > 0 and not S.SpotWaitUntil then
+                    --// Duo Sync: nothing starts until the duo is beside the
+                    --// character. Wait At Spot is not set while they are away,
+                    --// so its timer starts on the frame they arrive; if they
+                    --// step out again the timer is cleared and starts over on
+                    --// their return. With Wait 0 the gate still holds, so a
+                    --// stop without a wait also waits for them.
+                    local DuoName = GetDuoName()
+                    local DuoWaiting = CONFIG.BOSS_DUO_SYNC == true
+                        and not IsDuoNear(RootPart)
+
+                    if DuoWaiting then
+                        S.SpotWaitUntil = nil
+                    end
+
+                    if not DuoWaiting and Wait > 0 and not S.SpotWaitUntil then
                         S.SpotWaitUntil = Now + Wait
                     end
 
-                    if S.SpotWaitUntil and Now < S.SpotWaitUntil then
+                    if DuoWaiting or (S.SpotWaitUntil and Now < S.SpotWaitUntil) then
                         --// The wait is for the spawn, not for the character to
                         --// stand still and be killed in: the boss's dodge, the
                         --// heal and the guard all still run, only the fight
@@ -3289,14 +3365,23 @@ return {
                             WaitMarker = S.Blocking and "  HEAL  BLOCK" or "  HEAL"
                         end
 
-                        SetStatus(string.format(
-                            "STOP %d/%d  WAIT %ds  %s%s",
-                            S.Index,
-                            #GetStops(),
-                            math.ceil(S.SpotWaitUntil - Now),
-                            Stop.Label,
-                            WaitMarker
-                        ))
+                        if DuoWaiting then
+                            SetStatus(string.format(
+                                "STOP %d/%d  WAITING FOR DUO  %s",
+                                S.Index,
+                                #GetStops(),
+                                DuoName ~= "" and DuoName or "SET A DUO NAME"
+                            ))
+                        else
+                            SetStatus(string.format(
+                                "STOP %d/%d  WAIT %ds  %s%s",
+                                S.Index,
+                                #GetStops(),
+                                math.ceil((S.SpotWaitUntil or Now) - Now),
+                                Stop.Label,
+                                WaitMarker
+                            ))
+                        end
                         --// Same reason as the dodge frame: the wait is what
                         --// stands the character here, so Auto Farm must not
                         --// walk it somewhere else on the same frame.
@@ -4590,6 +4675,31 @@ return {
             Commit("BOSS STOP REMOVED #" .. tostring(Index))
             end,
         }
+
+        --// Duo Sync: every stop holds until the other account is beside the
+        --// character, then starts the stop's Wait At Spot. The gate is before
+        --// the timer is set, so a stop with Wait 0 waits for them as well.
+        UIRef.BossDuoSyncToggle = UIRef.BossSection:AddToggle{
+            Name = "Duo Sync",
+            Default = CONFIG.BOSS_DUO_SYNC == true,
+            Callback = function(Value)
+                CONFIG.BOSS_DUO_SYNC = Value == true
+                AICProfile.WriteGlobalStore()
+                SetStatus(CONFIG.BOSS_DUO_SYNC
+                    and "DUO SYNC  STOPS WAIT FOR THE DUO"
+                    or "DUO SYNC OFF")
+            end,
+        }
+
+        UIRef.BossDuoNameBox = UIRef.BossSection:AddTextBox{
+            Name = "Duo Username",
+            Default = TrimText(CONFIG.BOSS_DUO_NAME),
+            Callback = function(Value)
+                CONFIG.BOSS_DUO_NAME = TrimText(Value)
+                AICProfile.WriteGlobalStore()
+            end,
+        }
+        UIRef.BossSection:AddNote("Blank uses the Duo Username from Utility -> Webhook")
 
         UIRef.BossLoopToggle = UIRef.BossSection:AddToggle{
             Name = "Loop Route",

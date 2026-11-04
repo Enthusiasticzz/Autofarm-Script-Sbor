@@ -4940,6 +4940,10 @@ SaveConfig.Settings = {
 { Key = "BOSS_ROUTE_LOOP", Default = true },
 { Key = "BOSS_RESET_ALWAYS_WAIT", Default = false },
 { Key = "BOSS_DEATH_FARM", Default = false },
+{ Key = "BOSS_DUO_SYNC", Default = false },
+{ Key = "BOSS_DUO_NAME", Default = "", Normalize = function(Value)
+return type(Value) == "string" and Value:gsub("^%s*(.-)%s*$", "%1") or ""
+end },
 { Key = "BOSS_BOUNDS_VISIBLE", Default = true },
 { Key = "RETREAT_HEALTH_PERCENT", Default = 40, Min = 0, Max = 80 },
 { Key = "AUTO_HEAL_HEALTH_PERCENT", Default = 65, Min = 30, Max = 80 },

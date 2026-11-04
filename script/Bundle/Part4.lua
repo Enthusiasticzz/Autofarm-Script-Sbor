@@ -1812,6 +1812,47 @@ S.Index
 ), 4)
 return true
 end
+local DUO_NEAR_DISTANCE = 35
+local function TrimText(Value)
+return tostring(Value or ""):gsub("^%s*(.-)%s*$", "%1")
+end
+local function GetDuoName()
+local Name = TrimText(CONFIG.BOSS_DUO_NAME)
+if Name == "" then
+Name = TrimText(CONFIG.DISCORD_DUO)
+end
+return Name
+end
+local function GetDuoRoot()
+local Name = GetDuoName()
+if Name == "" then
+return nil
+end
+local Lower = string.lower(Name)
+for _, Other in ipairs(Players:GetPlayers()) do
+if Other ~= Player then
+local OtherName = string.lower(tostring(Other.Name or ""))
+local DisplayName = string.lower(tostring(Other.DisplayName or ""))
+if OtherName == Lower or DisplayName == Lower then
+local Character = Other.Character
+local Root = Character and Character:FindFirstChild("HumanoidRootPart")
+local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
+if Root and Humanoid and (tonumber(Humanoid.Health) or 0) > 0 then
+return Root
+end
+end
+end
+end
+return nil
+end
+local function IsDuoNear(RootPart)
+local DuoRoot = GetDuoRoot()
+if not DuoRoot then
+return false
+end
+return AICCombatUtils.GetHorizontalDistance(RootPart.Position, DuoRoot.Position)
+<= DUO_NEAR_DISTANCE
+end
 local function ApproachStep(Stop, Now)
 local _, Humanoid, RootPart = Runtime:GetCharacter()
 if not Humanoid or not RootPart then
@@ -1928,10 +1969,16 @@ math.min(S.PathIndex - 1, #Path),
 ))
 else
 local Wait = S.SkipSpotWait and 0 or (tonumber(Stop.Wait) or 0)
-if Wait > 0 and not S.SpotWaitUntil then
+local DuoName = GetDuoName()
+local DuoWaiting = CONFIG.BOSS_DUO_SYNC == true
+and not IsDuoNear(RootPart)
+if DuoWaiting then
+S.SpotWaitUntil = nil
+end
+if not DuoWaiting and Wait > 0 and not S.SpotWaitUntil then
 S.SpotWaitUntil = Now + Wait
 end
-if S.SpotWaitUntil and Now < S.SpotWaitUntil then
+if DuoWaiting or (S.SpotWaitUntil and Now < S.SpotWaitUntil) then
 local WaitTarget = FindTarget(Stop, Now)
 if WaitTarget then
 local WaitDodge = Stop.Dodge ~= false
@@ -1973,14 +2020,23 @@ local WaitMarker = S.Blocking and "  BLOCK" or ""
 if WaitHeal then
 WaitMarker = S.Blocking and "  HEAL  BLOCK" or "  HEAL"
 end
+if DuoWaiting then
+SetStatus(string.format(
+"STOP %d/%d  WAITING FOR DUO  %s",
+S.Index,
+#GetStops(),
+DuoName ~= "" and DuoName or "SET A DUO NAME"
+))
+else
 SetStatus(string.format(
 "STOP %d/%d  WAIT %ds  %s%s",
 S.Index,
 #GetStops(),
-math.ceil(S.SpotWaitUntil - Now),
+math.ceil((S.SpotWaitUntil or Now) - Now),
 Stop.Label,
 WaitMarker
 ))
+end
 return true
 end
 S.SpotWaitUntil = nil
@@ -2869,6 +2925,26 @@ end
 Commit("BOSS STOP REMOVED #" .. tostring(Index))
 end,
 }
+UIRef.BossDuoSyncToggle = UIRef.BossSection:AddToggle{
+Name = "Duo Sync",
+Default = CONFIG.BOSS_DUO_SYNC == true,
+Callback = function(Value)
+CONFIG.BOSS_DUO_SYNC = Value == true
+AICProfile.WriteGlobalStore()
+SetStatus(CONFIG.BOSS_DUO_SYNC
+and "DUO SYNC  STOPS WAIT FOR THE DUO"
+or "DUO SYNC OFF")
+end,
+}
+UIRef.BossDuoNameBox = UIRef.BossSection:AddTextBox{
+Name = "Duo Username",
+Default = TrimText(CONFIG.BOSS_DUO_NAME),
+Callback = function(Value)
+CONFIG.BOSS_DUO_NAME = TrimText(Value)
+AICProfile.WriteGlobalStore()
+end,
+}
+UIRef.BossSection:AddNote("Blank uses the Duo Username from Utility -> Webhook")
 UIRef.BossLoopToggle = UIRef.BossSection:AddToggle{
 Name = "Loop Route",
 Default = CONFIG.BOSS_ROUTE_LOOP ~= false,

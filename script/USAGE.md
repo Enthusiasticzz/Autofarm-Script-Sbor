@@ -564,6 +564,10 @@ unlike the route above them.
   The corners are saved on the stop and follow the profile. **Show Fight Bounds**
   draws the box as four translucent orange walls (12 studs tall) around the
   selected stop; off hides them without clearing the corners.
+- **Duo Sync** — holds every boss stop until your duo is within 35 studs, then
+  starts **Wait At Spot**; a stop with that wait at 0 still waits for them. The
+  timer starts when they arrive, and stepping out and back restarts it. Uses
+  **Duo Username** (blank falls back to the Webhook one).
 - **Wait At Spot (s)** — seconds stood at the stop before the fight starts,
   **0 by default**. Raise it for a boss that spawns a moment after the walk
   arrives; at 0 the first swing is on the frame the stop is reached. It is

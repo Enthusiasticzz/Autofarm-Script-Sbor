@@ -207,6 +207,13 @@ return {
             --// whatever Reset (s) says, except the ones that would cost EXP -
             --// those still wait the stop's own Reset (s).
             { Key = "BOSS_DEATH_FARM", Default = false },
+            --// Holds every boss stop until the duo is beside the character,
+            --// then starts that stop's Wait At Spot (0 included).
+            { Key = "BOSS_DUO_SYNC", Default = false },
+            --// Who Duo Sync waits for; blank falls back to DISCORD_DUO.
+            { Key = "BOSS_DUO_NAME", Default = "", Normalize = function(Value)
+                return type(Value) == "string" and Value:gsub("^%s*(.-)%s*$", "%1") or ""
+            end },
             --// Draws a saved stop's fight box as four translucent walls.
             --// Display only; off removes them without touching the box.
             { Key = "BOSS_BOUNDS_VISIBLE", Default = true },

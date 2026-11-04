@@ -1860,3 +1860,10 @@ Asked and answered from play, then applied:
 - **Reported:** a corner placed by accident could only be removed by clearing the whole box.
 - **Added:** a **Fight Corners** list in Selected Stop, one row per saved corner (`#1  (x, y, z)`), each with its own ✕. Removing one deletes just that point, saves the stop, redraws the walls and drops the box back to `CORNER n/4` until four remain.
 - Checks: `luau-compile` clean on `Features/BossNavigator.lua`; bundle rebuilt (6 parts, 84 modules); `run-bundle-check` 0 compile failures; `run-boot-probe` passes; `run-ui-smoke` 0 failed checks. Not run in game.
+
+## v4.18 — Duo Sync
+
+- **Added:** **Duo Sync** on Route Controls. With it on, a stop does not start its Wait At Spot (or its fight, when the wait is 0) until the duo is within 35 studs of the character; the timer starts on the frame they arrive, and if they step out it is cleared and starts again on their return.
+- **Duo:** `BOSS_DUO_NAME` (**Duo Username** in Route Controls); blank falls back to `DISCORD_DUO` from the Webhook section. The local player is never matched, and a dead or unloaded duo does not count as there.
+- **Every stop:** the gate is in the one place a stop's wait starts, so it applies with Wait 0, with a wait, and on the stop the route walks back to after a death.
+- Checks: `luau-compile` clean on `Core/SaveConfig.lua`, `Features/BossNavigator.lua` and `UI/Descriptions.lua`; bundle rebuilt (6 parts, 84 modules); `run-bundle-check` 0 compile failures; `run-boot-probe` passes (including the new toggle/name-box assertions); `run-ui-smoke` 0 failed checks. Not run in game.
