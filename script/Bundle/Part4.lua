@@ -1782,17 +1782,24 @@ if WaitTarget then
 local WaitDodge = Stop.Dodge ~= false
 and WaitTarget:FindFirstChild("HumanoidRootPart") ~= nil
 local WaitCasting = WaitDodge and IsSkillShowing(WaitTarget, Now) == true
-if WaitCasting then
+local WaitOpened = WaitCasting and not S.SkillWas
+S.SkillWas = WaitCasting
+if WaitOpened then
+local WaitRunning = (S.DodgeMaxUntil or 0) > Now
 S.DodgeMinUntil = Now + DODGE_MIN_TIME
 S.DodgeMaxUntil = Now + DODGE_MAX_TIME
 S.SkillSeenAt = Now
 S.SkillActive = true
+if not WaitRunning then
 S.DodgeTarget = nil
+end
 end
 if DodgeStep(WaitTarget, Humanoid, RootPart, Now, Stop) then
 SetBlocking(true)
 return
 end
+else
+S.SkillWas = false
 end
 local WaitHealPercent = math.clamp(
 tonumber(CONFIG.AUTO_HEAL_HEALTH_PERCENT) or 65,
@@ -1826,6 +1833,8 @@ SetBlocking(false)
 EndDodge(Humanoid)
 S.SkillSeenAt = nil
 S.SkillActive = false
+S.SkillWas = false
+S.DodgeTarget = nil
 S.HpAt = nil
 S.HpBase = nil
 S.Phase = "Fight"

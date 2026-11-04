@@ -3007,12 +3007,31 @@ return {
                             --// of nothing, which is the wait fighting itself
                             --// instead of blocking. The burst stays the fight's
                             --// own backup, where it belongs.
-                            if WaitCasting then
+                            --// The rising edge is the cast starting, the same
+                            --// edge the fight uses. Arming on every frame the
+                            --// effect stayed up cleared S.DodgeTarget each
+                            --// time, so DodgeStep's staleness test was true
+                            --// every frame and PickDodgePoint picked a fresh
+                            --// candidate each frame: as IsPathClear flipped
+                            --// between neighbouring candidates the character
+                            --// was sent back and forth between them.
+                            local WaitOpened = WaitCasting and not S.SkillWas
+                            S.SkillWas = WaitCasting
+
+                            if WaitOpened then
+                                local WaitRunning = (S.DodgeMaxUntil or 0) > Now
+
                                 S.DodgeMinUntil = Now + DODGE_MIN_TIME
                                 S.DodgeMaxUntil = Now + DODGE_MAX_TIME
                                 S.SkillSeenAt = Now
                                 S.SkillActive = true
-                                S.DodgeTarget = nil
+
+                                --// A dodge already running keeps its point: a
+                                --// fresh one would be measured from a
+                                --// character already sprinting.
+                                if not WaitRunning then
+                                    S.DodgeTarget = nil
+                                end
                             end
 
                             if DodgeStep(WaitTarget, Humanoid, RootPart, Now, Stop) then
@@ -3022,6 +3041,11 @@ return {
                                 SetBlocking(true)
                                 return
                             end
+                        else
+                            --// No boss to read a cast from. Forget the last one,
+                            --// or a respawn's opening skill looks like a cast
+                            --// that was already handled and is not dodged.
+                            S.SkillWas = false
                         end
 
                         local WaitHealPercent = math.clamp(
@@ -3075,6 +3099,11 @@ return {
                     EndDodge(Humanoid)
                     S.SkillSeenAt = nil
                     S.SkillActive = false
+                    --// The fight reads casts on a rising edge too. Left true, a
+                    --// skill still showing when the wait ends would look like
+                    --// a cast already handled, and the fight would walk in.
+                    S.SkillWas = false
+                    S.DodgeTarget = nil
                     S.HpAt = nil
                     S.HpBase = nil
 
