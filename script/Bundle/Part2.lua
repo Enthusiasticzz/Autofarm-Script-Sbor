@@ -4505,6 +4505,7 @@ AICConfig.MAX_BOSS_PATH = 64
 AICConfig.MAX_BOSS_RESET = 600
 AICConfig.MAX_BOSS_RADIUS = 500
 AICConfig.MAX_BOSS_WAYPOINT = 999
+AICConfig.MAX_BOSS_BOUNDS = 4
 AICConfig.DEFAULT_BOSS_DODGE_DISTANCE = 16
 AICConfig.MIN_BOSS_DODGE_DISTANCE = 6
 AICConfig.MAX_BOSS_DODGE_DISTANCE = 80
@@ -4521,6 +4522,20 @@ table.insert(Result, AICConfig.DecodeVector3(Point))
 end
 end
 return Result
+end
+function AICConfig.NormalizeBossBounds(List)
+local Result = {}
+for _, Point in ipairs(type(List) == "table" and List or {}) do
+if #Result >= AICConfig.MAX_BOSS_BOUNDS then
+break
+end
+if typeof(Point) == "Vector3" then
+table.insert(Result, AICConfig.RoundVector3(Point))
+elseif type(Point) == "table" then
+table.insert(Result, AICConfig.DecodeVector3(Point))
+end
+end
+return #Result > 0 and Result or nil
 end
 function AICConfig.NormalizeBossStops(List)
 local Result = {}
@@ -4551,6 +4566,7 @@ table.insert(Result, {
 Label = Label ~= "" and Label or ("Boss " .. tostring(#Result + 1)),
 Position = Position,
 Path = AICConfig.NormalizeBossPath(Stop.Path),
+Bounds = AICConfig.NormalizeBossBounds(Stop.Bounds),
 Targets = AICConfig.CloneTargetList(Stop.Targets),
 Waypoint = math.clamp(
 math.floor(tonumber(Stop.Waypoint) or 0), 0, AICConfig.MAX_BOSS_WAYPOINT
@@ -4926,6 +4942,7 @@ SaveConfig.Settings = {
 { Key = "BOSS_ROUTE_LOOP", Default = true },
 { Key = "BOSS_RESET_ALWAYS_WAIT", Default = false },
 { Key = "BOSS_DEATH_FARM", Default = false },
+{ Key = "BOSS_BOUNDS_VISIBLE", Default = true },
 { Key = "RETREAT_HEALTH_PERCENT", Default = 40, Min = 0, Max = 80 },
 { Key = "AUTO_HEAL_HEALTH_PERCENT", Default = 65, Min = 30, Max = 80 },
 { Key = "SAFE_ENEMY_RANGE", Default = 4, Min = 0, Max = 30 },

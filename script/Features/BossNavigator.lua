@@ -253,6 +253,144 @@ return {
         local DODGE_DISTANCE = 16
         local DODGE_HOLD_SLACK = 2
         local DODGE_SPEED_BONUS = 12
+        --// The fight box a stop can save: four corners, kept as one
+        --// axis-aligned rectangle. nil until all four exist, so a half-typed
+        --// box changes nothing and the dodge keeps its old behaviour.
+        local BOUNDS_INSET = 2
+        local BOUNDS_MIN_SIZE = 6
+
+        local function GetBoundsRect(Stop)
+            local Points = Stop and Stop.Bounds
+
+            if type(Points) ~= "table" or #Points < AICConfig.MAX_BOSS_BOUNDS then
+                return nil
+            end
+
+            local MinX, MaxX = math.huge, -math.huge
+            local MinZ, MaxZ = math.huge, -math.huge
+            local SumY = 0
+
+            for Index = 1, AICConfig.MAX_BOSS_BOUNDS do
+                local Point = Points[Index]
+
+                if typeof(Point) ~= "Vector3" then
+                    return nil
+                end
+
+                MinX = math.min(MinX, Point.X)
+                MaxX = math.max(MaxX, Point.X)
+                MinZ = math.min(MinZ, Point.Z)
+                MaxZ = math.max(MaxZ, Point.Z)
+                SumY = SumY + Point.Y
+            end
+
+            if MaxX - MinX < BOUNDS_MIN_SIZE or MaxZ - MinZ < BOUNDS_MIN_SIZE then
+                return nil
+            end
+
+            return { MinX = MinX, MaxX = MaxX, MinZ = MinZ, MaxZ = MaxZ, Y = SumY / 4 }
+        end
+
+        local function InsideBounds(Stop, Point, Inset)
+            local Rect = GetBoundsRect(Stop)
+
+            if not Rect or not Point then
+                return true
+            end
+
+            Inset = Inset or 0
+
+            return Point.X >= Rect.MinX + Inset and Point.X <= Rect.MaxX - Inset
+                and Point.Z >= Rect.MinZ + Inset and Point.Z <= Rect.MaxZ - Inset
+        end
+
+        local function ClampToBounds(Stop, Point, Inset)
+            local Rect = GetBoundsRect(Stop)
+
+            if not Rect or not Point then
+                return Point
+            end
+
+            Inset = Inset or BOUNDS_INSET
+            local MinX, MaxX = Rect.MinX + Inset, Rect.MaxX - Inset
+            local MinZ, MaxZ = Rect.MinZ + Inset, Rect.MaxZ - Inset
+
+            if MinX > MaxX then
+                MinX = (Rect.MinX + Rect.MaxX) / 2
+                MaxX = MinX
+            end
+
+            if MinZ > MaxZ then
+                MinZ = (Rect.MinZ + Rect.MaxZ) / 2
+                MaxZ = MinZ
+            end
+
+            return Vector3.new(
+                math.clamp(Point.X, MinX, MaxX),
+                Point.Y,
+                math.clamp(Point.Z, MinZ, MaxZ)
+            )
+        end
+
+        --// Four thin panels mark the fight box in the world. They are display
+        --// only: CanCollide/CanTouch/CanQuery are off, so neither the game nor
+        --// the route's own raycasts can hit them.
+        local BoundsVisualFolder
+
+        local function ClearBoundsVisual()
+            if BoundsVisualFolder then
+                BoundsVisualFolder:Destroy()
+                BoundsVisualFolder = nil
+            end
+        end
+
+        local function RefreshBoundsVisual(Stop)
+            ClearBoundsVisual()
+
+            if CONFIG.BOSS_BOUNDS_VISIBLE == false then
+                return
+            end
+
+            local Rect = GetBoundsRect(Stop)
+
+            if not Rect then
+                return
+            end
+
+            local Height = 12
+            local Thick = 0.4
+            local MidX = (Rect.MinX + Rect.MaxX) / 2
+            local MidZ = (Rect.MinZ + Rect.MaxZ) / 2
+            local Width = Rect.MaxX - Rect.MinX
+            local Depth = Rect.MaxZ - Rect.MinZ
+            local Y = (Rect.Y or 0) + Height / 2
+
+            BoundsVisualFolder = Instance.new("Folder")
+            BoundsVisualFolder.Name = "AICBossBoundsVisuals"
+            BoundsVisualFolder.Parent = workspace
+
+            local function Wall(Name, Size, Position)
+                local Panel = Instance.new("Part")
+
+                Panel.Name = Name
+                Panel.Anchored = true
+                Panel.CanCollide = false
+                Panel.CanTouch = false
+                Panel.CanQuery = false
+                Panel.CastShadow = false
+                Panel.Material = Enum.Material.Neon
+                Panel.Color = Color3.fromRGB(255, 120, 40)
+                Panel.Transparency = 0.8
+                Panel.Size = Size
+                Panel.CFrame = CFrame.new(Position)
+                Panel.Parent = BoundsVisualFolder
+            end
+
+            Wall("BoundsNorth", Vector3.new(Width, Height, Thick), Vector3.new(MidX, Y, Rect.MaxZ))
+            Wall("BoundsSouth", Vector3.new(Width, Height, Thick), Vector3.new(MidX, Y, Rect.MinZ))
+            Wall("BoundsEast", Vector3.new(Thick, Height, Depth), Vector3.new(Rect.MaxX, Y, MidZ))
+            Wall("BoundsWest", Vector3.new(Thick, Height, Depth), Vector3.new(Rect.MinX, Y, MidZ))
+        end
         --// The boss's emitters and sounds are listed again this often. Once a
         --// second is enough: the boss tool is equipped a frame or two after
         --// the model spawns, and the list only changes with the tool.
@@ -1131,6 +1269,29 @@ return {
                     true
                 )
             end
+            if UIRef.BossBoundsLabel then
+                local Points = Stop.Bounds or {}
+
+                if #Points >= AICConfig.MAX_BOSS_BOUNDS then
+                    local Rect = GetBoundsRect(Stop)
+
+                    UIRef.BossBoundsLabel:Set(string.format(
+                        "FIGHT BOUNDS:  SET  %.0f x %.0f STUDS",
+                        Rect and (Rect.MaxX - Rect.MinX) or 0,
+                        Rect and (Rect.MaxZ - Rect.MinZ) or 0
+                    ))
+                elseif #Points > 0 then
+                    UIRef.BossBoundsLabel:Set(string.format(
+                        "FIGHT BOUNDS:  CORNER %d/%d  (CLICK THE NEXT CORNER)",
+                        #Points,
+                        AICConfig.MAX_BOSS_BOUNDS
+                    ))
+                else
+                    UIRef.BossBoundsLabel:Set("FIGHT BOUNDS:  NONE  (DODGE RUNS FREELY)")
+                end
+            end
+
+            RefreshBoundsVisual(Stop)
             if UIRef.BossPromptToggle then
                 UIRef.BossPromptToggle:Set(Stop.Prompt == true, true)
             end
@@ -1972,7 +2133,7 @@ return {
         --// either side, then behind, skipping directions with a hole or a wall.
         --// Measured from the boss rather than from the character, so every
         --// pick lands on the same ring instead of one ring further out.
-        local function PickDodgePoint(RootPart, TargetRoot, Distance)
+        local function PickDodgePoint(RootPart, TargetRoot, Distance, Stop)
             Distance = tonumber(Distance) or DODGE_DISTANCE
 
             local Away = Vector3.new(
@@ -2009,17 +2170,22 @@ return {
                 )
                 local Candidate = OnRing(Direction)
                 local Hole = AICCombatUtils.IsHoleAhead(Candidate)
+                --// A point outside the stop's fight box is a wall the dodge
+                --// must not run through, however clear the path looks.
+                local Outside = not InsideBounds(Stop, Candidate, BOUNDS_INSET)
 
-                if not Hole and AICCombatUtils.IsPathClear(Candidate) then
+                if not Hole and not Outside and AICCombatUtils.IsPathClear(Candidate) then
                     return Candidate
                 end
 
-                if not Hole and not Fallback then
+                if not Hole and not Outside and not Fallback then
                     Fallback = Candidate
                 end
             end
 
-            return Fallback or OnRing(Away)
+            --// Every heading left the box: keep the step on the wall line
+            --// instead of running out of the room.
+            return ClampToBounds(Stop, Fallback or OnRing(Away), BOUNDS_INSET)
         end
 
         --// Nearest living mob within Distance of Position, and the part to
@@ -2107,7 +2273,7 @@ return {
                 Distance = math.max(Distance, tonumber(Stop.DodgeDistance))
             end
 
-            local Point = PickDodgePoint(RootPart, MobRoot, Distance)
+            local Point = PickDodgePoint(RootPart, MobRoot, Distance, Stop)
             AICCombatUtils.DoJumpIfObstacle(Point)
             Humanoid:MoveTo(Point)
 
@@ -2162,6 +2328,23 @@ return {
             local Distance = tonumber(Stop and Stop.DodgeDistance) or DODGE_DISTANCE
             local FromBoss = AICCombatUtils.GetHorizontalDistance(TargetRoot.Position, RootPart.Position)
 
+            --// The box is the wall: knocked outside it, walk back in before
+            --// picking a ring point, or the next step can be through the wall.
+            if not InsideBounds(Stop, RootPart.Position, 0) then
+                local Back = ClampToBounds(Stop, RootPart.Position, BOUNDS_INSET)
+
+                if (Back - RootPart.Position).Magnitude > 0.5 then
+                    Humanoid:MoveTo(Back)
+                    SetStatus(string.format("STOP %d/%d  DODGE", S.Index, #GetStops()))
+                    return true
+                end
+            end
+
+            --// A target saved before the box existed can sit outside it.
+            if S.DodgeTarget then
+                S.DodgeTarget = ClampToBounds(Stop, S.DodgeTarget, BOUNDS_INSET)
+            end
+
             if FromBoss < Distance - DODGE_HOLD_SLACK then
                 local Stale = not S.DodgeTarget
                     or AICCombatUtils.GetHorizontalDistance(S.DodgeTarget, TargetRoot.Position) > 6
@@ -2170,7 +2353,7 @@ return {
                     --// The speed to put back is the first one seen, never the
                     --// sprint a later frame is already running at.
                     S.DodgeFromSpeed = S.DodgeFromSpeed or tonumber(Humanoid.WalkSpeed) or 0
-                    S.DodgeTarget = PickDodgePoint(RootPart, TargetRoot, Distance)
+                    S.DodgeTarget = PickDodgePoint(RootPart, TargetRoot, Distance, Stop)
                 end
 
                 --// Run, not walk: the normal run speed plus a sprint.
@@ -3039,7 +3222,12 @@ return {
                                 --// guard stays up through it: evading and blocking
                                 --// are one stance here, not a choice between them.
                                 SetBlocking(true)
-                                return
+                                --// Own the frame. A bare return made BossStep
+                                --// return nil, so Auto Farm's own Update kept
+                                --// moving the character on these same frames -
+                                --// the dodge went one way and Auto Farm pulled it
+                                --// back, which is the back-and-forth.
+                                return true
                             end
                         else
                             --// No boss to read a cast from. Forget the last one,
@@ -3083,7 +3271,10 @@ return {
                             Stop.Label,
                             WaitMarker
                         ))
-                        return
+                        --// Same reason as the dodge frame: the wait is what
+                        --// stands the character here, so Auto Farm must not
+                        --// walk it somewhere else on the same frame.
+                        return true
                     end
 
                     S.SpotWaitUntil = nil
@@ -3663,6 +3854,7 @@ return {
 
         AICUI.RefreshBossVisuals = RefreshBossVisuals
         Context.Lifetime.OnEnd(ClearBossVisuals)
+        Context.Lifetime.OnEnd(ClearBoundsVisual)
 
         ------------------------------------------------------------------------
         --// UI
@@ -3972,6 +4164,85 @@ return {
             )
             return true
         end)
+
+        --// The fight box: four corners, clicked where the character stands.
+        --// The dodge and the reset-hold run stay inside it, so a boss next to
+        --// a wall can no longer be dodged through that wall.
+        UIRef.BossBoundsLabel = UIRef.BossEditorSection:AddLabel(
+            "FIGHT BOUNDS:  NONE  (DODGE RUNS FREELY)"
+        )
+
+        UIRef.BossBoundsButton = UIRef.BossEditorSection:AddButton{
+            Name = "Add Fight Corner",
+            Callback = function()
+                local Stop = SelectedStop()
+                local _, _, RootPart = Runtime:GetCharacter()
+
+                if not Stop then
+                    SetStatus("ADD A BOSS STOP FIRST")
+                    return
+                end
+
+                if not RootPart then
+                    SetStatus("CHARACTER NOT READY")
+                    return
+                end
+
+                if not AICProfile.S.ActiveProfileName then
+                    SetStatus("DEFAULT PLACE_CONFIG IS READ-ONLY")
+                    return
+                end
+
+                Stop.Bounds = Stop.Bounds or {}
+
+                if #Stop.Bounds >= AICConfig.MAX_BOSS_BOUNDS then
+                    SetStatus("FOUR CORNERS SAVED  ·  CLEAR TO REDO")
+                    return
+                end
+
+                table.insert(Stop.Bounds, AICConfig.RoundVector3(RootPart.Position))
+                Commit(string.format(
+                    "FIGHT CORNER %d/%d SAVED",
+                    #Stop.Bounds,
+                    AICConfig.MAX_BOSS_BOUNDS
+                ))
+            end,
+        }
+
+        UIRef.BossBoundsClearButton = UIRef.BossEditorSection:AddButton{
+            Name = "Clear Fight Bounds",
+            Callback = function()
+                local Stop = SelectedStop()
+
+                if not Stop then
+                    SetStatus("ADD A BOSS STOP FIRST")
+                    return
+                end
+
+                if not AICProfile.S.ActiveProfileName then
+                    SetStatus("DEFAULT PLACE_CONFIG IS READ-ONLY")
+                    return
+                end
+
+                Stop.Bounds = nil
+                Commit("FIGHT BOUNDS CLEARED")
+            end,
+        }
+
+        UIRef.BossBoundsVisualToggle = UIRef.BossEditorSection:AddToggle{
+            Name = "Show Fight Bounds",
+            Default = CONFIG.BOSS_BOUNDS_VISIBLE ~= false,
+            Callback = function(Value)
+                CONFIG.BOSS_BOUNDS_VISIBLE = Value == true
+                AICProfile.WriteGlobalStore()
+                RefreshBoundsVisual(SelectedStop())
+                SetStatus(
+                    CONFIG.BOSS_BOUNDS_VISIBLE
+                        and "FIGHT BOUNDS SHOWN"
+                        or "FIGHT BOUNDS HIDDEN"
+                )
+            end,
+        }
 
         --// Pause at the spot before the fight. 0 (the default) starts it as
         --// soon as the walk arrives; a few seconds lets a boss that spawns

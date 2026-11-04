@@ -554,6 +554,14 @@ unlike the route above them.
 - **Dodge Distance** — how far from the boss the skill dodge settles, 6–80
   studs (16 by default). The default is a step out of a short-range skill; raise
   it for a boss with a wide one.
+- **Fight Bounds** — optional box for the boss room. Stand on a corner, press
+  **Add Fight Corner**, and repeat for all four corners; the label counts
+  `CORNER n/4` and then shows the box size. The skill dodge and the reset-hold
+  run stay inside the box, sliding along a wall instead of backing through it.
+  **Clear Fight Bounds** removes the box; with none saved the dodge runs freely.
+  The four corners are saved on the stop and follow the profile. **Show Fight
+  Bounds** draws the box as four translucent orange walls (12 studs tall) around
+  the selected stop; off hides them without clearing the corners.
 - **Wait At Spot (s)** — seconds stood at the stop before the fight starts,
   **0 by default**. Raise it for a boss that spawns a moment after the walk
   arrives; at 0 the first swing is on the frame the stop is reached. It is
@@ -1070,7 +1078,7 @@ in `AutoFarmProfiles/Global.json`, so every profile and place reports to the sam
 - A leave caused by the hold reports whatever **Log When Hiding** says: the run ends because the strangers would not go, so the ended report names all of them (`Left because of: @a (1), @b (2)`).
 - **Send Report** — posts the report for the current session.
 - **Reset Session** — stamps a new start time and takes today's EC/Level as the starting numbers, for a new run or a new floor.
-- The **SESSION STARTED** line under the buttons shows the report's start time and how long it has been going.
+- The **SESSION STARTED** line under the buttons shows the report's start time and how long it has been going, and in **EXP Grind** the EXP gained so far with its per-hour and per-minute rate, refreshed every second.
 
 The report is plain message text. A **started** report says only where the run is now:
 

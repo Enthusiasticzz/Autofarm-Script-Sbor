@@ -1015,6 +1015,8 @@ return {
         AICConfig.MAX_BOSS_RESET = 600
         AICConfig.MAX_BOSS_RADIUS = 500
         AICConfig.MAX_BOSS_WAYPOINT = 999
+        --// Four corners make a stop's fight box; fewer is not a box yet.
+        AICConfig.MAX_BOSS_BOUNDS = 4
         --// How far from the boss the skill dodge settles. Small enough to be a
         --// step out of a skill rather than a run across the room; a stop can
         --// set its own in "Dodge Distance".
@@ -1041,12 +1043,33 @@ return {
             return Result
         end
 
+        --// The four corners of a stop's fight box, or nil when not set. Saved
+        --// as points, rounded like every other position in a stop.
+        function AICConfig.NormalizeBossBounds(List)
+            local Result = {}
+
+            for _, Point in ipairs(type(List) == "table" and List or {}) do
+                if #Result >= AICConfig.MAX_BOSS_BOUNDS then
+                    break
+                end
+
+                if typeof(Point) == "Vector3" then
+                    table.insert(Result, AICConfig.RoundVector3(Point))
+                elseif type(Point) == "table" then
+                    table.insert(Result, AICConfig.DecodeVector3(Point))
+                end
+            end
+
+            return #Result > 0 and Result or nil
+        end
+
         --// One stop of the Boss Route (BossNavigator). Position is the spot
         --// the character stands on; a stop without one is dropped, so a
         --// half-written save cannot leave an unwalkable row.
         --//   Label       shown in the list
         --//   Targets     boss entity names; empty fights anything at the spot
         --//   Path        points walked in order on the way to Position
+        --//   Bounds      four fight-box corners; nil leaves the dodge free
         --//   Waypoint    game waypoint number teleported to first, 0 walks
         --//   ResetAfterKill  reset once the boss is down, then the next stop
         --//   ResetWait   seconds held at the corpse before that reset
@@ -1099,6 +1122,7 @@ return {
                         Label = Label ~= "" and Label or ("Boss " .. tostring(#Result + 1)),
                         Position = Position,
                         Path = AICConfig.NormalizeBossPath(Stop.Path),
+                        Bounds = AICConfig.NormalizeBossBounds(Stop.Bounds),
                         Targets = AICConfig.CloneTargetList(Stop.Targets),
                         Waypoint = math.clamp(
                             math.floor(tonumber(Stop.Waypoint) or 0), 0, AICConfig.MAX_BOSS_WAYPOINT

@@ -38,6 +38,9 @@ return {
                 --// The progress inside the starting level's bar, so the
                 --// starting line keeps its EXP after levelling up.
                 StartExp = nil,
+                --// The same position as one total across levels, so a
+                --// level-up reports the EXP gained, not a negative bar.
+                StartTotalExp = nil,
                 --// os.clock() of the last report, so a departure and the
                 --// teleport that follows it (or a toggle and a hop) post once.
                 LastReportAt = nil,
@@ -92,6 +95,52 @@ return {
             end
 
             return math.max(0, math.floor(tonumber(Needed(Level)) or 0))
+        end
+
+        --// The character's EXP as one total across levels: every bar passed
+        --// in full, plus the progress inside this one. neededExp(Level) is
+        --// the bar the HUD prints, so a level-up makes the total bigger
+        --// instead of resetting it. Cached per level; the curve is static.
+        local CumulativeExp = {}
+
+        local function TotalExpAt(Level, Exp)
+            if type(Level) ~= "number" or Level < 1 or type(Exp) ~= "number" then
+                return nil
+            end
+
+            local Base = CumulativeExp[Level]
+
+            if Base == nil then
+                Base = 0
+
+                for Passed = 1, Level - 1 do
+                    local Needed = NeededExp(Passed)
+
+                    if not Needed then
+                        return nil
+                    end
+
+                    Base = Base + Needed
+                end
+
+                CumulativeExp[Level] = Base
+            end
+
+            return Base + Exp
+        end
+
+        --// "12,345": rates are read at a glance, and six digits without a
+        --// separator are not.
+        local function FormatCount(Value)
+            local Text = tostring(math.max(0, math.floor(tonumber(Value) or 0)))
+            local Left, Right = string.match(Text, "^(%d+)(%d%d%d)$")
+
+            while Left do
+                Text = Left .. "," .. Right
+                Left, Right = string.match(Left, "^(%d+)(%d%d%d)$")
+            end
+
+            return Text
         end
 
         local function ReadCurrency()
@@ -227,11 +276,28 @@ return {
             self.S.StartCurrency = ReadCurrency()
             self.S.StartLevel = ReadLevel()
             self.S.StartExp = ReadExp()
+            self.S.StartTotalExp = TotalExpAt(self.S.StartLevel, self.S.StartExp)
             self.S.LastLabelUpdate = 0
         end
 
         function Feature:GetElapsed()
             return math.max(0, os.clock() - (self.S.StartedAt or os.clock()))
+        end
+
+        --// EXP gained since the session began, and the same gain spread over
+        --// the time it took. nil until both ends of the bar can be read.
+        function Feature:GetExpProgress()
+            local GainedNow = TotalExpAt(ReadLevel(), ReadExp())
+
+            if GainedNow == nil or self.S.StartTotalExp == nil then
+                return nil
+            end
+
+            local Gained = math.max(0, GainedNow - self.S.StartTotalExp)
+            local Minutes = self:GetElapsed() / 60
+            local PerMinute = Minutes > 0 and Gained / Minutes or 0
+
+            return Gained, PerMinute * 60, PerMinute
         end
 
         --// When this session started, in whichever zone is picked now.
@@ -254,6 +320,10 @@ return {
 
             if self.S.StartExp == nil then
                 self.S.StartExp = ReadExp()
+            end
+
+            if self.S.StartTotalExp == nil then
+                self.S.StartTotalExp = TotalExpAt(self.S.StartLevel, self.S.StartExp)
             end
         end
 
@@ -389,6 +459,14 @@ return {
                     tostring(Exp or 0),
                     tostring(NeededExp(Level) or 0)
                 ))
+
+                local Gained, PerHour, PerMinute = self:GetExpProgress()
+
+                if Gained then
+                    table.insert(Lines, "**Total EXP Gained:** " .. FormatCount(Gained))
+                    table.insert(Lines, "EXP / Hour: " .. FormatCount(PerHour))
+                    table.insert(Lines, "EXP / Minute: " .. FormatCount(PerMinute))
+                end
 
                 if Ending then
                     local StartLevel = self.S.StartLevel or Level or 0
@@ -795,11 +873,27 @@ return {
                 return
             end
 
-            SessionLabel:Set(string.format(
+            local Text = string.format(
                 "SESSION STARTED  %s   ·   %s",
                 S.StartedEpoch and ClockAt(S.StartedEpoch) or tostring(S.StartedClock or "--"),
                 FormatDuration(Feature:GetElapsed())
-            ))
+            )
+
+            --// The same numbers the report carries, on the label the section
+            --// shows. Update refreshes it once a second, so the rates are
+            --// live rather than the value at the last report.
+            local Gained, PerHour, PerMinute = Feature:GetExpProgress()
+
+            if Gained then
+                Text = Text .. string.format(
+                    "   ·   EXP +%s   ·   %s/h   ·   %s/m",
+                    FormatCount(Gained),
+                    FormatCount(PerHour),
+                    FormatCount(PerMinute)
+                )
+            end
+
+            SessionLabel:Set(Text)
         end
 
         function Feature:CreateUI()

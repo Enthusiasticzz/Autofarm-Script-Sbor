@@ -1817,3 +1817,32 @@ Asked and answered from play, then applied:
 - **A target that vanished mid-cast left the flag set.** `S.SkillWas` was only written inside `if WaitTarget`; if the boss died or streamed out, the next spawn's opening skill looked like a cast already handled and was not dodged. The `else` clears it.
 - **The 8 s ceiling is now real during a wait.** The old per-frame arming kept pushing `DODGE_MAX_TIME` out, so a skill effect that stayed up longer than eight seconds was dodged indefinitely. The wait now ends the dodge at the same ceiling the fight uses; `EndDodge` still leaves `S.SkillWas` alone, so a never-ending effect cannot re-arm every frame.
 - Checks: `luau-compile` clean; bundle rebuilt (6 parts, 84 modules); `run-bundle-check` 0 compile failures; `run-boot-probe` passes; `run-ui-smoke` 0 failed checks. Not run in game, so the dodge's feel is unverified; what changed is that the point is latched once per cast.
+
+## v4.12 — the wait owned its movement but not its frame
+
+- **Reported again after v4.11:** the wait-at-stop dodge still moved back and forth.
+- **Cause:** every exit from the wait returned bare (`return`), so `AICFeature.BossStep(now)` returned nil and Auto Farm's `Update` did not stop its own frame. `DodgeStep` issued `Humanoid:MoveTo(point)`, then Auto Farm's own movement ran on the same frame and pulled the character its own way; the next frame the dodge pulled it back. The fight never behaved this way because `Step` follows `FightStep` with `return true`.
+- **Fix:** both wait exits - the dodge frame and the standing frame - now `return true`, so the route owns movement on the frames it moves in, exactly as the fight does. The wait's own heal and guard are unchanged; a frame that ends the wait still falls through to the fight.
+- Checks: `luau-compile` clean; bundle rebuilt (6 parts, 84 modules); `run-bundle-check` 0 compile failures; `run-boot-probe` passes; `run-ui-smoke` 0 failed checks. Not run in game.
+
+## v4.13 — Webhook EXP totals and live rates
+
+- The **EXP Grind** report now carries **Total EXP Gained**, **EXP / Hour** and **EXP / Minute**. The total sums every level passed in full (`AICUI.neededExp`) plus the progress inside the current bar, so a level-up makes the total bigger instead of resetting it; the rates divide that gain by the session's elapsed time.
+- The **SESSION STARTED** label under the Webhook buttons shows the same three numbers and refreshes once a second, so the rate is live between reports.
+- Numbers are floored and printed with thousands separators (`12,345`); if the EXP stat cannot be read yet the lines are left out instead of printing zero.
+- Checks: `luau-compile` clean; bundle rebuilt (6 parts, 84 modules); `run-bundle-check` 0 compile failures; `run-boot-probe` passes; `run-ui-smoke` 0 failed checks. Not run in game.
+
+## v4.14 — Boss fight bounds
+
+- **Reported:** the dodge backs into the room's walls and dies there.
+- **Added:** an optional per-stop fight box. Stand on a corner of the room, press **Add Fight Corner**, and repeat until four corners are saved; the label counts `CORNER n/4` and then shows the box size. **Clear Fight Bounds** removes it. With no box saved, nothing changes.
+- **Saved:** `Bounds` on the stop, normalized by `AICConfig.NormalizeBossBounds` (up to four points, rounded like every other position), so it saves, loads and exports with the profile.
+- **Enforced:** `PickDodgePoint` rejects any heading whose point is outside the box (treated like a hole) and clamps the fallback to the wall line; `DodgeStep` clamps its saved target each frame and walks back inside if a knockback put the character outside; the reset-hold flee uses the same picker, so it cannot run through the wall either.
+- Checks: `luau-compile` clean on `Core/Runtime.lua` and `Features/BossNavigator.lua`; bundle rebuilt (6 parts, 84 modules); `run-bundle-check` 0 compile failures; `run-boot-probe` passes; `run-ui-smoke` 0 failed checks. Not run in game.
+
+## v4.15 — Fight bounds walls
+
+- The selected stop's saved fight box is drawn as four thin neon panels, 12 studs high at 80% transparency, so the boundary is visible while placing corners and while the stop is selected.
+- **Show Fight Bounds** (Selected Stop, saved as `BOSS_BOUNDS_VISIBLE`, on by default) turns the panels off without touching the saved corners.
+- Display only: anchored, `CanCollide`/`CanTouch`/`CanQuery` off and `CastShadow` off, so neither the game nor the route's raycasts can hit them; destroyed on toggle off, box clear, another stop with no box, and script end.
+- Checks: `luau-compile` clean on `Core/SaveConfig.lua` and `Features/BossNavigator.lua`; bundle rebuilt (6 parts, 84 modules); `run-bundle-check` 0 compile failures; `run-boot-probe` passes; `run-ui-smoke` 0 failed checks. Not run in game.

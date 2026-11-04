@@ -207,6 +207,9 @@ return {
             --// whatever Reset (s) says, except the ones that would cost EXP -
             --// those still wait the stop's own Reset (s).
             { Key = "BOSS_DEATH_FARM", Default = false },
+            --// Draws a saved stop's fight box as four translucent walls.
+            --// Display only; off removes them without touching the box.
+            { Key = "BOSS_BOUNDS_VISIBLE", Default = true },
 
             --// Retreat below this share of health (0 = never), and drink at or below the
             --// heal share.
