@@ -1917,3 +1917,9 @@ Asked and answered from play, then applied:
 - **Fixed:** `FormatCount` regrouped only the left side of each number, so seven-digit totals and hourly rates dropped their last three digits (`3,511,335` printed as `3,511`). Totals, rates, and the current/starting EXP lines now use the full comma-separated values.
 - **Changed:** the webhook and Status tab show one **Average EXP / Hour** line instead of both hourly and per-minute rates. The value is the session average measured from **Reset Session**.
 - Checks: compile touched modules; bundle rebuild; bundle check; boot probe with a `3,511,335` report regression; UI smoke; `git diff --check`.
+
+## v4.28 — EXP session baseline is captured once
+
+- **Fixed:** session EXP and the hourly rate read `0` because the start baseline could be captured at report time (making start and current equal) or from two separate stat reads that paired an old level with a new EXP bar. The level, EXP, and total are now captured as one snapshot, and only the live update captures a missed start.
+- **Changed:** `Send Report` no longer creates a session baseline. If PlayerStats is not readable when the session starts, the session lines stay out until an update can read both values; a report never invents a zero baseline. The current level/EXP pair is read as one snapshot too, so a level-up cannot momentarily look like a loss.
+- Checks: compile touched modules; bundle rebuild; bundle check; boot probe including partial-read, late-start, no-report-baseline and `3,511,335` regression checks; UI smoke; `git diff --check`.

@@ -129,6 +129,40 @@ return {
             return Base + Exp
         end
 
+        --// Both values come from one PlayerStats read. Capturing them one at a
+        --// time can pair the level before a level-up with the EXP after it
+        --// (or the other way round), which makes the start total higher than
+        --// the current one and clamps every gain to zero.
+        local function ReadExpSnapshot()
+            local PlayerStats = GetPlayerStats()
+
+            if not PlayerStats then
+                return nil
+            end
+
+            local LevelStat = PlayerStats:FindFirstChild("Level")
+            local ExpStat = PlayerStats:FindFirstChild("EXP")
+
+            if not LevelStat or not ExpStat then
+                return nil
+            end
+
+            local Level = tonumber(LevelStat.Value)
+            local Exp = tonumber(ExpStat.Value)
+
+            if not Level or not Exp then
+                return nil
+            end
+
+            local Total = TotalExpAt(Level, Exp)
+
+            if Total == nil then
+                return nil
+            end
+
+            return Level, Exp, Total
+        end
+
         --// "12,345": rates are read at a glance, and six digits without a
         --// separator are not. Groups are peeled off the right; regrouping
         --// only the left side dropped the last group of every 7-digit value.
@@ -276,9 +310,11 @@ return {
             self.S.StartedEpoch = os.time()
             self.S.StartedClock = ZoneClock()
             self.S.StartCurrency = ReadCurrency()
-            self.S.StartLevel = ReadLevel()
-            self.S.StartExp = ReadExp()
-            self.S.StartTotalExp = TotalExpAt(self.S.StartLevel, self.S.StartExp)
+
+            local StartLevel, StartExp, StartTotalExp = ReadExpSnapshot()
+            self.S.StartLevel = StartLevel
+            self.S.StartExp = StartExp
+            self.S.StartTotalExp = StartTotalExp
             self.S.LastLabelUpdate = 0
         end
 
@@ -290,7 +326,7 @@ return {
         --// time it took. The rate is a session average, not an instant rate.
         --// nil until both ends of the bar can be read.
         function Feature:GetExpProgress()
-            local GainedNow = TotalExpAt(ReadLevel(), ReadExp())
+            local _, _, GainedNow = ReadExpSnapshot()
 
             if GainedNow == nil or self.S.StartTotalExp == nil then
                 return nil
@@ -323,17 +359,19 @@ return {
                 self.S.StartCurrency = ReadCurrency()
             end
 
-            if self.S.StartLevel == nil then
-                self.S.StartLevel = ReadLevel()
+            if self.S.StartTotalExp ~= nil then
+                return
             end
 
-            if self.S.StartExp == nil then
-                self.S.StartExp = ReadExp()
+            local StartLevel, StartExp, StartTotalExp = ReadExpSnapshot()
+
+            if StartTotalExp == nil then
+                return
             end
 
-            if self.S.StartTotalExp == nil then
-                self.S.StartTotalExp = TotalExpAt(self.S.StartLevel, self.S.StartExp)
-            end
+            self.S.StartLevel = StartLevel
+            self.S.StartExp = StartExp
+            self.S.StartTotalExp = StartTotalExp
         end
 
         --// "@name (UserId)" for each player, or "".
@@ -394,16 +432,18 @@ return {
         --// the report is about; a report with nobody to name leaves that line
         --// out. Waited is how long a "Left" report waited on them.
         function Feature:BuildReport(Kind, Names, Waited)
-            --// A report built before the first update still gets the session's
-            --// starting numbers rather than today's.
-            self:CaptureStart()
-
+            --// Never capture a start here: a report sent at the end of a run
+            --// would make the start equal the current totals and report zero.
             local Ending = Kind == "End"
             local Waiting = Kind == "Waiting"
             local Left = Kind == "Left"
             local Currency = ReadCurrency()
-            local Level = ReadLevel()
-            local Exp = ReadExp()
+
+            --// Level and EXP are one snapshot here too: a level-up between
+            --// two separate reads would print a pair from two different bars.
+            local SnapshotLevel, SnapshotExp = ReadExpSnapshot()
+            local Level = SnapshotLevel or ReadLevel()
+            local Exp = SnapshotExp or ReadExp()
             local Duo = Trim(CONFIG.DISCORD_DUO)
             local Account = Player.Name
 
@@ -766,8 +806,6 @@ return {
                 return false
             end
 
-            self:CaptureStart()
-
             --// The list, not what the caller passed: a single Player handed in
             --// by an older hook is counted as one entry here.
             local Payload = BuildPayload(Kind, List, Waited)
@@ -1012,7 +1050,6 @@ return {
             Section:AddButton{
                 Name = "Send Report",
                 Callback = function()
-                    Feature:CaptureStart()
                     Feature:Send()
                 end,
             }

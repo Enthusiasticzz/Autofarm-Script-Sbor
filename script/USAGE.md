@@ -1135,7 +1135,9 @@ starts, so the starting line keeps the numbers it had before levelling up.
 `Session EXP Gained` counts every level passed in full plus the progress inside the
 current bar, so a level-up makes the total grow instead of resetting. `Average EXP / Hour`
 divides that total by the session's elapsed time; it is the average across the whole run,
-not a live rate. Both values use the same baseline as **Reset Session**.
+not a live rate. Both values use the same baseline as **Reset Session**. If the stats are
+not readable when the session starts, the first update that can read both the level and
+the EXP captures the baseline together; sending a report never creates one.
 
 A **waiting** report is posted while **Pause For Strangers** is hiding from someone, when
 **Log When Hiding** is on. It names everyone on the server, not only the player who

@@ -84,6 +84,27 @@ CumulativeExp[Level] = Base
 end
 return Base + Exp
 end
+local function ReadExpSnapshot()
+local PlayerStats = GetPlayerStats()
+if not PlayerStats then
+return nil
+end
+local LevelStat = PlayerStats:FindFirstChild("Level")
+local ExpStat = PlayerStats:FindFirstChild("EXP")
+if not LevelStat or not ExpStat then
+return nil
+end
+local Level = tonumber(LevelStat.Value)
+local Exp = tonumber(ExpStat.Value)
+if not Level or not Exp then
+return nil
+end
+local Total = TotalExpAt(Level, Exp)
+if Total == nil then
+return nil
+end
+return Level, Exp, Total
+end
 local function FormatCount(Value)
 local Text = tostring(math.max(0, math.floor(tonumber(Value) or 0)))
 local Groups = {}
@@ -174,16 +195,17 @@ self.S.StartedAt = os.clock()
 self.S.StartedEpoch = os.time()
 self.S.StartedClock = ZoneClock()
 self.S.StartCurrency = ReadCurrency()
-self.S.StartLevel = ReadLevel()
-self.S.StartExp = ReadExp()
-self.S.StartTotalExp = TotalExpAt(self.S.StartLevel, self.S.StartExp)
+local StartLevel, StartExp, StartTotalExp = ReadExpSnapshot()
+self.S.StartLevel = StartLevel
+self.S.StartExp = StartExp
+self.S.StartTotalExp = StartTotalExp
 self.S.LastLabelUpdate = 0
 end
 function Feature:GetElapsed()
 return math.max(0, os.clock() - (self.S.StartedAt or os.clock()))
 end
 function Feature:GetExpProgress()
-local GainedNow = TotalExpAt(ReadLevel(), ReadExp())
+local _, _, GainedNow = ReadExpSnapshot()
 if GainedNow == nil or self.S.StartTotalExp == nil then
 return nil
 end
@@ -205,15 +227,16 @@ function Feature:CaptureStart()
 if self.S.StartCurrency == nil then
 self.S.StartCurrency = ReadCurrency()
 end
-if self.S.StartLevel == nil then
-self.S.StartLevel = ReadLevel()
+if self.S.StartTotalExp ~= nil then
+return
 end
-if self.S.StartExp == nil then
-self.S.StartExp = ReadExp()
+local StartLevel, StartExp, StartTotalExp = ReadExpSnapshot()
+if StartTotalExp == nil then
+return
 end
-if self.S.StartTotalExp == nil then
-self.S.StartTotalExp = TotalExpAt(self.S.StartLevel, self.S.StartExp)
-end
+self.S.StartLevel = StartLevel
+self.S.StartExp = StartExp
+self.S.StartTotalExp = StartTotalExp
 end
 local function NameList(Names)
 local Parts = {}
@@ -251,13 +274,13 @@ table.insert(List, Value)
 return List
 end
 function Feature:BuildReport(Kind, Names, Waited)
-self:CaptureStart()
 local Ending = Kind == "End"
 local Waiting = Kind == "Waiting"
 local Left = Kind == "Left"
 local Currency = ReadCurrency()
-local Level = ReadLevel()
-local Exp = ReadExp()
+local SnapshotLevel, SnapshotExp = ReadExpSnapshot()
+local Level = SnapshotLevel or ReadLevel()
+local Exp = SnapshotExp or ReadExp()
 local Duo = Trim(CONFIG.DISCORD_DUO)
 local Account = Player.Name
 if Duo ~= "" then
@@ -497,7 +520,6 @@ and Now - self.S.LastReportAt < REPORT_DEDUPE
 then
 return false
 end
-self:CaptureStart()
 local Payload = BuildPayload(Kind, List, Waited)
 if not Payload then
 return false
@@ -664,7 +686,6 @@ Section:AddNote("Posts a report when someone joins and Pause For Strangers is hi
 Section:AddButton{
 Name = "Send Report",
 Callback = function()
-Feature:CaptureStart()
 Feature:Send()
 end,
 }

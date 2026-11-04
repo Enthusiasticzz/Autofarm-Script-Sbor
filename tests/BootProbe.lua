@@ -838,4 +838,40 @@ assert(not Report:find("EXP / Minute", 1, true), "per-minute rate is still shown
 assert(Report:find("Current EXP: 2,342,710/4,012,467", 1, true), "current EXP is not separated")
 assert(Report:find("Starting EXP: 2,836,906/4,005,531", 1, true), "starting EXP is not separated")
 
+--// A report must not create a baseline. If it did, sending at the end would
+--// set the start to the current totals and report zero EXP gained.
+Webhook.S.StartLevel, Webhook.S.StartExp, Webhook.S.StartTotalExp = nil, nil, nil
+local WithoutBaseline = Webhook:BuildReport("End")
+assert(not WithoutBaseline:find("Session EXP Gained", 1, true), "a report captured a fresh zero baseline")
+
+--// A start is one snapshot, not two independent reads. A partial read must
+--// not pair an old level with a new EXP bar (or the reverse), which makes the
+--// baseline higher than the current total and clamps the gain to zero.
+local ShowLevel, ShowExp = true, true
+PlayerStats.FindFirstChild = function(_, name)
+    if name == "Level" and ShowLevel then return LevelStat end
+    if name == "EXP" and ShowExp then return ExpStat end
+end
+
+ShowLevel, ShowExp = false, true
+LevelStat.Value, ExpStat.Value = 1155, 2836906
+Webhook:ResetSession()
+assert(
+    Webhook.S.StartLevel == nil and Webhook.S.StartExp == nil and Webhook.S.StartTotalExp == nil,
+    "a partial PlayerStats read created a mixed start snapshot"
+)
+
+--// Stats arriving after the session starts are captured together on the next
+--// update, before any gain is measured.
+ShowLevel, ShowExp = true, true
+LevelStat.Value, ExpStat.Value = 1154, 2836906
+Context.Feature.AutoFarm.Enabled = false
+Webhook:Update(0)
+assert(Webhook.S.StartLevel == 1154 and Webhook.S.StartExp == 2836906, "late stats did not capture a start")
+assert(Webhook.S.StartTotalExp ~= nil, "late stats did not capture a start total")
+
+LevelStat.Value, ExpStat.Value = 1155, 2342710
+local Gained = Context.AICFeature.GetExpProgress()
+assert(Gained == 3511335, "late start did not measure the gain: " .. tostring(Gained))
+
 print("BOOT PROBE PASSED")
