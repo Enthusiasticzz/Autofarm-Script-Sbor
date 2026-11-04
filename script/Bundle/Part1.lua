@@ -1347,10 +1347,10 @@ local holder = New("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1,0,0
 New("UIPadding", { PaddingLeft = UDim.new(0,12), PaddingRight = UDim.new(0,16), PaddingTop = UDim.new(0,12), PaddingBottom = UDim.new(0,12), Parent = holder })
 tab.Body = New("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1,0,0,0), AutomaticSize = Enum.AutomaticSize.Y, Parent = holder })
 New("UIListLayout", { Padding = UDim.new(0,10), SortOrder = Enum.SortOrder.LayoutOrder, Parent = tab.Body })
-local heading = New("Frame", { Name = "PageHeading", BackgroundTransparency = 1, Size = UDim2.new(1,0,0,o.Description and 66 or 32), LayoutOrder = 0, Parent = tab.Body })
-self:Label(heading, tab.Name, { Bold = true, TextSize = 20, SizeUDim = UDim2.new(1,0,0,28) })
+local heading = New("Frame", { Name = "PageHeading", BackgroundTransparency = 1, Size = UDim2.new(1,0,0,o.Description and 52 or 28), LayoutOrder = 0, Parent = tab.Body })
+self:Label(heading, tab.Name, { Bold = true, TextSize = 18, SizeUDim = UDim2.new(1,0,0,24) })
 if o.Description then
-local subtitle = self:Label(heading, o.Description, { Color = "SubText", TextSize = 13, Position = UDim2.fromOffset(0,30), SizeUDim = UDim2.new(1,0,0,34) })
+local subtitle = self:Label(heading, o.Description, { Color = "SubText", TextSize = 12, Position = UDim2.fromOffset(0,26), SizeUDim = UDim2.new(1,0,0,26) })
 subtitle.TextWrapped = true
 subtitle.TextYAlignment = Enum.TextYAlignment.Top
 end
@@ -1389,22 +1389,16 @@ sec.Frame = New("Frame", { Size = UDim2.new(1,0,0,0), AutomaticSize = Enum.Autom
 Round(sec.Frame, 8)
 Blocks(sec.Frame)
 win:Themed(sec.Frame, { BackgroundColor3 = "Panel" })
-win:Themed(Stroke(sec.Frame), { Color = "Border" })
+local outline = Stroke(sec.Frame)
+outline.Transparency = .45
+win:Themed(outline, { Color = "Border" })
 New("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, Parent = sec.Frame })
 if so.Title then
-local r = sec:_row(so.Description and 70 or 42, true)
+local r = sec:_row(36, true)
 sec.Header = r
 r.Name = "SectionHeading"
-r.BackgroundTransparency = .25
-win:Themed(r, { BackgroundColor3 = "Element" })
-local accent = New("Frame", { BorderSizePixel = 0, Size = UDim2.new(0,3,1,-16), Position = UDim2.fromOffset(0,8), Parent = r })
-win:Themed(accent, { BackgroundColor3 = "Accent" })
-win:Label(r, so.Title, { Bold = true, TextSize = 15, Position = UDim2.fromOffset(14,4), SizeUDim = UDim2.new(1,-28,0,34) })
-if so.Description then
-local detail = win:Label(r, so.Description, { Color = "SubText", TextSize = 12, Position = UDim2.fromOffset(14,37), SizeUDim = UDim2.new(1,-28,0,30) })
-detail.TextWrapped = true
-detail.TextYAlignment = Enum.TextYAlignment.Top
-end
+win:Label(r, so.Title, { Bold = true, TextSize = 14, Position = UDim2.fromOffset(14,0), SizeUDim = UDim2.new(1,-28,1,0) })
+win:_attachTip(r, so.Title, so.Description)
 sec._lastRow = nil
 end
 table.insert(self.Sections, sec)
