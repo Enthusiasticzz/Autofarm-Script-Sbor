@@ -196,6 +196,7 @@ end
 local NON_SPEC_MODULES = {
     ["UI/Utils.lua"] = true,
     ["ModuleConfig.lua"] = true,
+    ["Intro.lua"] = true,
 }
 
 local function collect(Container, Prefix, Output)
@@ -775,6 +776,33 @@ local function loadRemote()
 
     return Specs
 end
+
+--// Play the cinematic before creating any menu window. Intro is deliberately
+--// separate from feature startup: it yields until its exit fade and cleanup
+--// finish. An unsupported visual effect must not prevent the menu loading.
+do
+    local Ok, Error = xpcall(function()
+        local Intro
+        if ROOT then
+            local IntroModule = ROOT:FindFirstChild("Intro")
+            if IntroModule then Intro = require(IntroModule) end
+        else
+            local Body = fetchOnce("Intro.lua")
+            if Body then
+                local Chunk = assert(loadstring(Body, "@Intro.lua"))
+                Intro = Chunk()
+            end
+        end
+        if type(Intro) == "table" and type(Intro.Start) == "function" then
+            Intro.Start(Context)
+        else
+            warn("[AIC] Intro unavailable; continuing to the menu")
+        end
+    end, debug.traceback)
+    if not Ok then warn("[AIC] Intro failed: " .. tostring(Error)) end
+end
+
+if not Lifetime.Alive then return nil end
 
 local Specs = ROOT and loadLocal() or loadRemote()
 local SpecCount = 0

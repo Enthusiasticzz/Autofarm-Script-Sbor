@@ -931,6 +931,7 @@ FINALIZE_MODULES = {
 },
 NON_SPEC_MODULES = {
 ["UI/Utils.lua"] = true,
+["Intro.lua"] = true, -- Played separately by Init before menu startup.
 },
 NameFromPath = function(self, Path)
 return string.match(Path, "([^/]+)%.lua$")

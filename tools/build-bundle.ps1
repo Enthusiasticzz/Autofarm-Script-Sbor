@@ -28,7 +28,7 @@ $scriptDir = Join-Path $root "script"
 $outDir = Join-Path $scriptDir "Bundle"
 $limit = $PartKB * 1024
 
-$skip = @("Init.lua", "Bundle.lua")
+$skip = @("Init.lua", "Bundle.lua", "Intro.lua")
 # References holds example ESP implementations kept for reading, not modules
 # the loader starts; packing them would ship dead weight in every part.
 $files = Get-ChildItem -Path $scriptDir -Recurse -Filter *.lua |

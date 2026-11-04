@@ -183,6 +183,7 @@ return {
     --// Modules that are not specs (e.g. utility libraries loaded separately).
     NON_SPEC_MODULES = {
         ["UI/Utils.lua"] = true,
+        ["Intro.lua"] = true, -- Played separately by Init before menu startup.
     },
 
     --// Module name extraction: "Features/AutoFarming.lua" -> "AutoFarming"

@@ -1,9 +1,11 @@
 -- GILDED ARCHIVE - CINEMATIC INTRO (v4 cinematic transitions)
 -- Refined from the original. Progress is cinematic timing, not asset loading.
--- Place this LocalScript in StarterGui.
--- It creates a ScreenGui in PlayerGui and runs as a standalone test.
+-- Init.lua runs Start before constructing the menu.
 -- No external images, asset IDs, or modules are needed.
 
+return {
+Name = "Intro",
+Start = function(Context)
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local Lighting = game:GetService("Lighting")
@@ -12,6 +14,31 @@ local StarterGui = game:GetService("StarterGui")
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 local rng = Random.new()
+local gui, blur
+local running = true
+local cleaned = false
+local topbarWasEnabled = true
+pcall(function()
+	topbarWasEnabled = StarterGui:GetCore("TopbarEnabled")
+end)
+
+local function cleanup()
+	if cleaned then return end
+	cleaned = true
+	running = false
+	if gui then gui:Destroy() end
+	if blur then blur:Destroy() end
+	pcall(function()
+		StarterGui:SetCore("TopbarEnabled", topbarWasEnabled)
+	end)
+end
+
+if Context and Context.Lifetime then
+	Context.Lifetime.OnEnd(cleanup)
+end
+
+local function play()
+if Context and Context.Lifetime and not Context.Lifetime.Alive then return end
 
 -- SETTINGS
 local INTRO_HOLD_AFTER_LOAD = 0.45
@@ -33,7 +60,7 @@ pcall(function()
 	StarterGui:SetCore("TopbarEnabled", false)
 end)
 
-local gui = Instance.new("ScreenGui")
+gui = Instance.new("ScreenGui")
 gui.Name = "GildedArchiveIntro"
 gui.IgnoreGuiInset = true
 gui.ResetOnSpawn = false
@@ -155,7 +182,7 @@ local function softHalo(parent, diameter, strength)
 end
 
 -- Background world blur; the UI softness is built separately.
-local blur = Instance.new("BlurEffect")
+blur = Instance.new("BlurEffect")
 blur.Name = "GildedArchiveBlur"
 blur.Size = 0
 blur.Parent = Lighting
@@ -167,8 +194,6 @@ particleLayer.Size = UDim2.fromScale(1, 1)
 particleLayer.BackgroundTransparency = 1
 particleLayer.ZIndex = 3
 particleLayer.Parent = background
-
-local running = true
 
 local function makeParticle(seed)
 	local dot = Instance.new("Frame")
@@ -457,7 +482,8 @@ local function animate(object, seconds, properties, style, direction)
 end
 
 local function alive()
-	return gui.Parent ~= nil
+	return not cleaned and gui.Parent ~= nil
+		and (not Context or not Context.Lifetime or Context.Lifetime.Alive)
 end
 
 local function pause(seconds)
@@ -570,9 +596,10 @@ if blurOut.PlaybackState == Enum.PlaybackState.Playing then
 end
 if not alive() then return end
 
-if blur.Parent then blur:Destroy() end
-gui:Destroy()
+end
 
-pcall(function()
-	StarterGui:SetCore("TopbarEnabled", true)
-end)
+local ok, err = xpcall(play, debug.traceback)
+cleanup()
+if not ok then error(err, 0) end
+end,
+}
