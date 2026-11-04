@@ -2154,6 +2154,8 @@ UIRef.ServerAgeLabel = UIRef.StatusSection:AddLabel("PLAY TIME      00:00:00")
 UIRef.PositionLabel = UIRef.StatusSection:AddLabel("POSITION       --")
 UIRef.DeathLabel = UIRef.StatusSection:AddLabel("DEATH          0")
 UIRef.ExpLabel = UIRef.StatusSection:AddLabel("EXP            0/0")
+UIRef.ExpHourLabel = UIRef.StatusSection:AddLabel("EXP / HOUR     --")
+UIRef.ExpMinuteLabel = UIRef.StatusSection:AddLabel("EXP / MINUTE   --")
 end
 Context.Lifetime.OnEnd(function()
 Context.Lifetime.Disconnect(AICFeature.S.StaminaConnection)

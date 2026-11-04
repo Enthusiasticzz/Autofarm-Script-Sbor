@@ -300,6 +300,12 @@ return {
             return Gained, PerMinute * 60, PerMinute
         end
 
+        --// The Status tab reads the same session and baseline as the report,
+        --// so its EXP rate lines cannot disagree with the live label.
+        AICFeature.GetExpProgress = function()
+            return Feature:GetExpProgress()
+        end
+
         --// When this session started, in whichever zone is picked now.
         function Feature:GetStartedClock()
             if self.S.StartedEpoch then

@@ -191,6 +191,9 @@ local Minutes = self:GetElapsed() / 60
 local PerMinute = Minutes > 0 and Gained / Minutes or 0
 return Gained, PerMinute * 60, PerMinute
 end
+AICFeature.GetExpProgress = function()
+return Feature:GetExpProgress()
+end
 function Feature:GetStartedClock()
 if self.S.StartedEpoch then
 return ClockAt(self.S.StartedEpoch)
@@ -1793,7 +1796,26 @@ if UIRef.EventCurrencyLabel then
 UIRef.EventCurrencyLabel:Set(AICUI.FormatEventCurrency(Amount))
 end
 end
+local function UpdateExpRates()
+if not UIRef.ExpHourLabel and not UIRef.ExpMinuteLabel then
+return
+end
+local ReadProgress = AICFeature.GetExpProgress
+local Gained, PerHour, PerMinute
+if type(ReadProgress) == "function" then
+Gained, PerHour, PerMinute = ReadProgress()
+end
+local PerHourText = Gained ~= nil and tostring(math.floor(PerHour or 0)) or "--"
+local PerMinuteText = Gained ~= nil and tostring(math.floor(PerMinute or 0)) or "--"
+if UIRef.ExpHourLabel then
+UIRef.ExpHourLabel:Set("EXP / HOUR     " .. PerHourText)
+end
+if UIRef.ExpMinuteLabel then
+UIRef.ExpMinuteLabel:Set("EXP / MINUTE   " .. PerMinuteText)
+end
+end
 function AICUI.updateEventCurrency()
+UpdateExpRates()
 local PlayerStats = Player:FindFirstChild("PlayerStats")
 if not PlayerStats then
 AICUI.S.EventCurrency = 0

@@ -755,6 +755,7 @@ end, debug.traceback)
 assert(WebhookOk, "WEBHOOK START ERROR:\n" .. tostring(WebhookErr))
 
 assert(type(Context.AICFeature.ReportHold) == "function", "the webhook did not register the hold report")
+assert(type(Context.AICFeature.GetExpProgress) == "function", "the webhook did not register the EXP progress helper")
 
 local posted = 0
 request = function() posted += 1; return "{\"id\":\"1\"}" end

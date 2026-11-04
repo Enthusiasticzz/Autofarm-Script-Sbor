@@ -1896,3 +1896,8 @@ Asked and answered from play, then applied:
 - **Moved:** the **Debug** tab is gone; its **Visualizer** section now sits on the **Utility** tab after **Webhook**.
 - **Renamed:** the section **Debug Visualizer** → **Visualizer**, and the toggles **Debug Waypoints**, **Debug Farm Zones**, **Debug Deadzones**, **Debug Mine Zones**, **Debug Ore Status** and **Debug Smithing Tables** → **Waypoints**, **Farm Zones**, **Deadzones**, **Mine Zones**, **Ore Status** and **Smithing Tables**. **Radius Billboard Labels** is unchanged. Internal feature keys, saved settings and keybinds were not renamed, so existing profiles still load.
 - Checks: `luau-compile` clean on `Core/Runtime.lua`, `Features/DebugVisualizer.lua` and `UI/Descriptions.lua`; bundle rebuilt; `run-bundle-check` 0 compile failures; `run-boot-probe` passes (including the tab/section assertions); `run-ui-smoke` 0 failed checks. Not run in game.
+
+## v4.24 — EXP Rates On The Status Tab
+
+- **Added:** **EXP / HOUR** and **EXP / MINUTE** readouts under **EXP** on the Status tab. They read the Webhook session through `AICFeature.GetExpProgress`, so they use the same started-at/EXP baseline as the live **SESSION STARTED** line; both show `--` until PlayerStats and a baseline are readable.
+- Checks: `luau-compile` clean on `Features/AutoFarming.lua`, `UI/Components.lua` and `Features/Webhook.lua`; bundle rebuilt; `run-bundle-check` 0 compile failures; `run-boot-probe` passes (including the accessor assertion); `run-ui-smoke` 0 failed checks. Not run in game.

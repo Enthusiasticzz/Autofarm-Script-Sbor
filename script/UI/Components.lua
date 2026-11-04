@@ -790,7 +790,35 @@ return {
                 UIRef.EventCurrencyLabel:Set(AICUI.FormatEventCurrency(Amount))
             end
         end
+        --// The Status tab's rate lines use the webhook's session start and
+        --// EXP baseline, so the two readouts cannot drift apart. A missing
+        --// helper (Webhook not started yet) leaves them as "--".
+        local function UpdateExpRates()
+            if not UIRef.ExpHourLabel and not UIRef.ExpMinuteLabel then
+                return
+            end
+
+            local ReadProgress = AICFeature.GetExpProgress
+            local Gained, PerHour, PerMinute
+
+            if type(ReadProgress) == "function" then
+                Gained, PerHour, PerMinute = ReadProgress()
+            end
+
+            local PerHourText = Gained ~= nil and tostring(math.floor(PerHour or 0)) or "--"
+            local PerMinuteText = Gained ~= nil and tostring(math.floor(PerMinute or 0)) or "--"
+
+            if UIRef.ExpHourLabel then
+                UIRef.ExpHourLabel:Set("EXP / HOUR     " .. PerHourText)
+            end
+
+            if UIRef.ExpMinuteLabel then
+                UIRef.ExpMinuteLabel:Set("EXP / MINUTE   " .. PerMinuteText)
+            end
+        end
+
         function AICUI.updateEventCurrency()
+            UpdateExpRates()
             local PlayerStats = Player:FindFirstChild("PlayerStats")
         
             if not PlayerStats then

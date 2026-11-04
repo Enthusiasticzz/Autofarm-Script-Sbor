@@ -1033,6 +1033,7 @@ A read-only window on what the farm is doing, plus the Reset Stats button.
 
 - **FARM STATE  --** (readout) — what the farm loop did this frame.
 - **PLACE ID**, **WALKSPEED**, **WAYPOINTS:  n / m**, **FALLEN CAMELLIA**, **PLAY TIME**, **POSITION**, **DEATH**, **EXP** (readouts) — the current place, walk speed, route progress, the event currency, time on the server, position, death count and experience. The event currency line is named after the currency this event hands out and counts the inventory item of that name (`AICUI.S.TargetCurrency` in `Core/Runtime.lua`), so it is renamed when the event's currency changes.
+- **EXP / HOUR**, **EXP / MINUTE** (readouts) — EXP gained since the current Webhook session started, spread over its elapsed time. They use the same baseline as the live **SESSION STARTED** line and show `--` until that session can read `PlayerStats`.
 - **Reset Stats** (button) — fires `StatsEvent` with 0 for Vitality, Agility, Luck, Strength and Defense. A stat at or above `STAT_RESET_THRESHOLD` (500) is refused with a notice: firing that many points at the game's anticheat trips it and the reset never lands, so 499 is the highest that resets.
 
 ### Utility tab
