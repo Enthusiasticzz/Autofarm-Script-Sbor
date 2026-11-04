@@ -2645,6 +2645,7 @@ UIRef.ServerAgeLabel = UIRef.StatusSection:AddLabel("PLAY TIME      00:00:00")
 UIRef.PositionLabel = UIRef.StatusSection:AddLabel("POSITION       --")
 UIRef.DeathLabel = UIRef.StatusSection:AddLabel("DEATH          0")
 UIRef.ExpLabel = UIRef.StatusSection:AddLabel("EXP            0/0")
+UIRef.ExpGainedLabel = UIRef.StatusSection:AddLabel("SESSION EXP GAINED  --")
 UIRef.ExpHourLabel = UIRef.StatusSection:AddLabel("AVG EXP / HOUR  --")
 end
 Context.Lifetime.OnEnd(function()

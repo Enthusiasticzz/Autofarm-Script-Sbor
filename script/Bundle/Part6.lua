@@ -29,7 +29,9 @@ StartedClock = nil,
 StartCurrency = nil,
 StartLevel = nil,
 StartExp = nil,
-StartTotalExp = nil,
+LastExpLevel = nil,
+LastExp = nil,
+SessionExpGained = 0,
 LastReportAt = nil,
 LastLabelUpdate = 0,
 },
@@ -65,25 +67,6 @@ return nil
 end
 return math.max(0, math.floor(tonumber(Needed(Level)) or 0))
 end
-local CumulativeExp = {}
-local function TotalExpAt(Level, Exp)
-if type(Level) ~= "number" or Level < 1 or type(Exp) ~= "number" then
-return nil
-end
-local Base = CumulativeExp[Level]
-if Base == nil then
-Base = 0
-for Passed = 1, Level - 1 do
-local Needed = NeededExp(Passed)
-if not Needed then
-return nil
-end
-Base = Base + Needed
-end
-CumulativeExp[Level] = Base
-end
-return Base + Exp
-end
 local function ReadExpSnapshot()
 local PlayerStats = GetPlayerStats()
 if not PlayerStats then
@@ -99,11 +82,7 @@ local Exp = tonumber(ExpStat.Value)
 if not Level or not Exp then
 return nil
 end
-local Total = TotalExpAt(Level, Exp)
-if Total == nil then
-return nil
-end
-return Level, Exp, Total
+return Level, Exp
 end
 local function FormatCount(Value)
 local Text = tostring(math.max(0, math.floor(tonumber(Value) or 0)))
@@ -195,21 +174,56 @@ self.S.StartedAt = os.clock()
 self.S.StartedEpoch = os.time()
 self.S.StartedClock = ZoneClock()
 self.S.StartCurrency = ReadCurrency()
-local StartLevel, StartExp, StartTotalExp = ReadExpSnapshot()
+local StartLevel, StartExp = ReadExpSnapshot()
 self.S.StartLevel = StartLevel
 self.S.StartExp = StartExp
-self.S.StartTotalExp = StartTotalExp
+self.S.LastExpLevel = StartLevel
+self.S.LastExp = StartExp
+self.S.SessionExpGained = 0
 self.S.LastLabelUpdate = 0
 end
 function Feature:GetElapsed()
 return math.max(0, os.clock() - (self.S.StartedAt or os.clock()))
 end
+function Feature:ObserveExp()
+local Level, Exp = ReadExpSnapshot()
+if Level == nil or Exp == nil then
+return false
+end
+local PreviousLevel, PreviousExp = self.S.LastExpLevel, self.S.LastExp
+if PreviousLevel == nil or PreviousExp == nil then
+self.S.LastExpLevel, self.S.LastExp = Level, Exp
+return true
+end
+local Added = 0
+if Level == PreviousLevel then
+Added = math.max(0, Exp - PreviousExp)
+elseif Level > PreviousLevel then
+local PreviousNeeded = NeededExp(PreviousLevel)
+if PreviousNeeded then
+Added += math.max(0, PreviousNeeded - PreviousExp)
+end
+for Passed = PreviousLevel + 1, Level - 1 do
+local Needed = NeededExp(Passed)
+if not Needed then
+break
+end
+Added += Needed
+end
+Added += math.max(0, Exp)
+end
+self.S.SessionExpGained += Added
+self.S.LastExpLevel, self.S.LastExp = Level, Exp
+return true
+end
 function Feature:GetExpProgress()
-local _, _, GainedNow = ReadExpSnapshot()
-if GainedNow == nil or self.S.StartTotalExp == nil then
+if self.S.StartLevel == nil or self.S.StartExp == nil then
 return nil
 end
-local Gained = math.max(0, GainedNow - self.S.StartTotalExp)
+if not self:ObserveExp() then
+return nil
+end
+local Gained = math.max(0, tonumber(self.S.SessionExpGained) or 0)
 local Minutes = self:GetElapsed() / 60
 local PerHour = Minutes > 0 and Gained / Minutes * 60 or 0
 return Gained, PerHour
@@ -227,16 +241,17 @@ function Feature:CaptureStart()
 if self.S.StartCurrency == nil then
 self.S.StartCurrency = ReadCurrency()
 end
-if self.S.StartTotalExp ~= nil then
+if self.S.LastExpLevel ~= nil and self.S.LastExp ~= nil then
 return
 end
-local StartLevel, StartExp, StartTotalExp = ReadExpSnapshot()
-if StartTotalExp == nil then
+local StartLevel, StartExp = ReadExpSnapshot()
+if StartLevel == nil or StartExp == nil then
 return
 end
 self.S.StartLevel = StartLevel
 self.S.StartExp = StartExp
-self.S.StartTotalExp = StartTotalExp
+self.S.LastExpLevel = StartLevel
+self.S.LastExp = StartExp
 end
 local function NameList(Names)
 local Parts = {}
@@ -718,6 +733,7 @@ return Feature:SetFarming(Value)
 end
 function Feature:Update(DeltaTime)
 self:CaptureStart()
+self:ObserveExp()
 self:SetFarming(
 FeatureState ~= nil
 and FeatureState.AutoFarm ~= nil
@@ -727,6 +743,9 @@ local Now = os.clock()
 if Now - (self.S.LastLabelUpdate or 0) >= 1 then
 self.S.LastLabelUpdate = Now
 RefreshLabel()
+if type(AICUI.UpdateExpRates) == "function" then
+AICUI.UpdateExpRates()
+end
 end
 end
 local function ScriptLeaveReported()
@@ -1826,20 +1845,22 @@ end
 table.insert(Groups, 1, Text)
 return table.concat(Groups, ",")
 end
-local function UpdateExpRates()
-if not UIRef.ExpHourLabel then
-return
-end
+function AICUI.UpdateExpRates()
 local ReadProgress = AICFeature.GetExpProgress
 local Gained, PerHour
 if type(ReadProgress) == "function" then
 Gained, PerHour = ReadProgress()
 end
 local PerHourText = Gained ~= nil and FormatCount(PerHour) or "--"
+if UIRef.ExpHourLabel then
 UIRef.ExpHourLabel:Set("AVG EXP / HOUR  " .. PerHourText)
 end
+if UIRef.ExpGainedLabel then
+UIRef.ExpGainedLabel:Set("SESSION EXP GAINED  " .. (Gained ~= nil and FormatCount(Gained) or "--"))
+end
+end
 function AICUI.updateEventCurrency()
-UpdateExpRates()
+AICUI.UpdateExpRates()
 local PlayerStats = Player:FindFirstChild("PlayerStats")
 if not PlayerStats then
 AICUI.S.EventCurrency = 0

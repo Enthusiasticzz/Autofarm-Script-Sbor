@@ -38,9 +38,15 @@ return {
                 --// The progress inside the starting level's bar, so the
                 --// starting line keeps its EXP after levelling up.
                 StartExp = nil,
-                --// The same position as one total across levels, so a
-                --// level-up reports the EXP gained, not a negative bar.
-                StartTotalExp = nil,
+                --// The last reliable EXP position and the gain observed
+                --// since this session began.  This deliberately does not
+                --// rebuild a character-wide total by summing every level
+                --// from 1: at high levels that reconstruction is both
+                --// needlessly expensive and one bad curve read makes the
+                --// whole session report 0.
+                LastExpLevel = nil,
+                LastExp = nil,
+                SessionExpGained = 0,
                 --// os.clock() of the last report, so a departure and the
                 --// teleport that follows it (or a toggle and a hop) post once.
                 LastReportAt = nil,
@@ -97,42 +103,9 @@ return {
             return math.max(0, math.floor(tonumber(Needed(Level)) or 0))
         end
 
-        --// The character's EXP as one total across levels: every bar passed
-        --// in full, plus the progress inside this one. neededExp(Level) is
-        --// the bar the HUD prints, so a level-up makes the total bigger
-        --// instead of resetting it. Cached per level; the curve is static.
-        local CumulativeExp = {}
-
-        local function TotalExpAt(Level, Exp)
-            if type(Level) ~= "number" or Level < 1 or type(Exp) ~= "number" then
-                return nil
-            end
-
-            local Base = CumulativeExp[Level]
-
-            if Base == nil then
-                Base = 0
-
-                for Passed = 1, Level - 1 do
-                    local Needed = NeededExp(Passed)
-
-                    if not Needed then
-                        return nil
-                    end
-
-                    Base = Base + Needed
-                end
-
-                CumulativeExp[Level] = Base
-            end
-
-            return Base + Exp
-        end
-
         --// Both values come from one PlayerStats read. Capturing them one at a
-        --// time can pair the level before a level-up with the EXP after it
-        --// (or the other way round), which makes the start total higher than
-        --// the current one and clamps every gain to zero.
+        --// time can pair the level before a level-up with the EXP after it,
+        --// which would turn a single observed transition into a false gain.
         local function ReadExpSnapshot()
             local PlayerStats = GetPlayerStats()
 
@@ -154,13 +127,7 @@ return {
                 return nil
             end
 
-            local Total = TotalExpAt(Level, Exp)
-
-            if Total == nil then
-                return nil
-            end
-
-            return Level, Exp, Total
+            return Level, Exp
         end
 
         --// "12,345": rates are read at a glance, and six digits without a
@@ -311,10 +278,12 @@ return {
             self.S.StartedClock = ZoneClock()
             self.S.StartCurrency = ReadCurrency()
 
-            local StartLevel, StartExp, StartTotalExp = ReadExpSnapshot()
+            local StartLevel, StartExp = ReadExpSnapshot()
             self.S.StartLevel = StartLevel
             self.S.StartExp = StartExp
-            self.S.StartTotalExp = StartTotalExp
+            self.S.LastExpLevel = StartLevel
+            self.S.LastExp = StartExp
+            self.S.SessionExpGained = 0
             self.S.LastLabelUpdate = 0
         end
 
@@ -322,17 +291,65 @@ return {
             return math.max(0, os.clock() - (self.S.StartedAt or os.clock()))
         end
 
+        --// Add only forward movement between two real PlayerStats snapshots.
+        --// A death/reset can make the bar go backwards; session gain should
+        --// never be erased by that, and the next normal gain still counts.
+        function Feature:ObserveExp()
+            local Level, Exp = ReadExpSnapshot()
+
+            if Level == nil or Exp == nil then
+                return false
+            end
+
+            local PreviousLevel, PreviousExp = self.S.LastExpLevel, self.S.LastExp
+
+            if PreviousLevel == nil or PreviousExp == nil then
+                self.S.LastExpLevel, self.S.LastExp = Level, Exp
+                return true
+            end
+
+            local Added = 0
+
+            if Level == PreviousLevel then
+                Added = math.max(0, Exp - PreviousExp)
+            elseif Level > PreviousLevel then
+                --// Finish the old bar, include any complete levels crossed,
+                --// then add the progress in the new level. Missing a bar is
+                --// safer than discarding the entire session: keep the
+                --// confirmed portion and resume from this snapshot.
+                local PreviousNeeded = NeededExp(PreviousLevel)
+                if PreviousNeeded then
+                    Added += math.max(0, PreviousNeeded - PreviousExp)
+                end
+
+                for Passed = PreviousLevel + 1, Level - 1 do
+                    local Needed = NeededExp(Passed)
+                    if not Needed then
+                        break
+                    end
+                    Added += Needed
+                end
+
+                Added += math.max(0, Exp)
+            end
+
+            self.S.SessionExpGained += Added
+            self.S.LastExpLevel, self.S.LastExp = Level, Exp
+            return true
+        end
+
         --// EXP gained since the session began, and that gain spread over the
         --// time it took. The rate is a session average, not an instant rate.
-        --// nil until both ends of the bar can be read.
+        --// nil until PlayerStats gives us a usable snapshot.
         function Feature:GetExpProgress()
-            local _, _, GainedNow = ReadExpSnapshot()
-
-            if GainedNow == nil or self.S.StartTotalExp == nil then
+            if self.S.StartLevel == nil or self.S.StartExp == nil then
+                return nil
+            end
+            if not self:ObserveExp() then
                 return nil
             end
 
-            local Gained = math.max(0, GainedNow - self.S.StartTotalExp)
+            local Gained = math.max(0, tonumber(self.S.SessionExpGained) or 0)
             local Minutes = self:GetElapsed() / 60
             local PerHour = Minutes > 0 and Gained / Minutes * 60 or 0
 
@@ -359,19 +376,20 @@ return {
                 self.S.StartCurrency = ReadCurrency()
             end
 
-            if self.S.StartTotalExp ~= nil then
+            if self.S.LastExpLevel ~= nil and self.S.LastExp ~= nil then
                 return
             end
 
-            local StartLevel, StartExp, StartTotalExp = ReadExpSnapshot()
+            local StartLevel, StartExp = ReadExpSnapshot()
 
-            if StartTotalExp == nil then
+            if StartLevel == nil or StartExp == nil then
                 return
             end
 
             self.S.StartLevel = StartLevel
             self.S.StartExp = StartExp
-            self.S.StartTotalExp = StartTotalExp
+            self.S.LastExpLevel = StartLevel
+            self.S.LastExp = StartExp
         end
 
         --// "@name (UserId)" for each player, or "".
@@ -1108,6 +1126,7 @@ return {
         --// PlayerStats was not ready for when the session began.
         function Feature:Update(DeltaTime)
             self:CaptureStart()
+            self:ObserveExp()
 
             self:SetFarming(
                 FeatureState ~= nil
@@ -1120,6 +1139,9 @@ return {
             if Now - (self.S.LastLabelUpdate or 0) >= 1 then
                 self.S.LastLabelUpdate = Now
                 RefreshLabel()
+                if type(AICUI.UpdateExpRates) == "function" then
+                    AICUI.UpdateExpRates()
+                end
             end
         end
 

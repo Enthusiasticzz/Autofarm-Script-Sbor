@@ -840,7 +840,8 @@ assert(Report:find("Starting EXP: 2,836,906/4,005,531", 1, true), "starting EXP 
 
 --// A report must not create a baseline. If it did, sending at the end would
 --// set the start to the current totals and report zero EXP gained.
-Webhook.S.StartLevel, Webhook.S.StartExp, Webhook.S.StartTotalExp = nil, nil, nil
+Webhook.S.StartLevel, Webhook.S.StartExp = nil, nil
+Webhook.S.LastExpLevel, Webhook.S.LastExp = nil, nil
 local WithoutBaseline = Webhook:BuildReport("End")
 assert(not WithoutBaseline:find("Session EXP Gained", 1, true), "a report captured a fresh zero baseline")
 
@@ -857,7 +858,7 @@ ShowLevel, ShowExp = false, true
 LevelStat.Value, ExpStat.Value = 1155, 2836906
 Webhook:ResetSession()
 assert(
-    Webhook.S.StartLevel == nil and Webhook.S.StartExp == nil and Webhook.S.StartTotalExp == nil,
+    Webhook.S.StartLevel == nil and Webhook.S.StartExp == nil and Webhook.S.LastExpLevel == nil,
     "a partial PlayerStats read created a mixed start snapshot"
 )
 
@@ -868,10 +869,21 @@ LevelStat.Value, ExpStat.Value = 1154, 2836906
 Context.Feature.AutoFarm.Enabled = false
 Webhook:Update(0)
 assert(Webhook.S.StartLevel == 1154 and Webhook.S.StartExp == 2836906, "late stats did not capture a start")
-assert(Webhook.S.StartTotalExp ~= nil, "late stats did not capture a start total")
+assert(Webhook.S.LastExpLevel == 1154 and Webhook.S.LastExp == 2836906, "late stats did not capture the EXP observation")
 
 LevelStat.Value, ExpStat.Value = 1155, 2342710
 local Gained = Context.AICFeature.GetExpProgress()
 assert(Gained == 3511335, "late start did not measure the gain: " .. tostring(Gained))
+
+--// Status labels use the report's totals, including when farming is off.
+local StatusGained, StatusRate
+Context.UIRef.ExpGainedLabel = { Set = function(_, text) StatusGained = text end }
+Context.UIRef.ExpHourLabel = { Set = function(_, text) StatusRate = text end }
+Webhook.S.LastLabelUpdate = -math.huge
+Webhook:Update(0)
+assert(StatusGained == "SESSION EXP GAINED  3,511,335", "status total did not refresh")
+assert(StatusRate and StatusRate:find("AVG EXP / HOUR  1,930,", 1, true), "status rate disagrees with report")
+Context.AICUI.UpdateExpRates()
+assert(Webhook.S.SessionExpGained == 3511335, "repainting status counted the gain twice")
 
 print("BOOT PROBE PASSED")
