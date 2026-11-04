@@ -4944,6 +4944,7 @@ SaveConfig.Settings = {
 { Key = "BOSS_DUO_NAME", Default = "", Normalize = function(Value)
 return type(Value) == "string" and Value:gsub("^%s*(.-)%s*$", "%1") or ""
 end },
+{ Key = "BOSS_DUO_RANGE", Default = 35, Min = 1, Max = 500 },
 { Key = "BOSS_BOUNDS_VISIBLE", Default = true },
 { Key = "RETREAT_HEALTH_PERCENT", Default = 40, Min = 0, Max = 80 },
 { Key = "AUTO_HEAL_HEALTH_PERCENT", Default = 65, Min = 30, Max = 80 },

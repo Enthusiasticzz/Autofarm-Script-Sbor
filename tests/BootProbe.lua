@@ -407,6 +407,7 @@ assert(boss.BlockSection.Tab == boss.FarmTab, "auto block is not on the farming 
 assert(boss.BossBoundsVisualToggle, "fight bounds toggle missing")
 assert(boss.BossDuoSyncToggle, "duo sync toggle missing")
 assert(boss.BossDuoNameBox, "duo sync name box missing")
+assert(boss.BossDuoRangeBox, "duo range box missing")
 assert(boss.BossDuoSyncToggle:Get() == false, "duo sync started on")
 assert(boss.WhitelistSection.Tab == boss.FarmTab, "the whitelist is not on the farming tab")
 assert(boss.EvadePauseToggle, "pause for strangers toggle missing")

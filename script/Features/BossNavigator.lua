@@ -3046,10 +3046,20 @@ return {
             return true
         end
 
-        --// How close the duo has to be before a stop starts. Wide enough to
-        --// cover a boss room's doorway, narrow enough that a player across the
-        --// map is not counted as standing there.
-        local DUO_NEAR_DISTANCE = 35
+        --// How close the duo has to be before a stop starts, from the Route
+        --// Controls box. Wide enough to cover a boss room's doorway, narrow
+        --// enough that a player across the map is not counted as there.
+        local DEFAULT_DUO_RANGE = 35
+        local MIN_DUO_RANGE = 1
+        local MAX_DUO_RANGE = 500
+
+        local function GetDuoRange()
+            return math.clamp(
+                tonumber(CONFIG.BOSS_DUO_RANGE) or DEFAULT_DUO_RANGE,
+                MIN_DUO_RANGE,
+                MAX_DUO_RANGE
+            )
+        end
 
         local function TrimText(Value)
             return tostring(Value or ""):gsub("^%s*(.-)%s*$", "%1")
@@ -3105,7 +3115,7 @@ return {
             end
 
             return AICCombatUtils.GetHorizontalDistance(RootPart.Position, DuoRoot.Position)
-                <= DUO_NEAR_DISTANCE
+                <= GetDuoRange()
         end
 
         local function ApproachStep(Stop, Now)
@@ -4758,6 +4768,27 @@ return {
             Callback = function(Value)
                 CONFIG.BOSS_DUO_NAME = TrimText(Value)
                 AICProfile.WriteGlobalStore()
+            end,
+        }
+
+        UIRef.BossDuoRangeBox = UIRef.BossSection:AddTextBox{
+            Name = "Duo Range (studs)",
+            Default = tostring(GetDuoRange()),
+            Callback = function(Value)
+                local Number = tonumber(Value)
+
+                if not Number then
+                    UIRef.BossDuoRangeBox:Set(tostring(GetDuoRange()), true)
+                    return
+                end
+
+                CONFIG.BOSS_DUO_RANGE = math.clamp(
+                    math.floor(Number),
+                    MIN_DUO_RANGE,
+                    MAX_DUO_RANGE
+                )
+                AICProfile.WriteGlobalStore()
+                UIRef.BossDuoRangeBox:Set(tostring(CONFIG.BOSS_DUO_RANGE), true)
             end,
         }
         UIRef.BossSection:AddNote("Blank uses the Duo Username from Utility -> Webhook")

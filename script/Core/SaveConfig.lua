@@ -214,6 +214,8 @@ return {
             { Key = "BOSS_DUO_NAME", Default = "", Normalize = function(Value)
                 return type(Value) == "string" and Value:gsub("^%s*(.-)%s*$", "%1") or ""
             end },
+            --// How close the duo must be for Duo Sync, in studs.
+            { Key = "BOSS_DUO_RANGE", Default = 35, Min = 1, Max = 500 },
             --// Draws a saved stop's fight box as four translucent walls.
             --// Display only; off removes them without touching the box.
             { Key = "BOSS_BOUNDS_VISIBLE", Default = true },

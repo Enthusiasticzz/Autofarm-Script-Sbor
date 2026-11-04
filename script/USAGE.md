@@ -565,7 +565,8 @@ unlike the route above them.
   (Route Controls) draws every saved box as four translucent orange walls (12
   studs tall, stood on the floor) at once, whichever stop is selected; off hides
   them without clearing the corners.
-- **Duo Sync** — holds every boss stop until your duo is within 35 studs, then
+- **Duo Sync** — holds every boss stop until your duo is within **Duo Range**
+  (35 studs by default, set in the **Duo Range (studs)** box; 1–500), then
   starts **Wait At Spot**; a stop with that wait at 0 still waits for them. The
   timer starts when they arrive, and stepping out and back restarts it. Uses
   **Duo Username** (blank falls back to the Webhook one).
