@@ -158,10 +158,10 @@ the code with that exact label; defaults and ranges come from the profile schema
 ### Farming tab
 
 The Farming tab is where the farm loop is switched on and told what to fight, split into
-Core, Combat, Targeting, Mob Gather and Booster Reset sections. Every toggle here is saved in
-the active profile unless it is marked global. The **Auto Block** controls live on the Bosses
-tab now, in its **Auto Block** and **Block Whitelist** sections, under **Pause For
-Strangers** — the section that hides the run from them.
+Core, Combat, Targeting, Auto Block, Block Whitelist, Mob Gather and Booster Reset sections.
+Every toggle here is saved in the active profile unless it is marked global. **Auto Block**
+and **Block Whitelist** moved here from the Bosses tab: what happens to a stranger, and who
+is left alone, now sits with the rest of the farm rules.
 
 #### Core
 
@@ -184,7 +184,7 @@ The Core section ends with three sliders that belong to the combat loop:
 #### Combat
 
 How the character fights once Auto Farm has a target. Auto Block has its own section on the
-Bosses tab (**Auto Block**).
+Farming tab (**Auto Block**).
 
 - **Safe Combat** (on) — fights from outside enemy weapon reach, backing off and circling. Off, it fights up close at the distance in **Close Combat Range**.
 - **Jump While Fighting** (off) — jumps over something actually in the way while chasing a target. Off, the character keeps its feet on the ground for the whole fight: a crowd of mobs pressed against it used to read as low terrain, which hopped it at the fight on every frame. The waypoint route (route holes and ticked waypoints), Waypoint Loop, patrol, mining and smithing make their own jumps and are not affected.
@@ -402,12 +402,11 @@ teleport) to a boss, fight it, and reset back to spawn before the next one.
 
 #### Pause For Strangers
 
-Everything about other players lives in seven short sections on the right of this
-tab, each with its own title, rather than one long list: **Boss Targets**,
-**Teleport and Prompt**, **Pause For Strangers** (the hold), **Hiding Spots**
-(where it may hide), **Add A Hiding Spot**, **Auto Block** (what happens to the
-stranger) and **Block Whitelist** (who is left alone). The left side holds the
-route, its stop list, the selected stop and its path.
+The right side holds **Boss Targets**, **Teleport and Prompt**, **Pause For
+Strangers** (the hold), **Hiding Spots** (where it may hide) and **Add A Hiding
+Spot**, each with its own title rather than one long list. **Auto Block** and
+**Block Whitelist** moved to the Farming tab, beside the farm rules they act on.
+The left side holds the route, its stop list, the selected stop and its path.
 
 - **Pause For Strangers** (off by default, saved in the profile) — the hide. On,
   the moment a player who is not on the **Block Whitelist** is in the server the
@@ -473,7 +472,7 @@ last saw it. Keep a single spot to always hide in the same place.
 - A spot already on the list is refused (`ALREADY A HIDING SPOT`), and a full
   list reads `HIDING SPOTS FULL (20)`.
 
-#### Auto Block
+#### Auto Block (Farming tab)
 
 What happens to a stranger instead of hiding: Auto Block blocks them and leaves
 the server, delayed by **Block Delay (s)**; **Leave Instead Of Block** skips the
@@ -558,10 +557,13 @@ unlike the route above them.
   **Add Fight Corner**, and repeat for all four corners; the label counts
   `CORNER n/4` and then shows the box size. The skill dodge and the reset-hold
   run stay inside the box, sliding along a wall instead of backing through it.
-  **Clear Fight Bounds** removes the box; with none saved the dodge runs freely.
-  The four corners are saved on the stop and follow the profile. **Show Fight
-  Bounds** draws the box as four translucent orange walls (12 studs tall) around
-  the selected stop; off hides them without clearing the corners.
+  **Fight Corners** lists every saved corner (`#1  (x, y, z)`) with its own ✕,
+  so a mis-click can be removed without clearing the other three. The box needs
+  all four; removing one drops it back to `CORNER n/4` and the dodge runs free
+  until the fourth is placed again. **Clear Fight Bounds** removes the whole box.
+  The corners are saved on the stop and follow the profile. **Show Fight Bounds**
+  draws the box as four translucent orange walls (12 studs tall) around the
+  selected stop; off hides them without clearing the corners.
 - **Wait At Spot (s)** — seconds stood at the stop before the fight starts,
   **0 by default**. Raise it for a boss that spawns a moment after the walk
   arrives; at 0 the first swing is on the frame the stop is reached. It is

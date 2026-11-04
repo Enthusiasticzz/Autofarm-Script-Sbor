@@ -3964,10 +3964,8 @@ UIRef.FeatureSection = UIRef.FarmTab:AddSection{ Title = "Core" }
 UIRef.CoreSection = UIRef.FeatureSection
 UIRef.CombatSection = UIRef.FarmTab:AddSection{ Title = "Combat" }
 UIRef.TargetSection = UIRef.FarmTab:AddSection{ Title = "Targeting" }
-UIRef.BlockSection = UIRef.BossTab:AddSection{ Title = "Auto Block", Side = "Right" }
-UIRef.WhitelistSection = UIRef.BossTab:AddSection{ Title = "Block Whitelist", Side = "Right" }
-UIRef.BlockSection.Frame.LayoutOrder = 91
-UIRef.WhitelistSection.Frame.LayoutOrder = 92
+UIRef.BlockSection = UIRef.FarmTab:AddSection{ Title = "Auto Block" }
+UIRef.WhitelistSection = UIRef.FarmTab:AddSection{ Title = "Block Whitelist" }
 UIRef.GatherSection = UIRef.FarmTab:AddSection{ Title = "Mob Gather" }
 UIRef.BoosterSection = UIRef.FarmTab:AddSection{ Title = "Booster Reset" }
 UIRef.StatusSection = UIRef.StatusTab:AddSection{ Title = "Live Status" }

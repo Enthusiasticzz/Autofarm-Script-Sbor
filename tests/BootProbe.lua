@@ -403,8 +403,8 @@ assert(SectionTitle(boss.EvadeListSection) == "Hiding Spots", "the hiding-spot l
 assert(SectionTitle(boss.EvadeAddSection) == "Add A Hiding Spot", "the add-a-spot section's title is not at the top")
 assert(SectionTitle(boss.BlockSection) == "Auto Block", "the auto block title is not at the top of its section")
 assert(SectionTitle(boss.WhitelistSection) == "Block Whitelist", "the whitelist title is not at the top of its section")
-assert(boss.BlockSection.Frame.LayoutOrder > boss.EvadeSection.Frame.LayoutOrder, "auto block was not placed under the evade sections")
-assert(boss.WhitelistSection.Frame.LayoutOrder > boss.BlockSection.Frame.LayoutOrder, "the whitelist was not placed under auto block")
+assert(boss.BlockSection.Tab == boss.FarmTab, "auto block is not on the farming tab")
+assert(boss.WhitelistSection.Tab == boss.FarmTab, "the whitelist is not on the farming tab")
 assert(boss.EvadePauseToggle, "pause for strangers toggle missing")
 assert(boss.EvadeListComponent, "hiding-spot list missing")
 assert(boss.EvadeWaypointBox and boss.EvadePromptButton, "hiding-spot controls missing")
@@ -413,10 +413,9 @@ assert(boss.EvadeSpotLabel.Instance.Text:find("HIDING SPOTS:", 1, true), "hiding
 assert(boss.EvadePauseToggle:Get() == false, "pause for strangers started on")
 assert(boss.EvadePauseToggle.Row.Parent == boss.EvadeSection.Frame, "the hold's toggle was not placed in its own section")
 assert(boss.EvadeWaypointBox.Row.Parent == boss.EvadeAddSection.Frame, "the add-waypoint box was not placed in its own section")
-assert(boss.EvadePromptButton.Row.Parent == boss.EvadeAddSection.Frame, "the add-prompt button was not placed in its own section")
---// Auto Block's own module is not started here, so only the section it fills
---// can be checked: it exists, it is titled, and it sits under Auto Block.
-assert(boss.WhitelistSection.Frame.LayoutOrder == boss.BlockSection.Frame.LayoutOrder + 1, "the whitelist section is not directly under auto block")
+assert(boss.EvadePromptButton.Row.Parent == boss.EvadeAddSection.Frame, "the add-prompt button was not placed in its own section")        --// Auto Block's own module is not started here, so only the section it fills
+        --// can be checked: it exists, it is titled, and it is on the Farming tab.
+assert(boss.BlockSection.Tab ~= boss.BossTab and boss.WhitelistSection.Tab ~= boss.BossTab, "the auto block sections are still on the boss tab")
 
 Context.AICProfile.S.ActiveProfileName = "Saved"
 boss.EvadePauseToggle:Set(true)
@@ -503,6 +502,46 @@ local compactExport = Context.AICProfile.BuildCompactConfig(Context.Runtime:GetB
 assert(compactExport.BOSS_EVADE and compactExport.BOSS_EVADE.Spots, "the exported config does not carry the hiding spots")
 assert(#compactExport.BOSS_EVADE.Spots == 2, "the exported config dropped a hiding spot")
 assert(compactExport.BOSS_EVADE.Spots[2].Kind == "Prompt", "the exported config dropped the prompt spot")
+
+--// Fight corners are part of the stop, so they have to ride the same export:
+--// four saved vectors, through the compact diff and back through MergeConfig
+--// and NormalizePlaceConfig, still four corners.
+local boundsPlace = {
+    BOSS_ROUTE = Context.AICConfig.NormalizeBossStops{
+        {
+            Label = "Bounds Stop",
+            Position = Vector3.new(0, 0, 0),
+            Bounds = {
+                Vector3.new(-20, 0, -20),
+                Vector3.new(20, 0, -20),
+                Vector3.new(20, 0, 20),
+                Vector3.new(-20, 0, 20),
+            },
+        },
+    },
+}
+assert(#boundsPlace.BOSS_ROUTE[1].Bounds == 4, "the normalizer dropped the fight corners")
+
+local boundsExport = Context.AICProfile.BuildCompactConfig(Context.Runtime:GetBasePlaceConfig(), boundsPlace)
+assert(
+    boundsExport.BOSS_ROUTE and boundsExport.BOSS_ROUTE[1] and boundsExport.BOSS_ROUTE[1].Bounds,
+    "the exported config does not carry the fight corners"
+)
+assert(#boundsExport.BOSS_ROUTE[1].Bounds == 4, "the exported config dropped a fight corner")
+
+local boundsReloaded = Context.AICConfig.NormalizePlaceConfig(
+    Context.AICProfile.MergeConfig(Context.Runtime:GetBasePlaceConfig(), boundsExport)
+)
+assert(
+    boundsReloaded.BOSS_ROUTE and boundsReloaded.BOSS_ROUTE[1]
+        and boundsReloaded.BOSS_ROUTE[1].Bounds,
+    "the fight corners were lost reloading the export"
+)
+assert(#boundsReloaded.BOSS_ROUTE[1].Bounds == 4, "the reloaded config dropped a fight corner")
+assert(
+    typeof(boundsReloaded.BOSS_ROUTE[1].Bounds[1]) == "Vector3",
+    "a reloaded fight corner came back as a plain table"
+)
 
 --// The whole cycle a player runs: spots on the live config, the profile save,
 --// the reload that reads it back through the place merge, and the export.

@@ -1838,6 +1838,7 @@ Asked and answered from play, then applied:
 - **Added:** an optional per-stop fight box. Stand on a corner of the room, press **Add Fight Corner**, and repeat until four corners are saved; the label counts `CORNER n/4` and then shows the box size. **Clear Fight Bounds** removes it. With no box saved, nothing changes.
 - **Saved:** `Bounds` on the stop, normalized by `AICConfig.NormalizeBossBounds` (up to four points, rounded like every other position), so it saves, loads and exports with the profile.
 - **Enforced:** `PickDodgePoint` rejects any heading whose point is outside the box (treated like a hole) and clamps the fallback to the wall line; `DodgeStep` clamps its saved target each frame and walks back inside if a knockback put the character outside; the reset-hold flee uses the same picker, so it cannot run through the wall either.
+- **Profile export proven:** `tests/BootProbe.lua` builds a stop with four corners, runs `BuildCompactConfig`, then `MergeConfig` + `NormalizePlaceConfig`, and asserts four `Vector3` corners come back; the profile save uses the same serialize/decode path.
 - Checks: `luau-compile` clean on `Core/Runtime.lua` and `Features/BossNavigator.lua`; bundle rebuilt (6 parts, 84 modules); `run-bundle-check` 0 compile failures; `run-boot-probe` passes; `run-ui-smoke` 0 failed checks. Not run in game.
 
 ## v4.15 — Fight bounds walls
@@ -1846,3 +1847,16 @@ Asked and answered from play, then applied:
 - **Show Fight Bounds** (Selected Stop, saved as `BOSS_BOUNDS_VISIBLE`, on by default) turns the panels off without touching the saved corners.
 - Display only: anchored, `CanCollide`/`CanTouch`/`CanQuery` off and `CastShadow` off, so neither the game nor the route's raycasts can hit them; destroyed on toggle off, box clear, another stop with no box, and script end.
 - Checks: `luau-compile` clean on `Core/SaveConfig.lua` and `Features/BossNavigator.lua`; bundle rebuilt (6 parts, 84 modules); `run-bundle-check` 0 compile failures; `run-boot-probe` passes; `run-ui-smoke` 0 failed checks. Not run in game.
+
+## v4.16 — Auto Block and Block Whitelist moved to the Farming tab
+
+- Both sections were created on the Bosses tab's right column, with `LayoutOrder` 91/92 so they sorted under the boss sections. They now belong to the Farming tab, where `AddSection` balances them into its columns beside the farm rules they act on.
+- No control or setting changed; `UIRef.BlockSection` / `UIRef.WhitelistSection` keep their names, so AutoBlock and every cross-reference are untouched.
+- Docs: AI-WALKTHROUGH and USAGE tab lists updated. `tests/BootProbe.lua` now asserts both sections belong to `UIRef.FarmTab` (and not `UIRef.BossTab`) instead of comparing their Bosses-tab `LayoutOrder`s.
+- Checks: `luau-compile` clean on `Core/Runtime.lua`; bundle rebuilt (6 parts, 84 modules); `run-bundle-check` 0 compile failures; `run-boot-probe` passes; `run-ui-smoke` 0 failed checks. Not run in game.
+
+## v4.17 — Fight corners are a removable list
+
+- **Reported:** a corner placed by accident could only be removed by clearing the whole box.
+- **Added:** a **Fight Corners** list in Selected Stop, one row per saved corner (`#1  (x, y, z)`), each with its own ✕. Removing one deletes just that point, saves the stop, redraws the walls and drops the box back to `CORNER n/4` until four remain.
+- Checks: `luau-compile` clean on `Features/BossNavigator.lua`; bundle rebuilt (6 parts, 84 modules); `run-bundle-check` 0 compile failures; `run-boot-probe` passes; `run-ui-smoke` 0 failed checks. Not run in game.

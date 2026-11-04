@@ -1244,6 +1244,31 @@ return {
             )
         end
 
+        --// The saved fight corners as list rows. The number keeps every label
+        --// unique: the list finds a row by its label.
+        local function BuildBoundsLabels()
+            local Stop = SelectedStop()
+            local Labels = {}
+
+            for Index, Point in ipairs(Stop and Stop.Bounds or {}) do
+                Labels[Index] = string.format(
+                    "#%d  (%.0f, %.0f, %.0f)",
+                    Index,
+                    Point.X,
+                    Point.Y,
+                    Point.Z
+                )
+            end
+
+            return Labels
+        end
+
+        function AICUI.RefreshBossBoundsList()
+            if UIRef.BossBoundsComponent then
+                UIRef.BossBoundsComponent:SetPriority(BuildBoundsLabels())
+            end
+        end
+
         --// Puts the selected stop's values back into the edit boxes, after a
         --// selection change or an edit was applied.
         local function RefreshEditor()
@@ -1291,6 +1316,7 @@ return {
                 end
             end
 
+            AICUI.RefreshBossBoundsList()
             RefreshBoundsVisual(Stop)
             if UIRef.BossPromptToggle then
                 UIRef.BossPromptToggle:Set(Stop.Prompt == true, true)
@@ -4171,6 +4197,37 @@ return {
         UIRef.BossBoundsLabel = UIRef.BossEditorSection:AddLabel(
             "FIGHT BOUNDS:  NONE  (DODGE RUNS FREELY)"
         )
+
+        --// One row per saved corner, so a mis-click can be removed on its own
+        --// instead of clearing the other three. The list's own Remove is kept
+        --// and called after the point is out of the stop, so the row and the
+        --// saved box cannot disagree.
+        UIRef.BossBoundsComponent = UIRef.BossEditorSection:AddPriority("Fight Corners", {})
+
+        local BoundsRemove = UIRef.BossBoundsComponent.Remove
+
+        function UIRef.BossBoundsComponent:Remove(Label)
+            local Stop = SelectedStop()
+
+            if not Stop or not Stop.Bounds then
+                return
+            end
+
+            if not AICProfile.S.ActiveProfileName then
+                SetStatus("DEFAULT PLACE_CONFIG IS READ-ONLY")
+                return
+            end
+
+            local Index = table.find(BuildBoundsLabels(), Label)
+
+            if not Index then
+                return
+            end
+
+            table.remove(Stop.Bounds, Index)
+            BoundsRemove(self, Label)
+            Commit("FIGHT CORNER REMOVED #" .. tostring(Index))
+        end
 
         UIRef.BossBoundsButton = UIRef.BossEditorSection:AddButton{
             Name = "Add Fight Corner",

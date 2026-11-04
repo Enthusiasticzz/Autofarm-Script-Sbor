@@ -660,6 +660,25 @@ end,
 true
 )
 end
+local function BuildBoundsLabels()
+local Stop = SelectedStop()
+local Labels = {}
+for Index, Point in ipairs(Stop and Stop.Bounds or {}) do
+Labels[Index] = string.format(
+"#%d  (%.0f, %.0f, %.0f)",
+Index,
+Point.X,
+Point.Y,
+Point.Z
+)
+end
+return Labels
+end
+function AICUI.RefreshBossBoundsList()
+if UIRef.BossBoundsComponent then
+UIRef.BossBoundsComponent:SetPriority(BuildBoundsLabels())
+end
+end
 local function RefreshEditor()
 local Stop = SelectedStop()
 if not Stop then
@@ -700,6 +719,7 @@ else
 UIRef.BossBoundsLabel:Set("FIGHT BOUNDS:  NONE  (DODGE RUNS FREELY)")
 end
 end
+AICUI.RefreshBossBoundsList()
 RefreshBoundsVisual(Stop)
 if UIRef.BossPromptToggle then
 UIRef.BossPromptToggle:Set(Stop.Prompt == true, true)
@@ -2551,6 +2571,25 @@ end)
 UIRef.BossBoundsLabel = UIRef.BossEditorSection:AddLabel(
 "FIGHT BOUNDS:  NONE  (DODGE RUNS FREELY)"
 )
+UIRef.BossBoundsComponent = UIRef.BossEditorSection:AddPriority("Fight Corners", {})
+local BoundsRemove = UIRef.BossBoundsComponent.Remove
+function UIRef.BossBoundsComponent:Remove(Label)
+local Stop = SelectedStop()
+if not Stop or not Stop.Bounds then
+return
+end
+if not AICProfile.S.ActiveProfileName then
+SetStatus("DEFAULT PLACE_CONFIG IS READ-ONLY")
+return
+end
+local Index = table.find(BuildBoundsLabels(), Label)
+if not Index then
+return
+end
+table.remove(Stop.Bounds, Index)
+BoundsRemove(self, Label)
+Commit("FIGHT CORNER REMOVED #" .. tostring(Index))
+end
 UIRef.BossBoundsButton = UIRef.BossEditorSection:AddButton{
 Name = "Add Fight Corner",
 Callback = function()
