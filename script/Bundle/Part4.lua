@@ -2993,6 +2993,7 @@ end,
 }
 UIRef.BossDuoRangeBox = UIRef.BossSection:AddTextBox{
 Name = "Duo Range (studs)",
+Inline = true,
 Default = tostring(GetDuoRange()),
 Callback = function(Value)
 local Number = tonumber(Value)
@@ -3021,7 +3022,7 @@ end
 SetStatus(CONFIG.BOSS_ROUTE_LOOP and "ROUTE LOOPS" or "ROUTE RUNS ONCE")
 end,
 }
-UIRef.BossPathSection = UIRef.BossTab:AddSection{ Title = "Path to Boss", Side = "Left" }
+UIRef.BossPathSection = UIRef.BossTab:AddSection{ Title = "Path to Boss", Side = "Right" }
 UIRef.BossPathLabel = UIRef.BossPathSection:AddLabel("PATH TO BOSS  NO STOP SELECTED")
 UIRef.BossPathSection:AddButton{
 Name = "Add Path Point Here",

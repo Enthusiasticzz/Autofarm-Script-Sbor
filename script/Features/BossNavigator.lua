@@ -4773,6 +4773,7 @@ return {
 
         UIRef.BossDuoRangeBox = UIRef.BossSection:AddTextBox{
             Name = "Duo Range (studs)",
+            Inline = true,
             Default = tostring(GetDuoRange()),
             Callback = function(Value)
                 local Number = tonumber(Value)
@@ -4811,7 +4812,7 @@ return {
         --// Path to Boss: the points walked to reach each stop
         ------------------------------------------------------------------------
 
-        UIRef.BossPathSection = UIRef.BossTab:AddSection{ Title = "Path to Boss", Side = "Left" }
+        UIRef.BossPathSection = UIRef.BossTab:AddSection{ Title = "Path to Boss", Side = "Right" }
         UIRef.BossPathLabel = UIRef.BossPathSection:AddLabel("PATH TO BOSS  NO STOP SELECTED")
 
         UIRef.BossPathSection:AddButton{

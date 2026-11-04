@@ -620,6 +620,8 @@ unlike the route above them.
 
 #### Path to Boss
 
+The section is on the right panel, below **Add A Hiding Spot**.
+
 The way to each boss is a list of points you record once, in the order you walk
 them. This is the whole navigation: the route walks point to point and never
 solves or guesses a way round anything.

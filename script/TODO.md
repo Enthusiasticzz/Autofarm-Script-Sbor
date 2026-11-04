@@ -1880,3 +1880,13 @@ Asked and answered from play, then applied:
 - **Added:** **Duo Range (studs)** in Route Controls under **Duo Sync**; `BOSS_DUO_RANGE` is saved globally, defaults to 35 and is clamped to 1-500. The gate reads it every check, so a change applies without restarting the route; a blank or non-number entry restores the saved value.
 - **Docs:** the **Duo Sync** tooltip and USAGE now refer to the box instead of a fixed 35.
 - Checks: `luau-compile` clean on `Core/SaveConfig.lua`, `Features/BossNavigator.lua` and `UI/Descriptions.lua`; bundle rebuilt; `run-bundle-check` 0 compile failures; `run-boot-probe` passes (including the new range-box assertion); `run-ui-smoke` 0 failed checks. Not run in game.
+
+## v4.21 — Duo Range Label
+
+- **Fixed:** **Duo Range (studs)** is now an inline textbox, so its name is drawn on the left of the row; it previously relied on the placeholder, leaving a full-width box showing `35` with no visible label.
+- Checks: `luau-compile` clean on `Features/BossNavigator.lua`; bundle rebuilt; `run-bundle-check` 0 compile failures; `run-boot-probe` passes; `run-ui-smoke` 0 failed checks. Not run in game.
+
+## v4.22 — Path to Boss On The Right
+
+- **Moved:** **Path to Boss** from the left of the Bosses tab to the right, after **Add A Hiding Spot**. The section is created after that section, so it lays out at the bottom of the right column; its controls and behaviour are unchanged.
+- Checks: `luau-compile` clean on `Features/BossNavigator.lua`; bundle rebuilt; `run-bundle-check` 0 compile failures; `run-boot-probe` passes; `run-ui-smoke` 0 failed checks. Not run in game.
