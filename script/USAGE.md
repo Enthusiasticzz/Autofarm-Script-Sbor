@@ -1033,7 +1033,7 @@ A read-only window on what the farm is doing, plus the Reset Stats button.
 
 - **FARM STATE  --** (readout) — what the farm loop did this frame.
 - **PLACE ID**, **WALKSPEED**, **WAYPOINTS:  n / m**, **FALLEN CAMELLIA**, **PLAY TIME**, **POSITION**, **DEATH**, **EXP** (readouts) — the current place, walk speed, route progress, the event currency, time on the server, position, death count and experience. The event currency line is named after the currency this event hands out and counts the inventory item of that name (`AICUI.S.TargetCurrency` in `Core/Runtime.lua`), so it is renamed when the event's currency changes.
-- **EXP / HOUR**, **EXP / MINUTE** (readouts) — EXP gained since the current Webhook session started, spread over its elapsed time. They use the same baseline as the live **SESSION STARTED** line and show `--` until that session can read `PlayerStats`.
+- **AVG EXP / HOUR** (readout) — EXP gained since the current Webhook session started, spread over its elapsed time. It uses the same baseline as the live **SESSION STARTED** line and shows `--` until that session can read `PlayerStats`.
 - **Reset Stats** (button) — fires `StatsEvent` with 0 for Vitality, Agility, Luck, Strength and Defense. A stat at or above `STAT_RESET_THRESHOLD` (500) is refused with a notice: firing that many points at the game's anticheat trips it and the reset never lands, so 499 is the highest that resets.
 
 ### Utility tab
@@ -1084,14 +1084,14 @@ in `AutoFarmProfiles/Global.json`, so every profile and place reports to the sam
 - **Ping User ID** — a UserId to mention with the report, `everyone` for `@everyone`, or blank to mention nobody. A hand-typed `@name` is passed through.
 - **Ping Duo User ID** — your duo's UserId, mentioned alongside yours so both accounts get the ping. Blank mentions nobody extra; the same id in both boxes is only mentioned once.
 - **Duo Username** — who you are duoing with. Blank reports only your account; filled in, the Account line reads `You and Them`.
-- **Report Format** — **Event Currency** or **EXP Grind**; it chooses which two numbers the report carries (see below).
+- **Report Format** — **Event Currency** or **EXP Grind**; it chooses the stat block the report carries (see below).
 - **EC Item Name** — the inventory item counted as event currency. Blank uses the currency the script already tracks for the current event (`Fallen Camellia` now).
 - **Time Zone** (dropdown, global) — the clock every report is stamped with: **US Eastern** (default), US Central, US Mountain, US Arizona, US Pacific, Alaska, Hawaii, UTC, UK, Central Europe or Australia Eastern. Daylight saving follows the calendar by itself: US Eastern prints `EDT` all summer and goes back to `EST` from the first Sunday in November, Arizona and Hawaii never change, and the southern zones switch the other way round. Only the clock is shown, never the date.
 - **Log When Hiding** (on, global) — posts a **waiting** report when someone joins and **Pause For Strangers** starts hiding, naming everyone who is on the server, and a **left** report with how long they stayed when they go before the window runs out. Off, nothing is posted for either; the leave below always is.
 - A leave caused by the hold reports whatever **Log When Hiding** says: the run ends because the strangers would not go, so the ended report names all of them (`Left because of: @a (1), @b (2)`).
 - **Send Report** — posts the report for the current session.
 - **Reset Session** — stamps a new start time and takes today's EC/Level as the starting numbers, for a new run or a new floor.
-- The **SESSION STARTED** line under the buttons shows the report's start time and how long it has been going, and in **EXP Grind** the EXP gained so far with its per-hour and per-minute rate, refreshed every second.
+- The **SESSION STARTED** line under the buttons shows the report's start time and how long it has been going, and in **EXP Grind** the EXP gained so far with its average hourly rate, refreshed every second.
 
 The report is plain message text. A **started** report says only where the run is now:
 
@@ -1115,20 +1115,27 @@ Starting EC: 900
 Time: 2 Hours, 15 Minutes, 42 Seconds
 ```
 
-With **EXP Grind** picked, the two number lines become four — the level on its own,
-then the progress inside that level's EXP bar as `exp/needed`. A started report has the
-first pair, an ended one has both:
+With **EXP Grind** picked, each level is followed by the progress inside its EXP bar as
+`exp/needed`. Both reports carry the session gain and its average rate; an ended report
+also adds the starting pair:
 
 ```text
-Current Level: 250
-Current EXP: 1234/2438097
-Starting Level: 248
-Starting EXP: 8110/2394027
+Current Level: 1155
+Current EXP: 2,342,710/4,012,467
+Session EXP Gained: 3,511,335
+Average EXP / Hour: 1,930,483
+Starting Level: 1154
+Starting EXP: 2,836,906/4,005,531
 ```
 
 `Needed` comes from the same EXP curve the HUD uses (`AICUI.neededExp`), so it always
 matches the bar on screen. Both the level and the EXP are captured when the session
 starts, so the starting line keeps the numbers it had before levelling up.
+
+`Session EXP Gained` counts every level passed in full plus the progress inside the
+current bar, so a level-up makes the total grow instead of resetting. `Average EXP / Hour`
+divides that total by the session's elapsed time; it is the average across the whole run,
+not a live rate. Both values use the same baseline as **Reset Session**.
 
 A **waiting** report is posted while **Pause For Strangers** is hiding from someone, when
 **Log When Hiding** is on. It names everyone on the server, not only the player who

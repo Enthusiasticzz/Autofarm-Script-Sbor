@@ -776,8 +776,9 @@ Context.Feature.BossRoute.Enabled = false
 --// fall through to the next function for those, so one hold report arrived
 --// three or four times over. The real Webhook module is started here so the
 --// count is taken from the code that posts.
+local Webhook
 local WebhookOk, WebhookErr = xpcall(function()
-    WebhookModule.Start(Context)
+    Webhook = WebhookModule.Start(Context)
 end, debug.traceback)
 
 assert(WebhookOk, "WEBHOOK START ERROR:\n" .. tostring(WebhookErr))
@@ -808,5 +809,33 @@ assert(posted == 2, "a left report with nobody to name was posted")
 
 request = nil
 http_request = nil
+
+--// A level-up must report the whole EXP total and its hourly average. The
+--// formatter used to re-group only the left side of a number, dropping the
+--// last three digits from every seven-digit value.
+local LevelStat = { Value = 1154 }
+local ExpStat = { Value = 2836906 }
+local PlayerStats = {
+    FindFirstChild = function(_, name)
+        if name == "Level" then return LevelStat end
+        if name == "EXP" then return ExpStat end
+    end,
+}
+
+Context.Player.FindFirstChild = function(_, name)
+    if name == "PlayerStats" then return PlayerStats end
+end
+
+Webhook:ResetSession()
+Webhook.GetElapsed = function() return 1 * 3600 + 49 * 60 + 8 end
+LevelStat.Value, ExpStat.Value = 1155, 2342710
+Context.CONFIG.DISCORD_FORMAT = "EXP Grind"
+
+local Report = Webhook:BuildReport("End")
+assert(Report:find("**Session EXP Gained:** 3,511,335", 1, true), "EXP total was formatted incorrectly:\n" .. Report)
+assert(Report:find("**Average EXP / Hour:** 1,930,", 1, true), "EXP/hour was formatted incorrectly:\n" .. Report)
+assert(not Report:find("EXP / Minute", 1, true), "per-minute rate is still shown")
+assert(Report:find("Current EXP: 2,342,710/4,012,467", 1, true), "current EXP is not separated")
+assert(Report:find("Starting EXP: 2,836,906/4,005,531", 1, true), "starting EXP is not separated")
 
 print("BOOT PROBE PASSED")

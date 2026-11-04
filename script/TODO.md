@@ -1911,3 +1911,9 @@ Asked and answered from play, then applied:
 
 - **Fixed:** the supplied IDs are Decals, not Image assets, and the uploads are restricted, so `ImageLabel.Image` silently rendered nothing. Tab and quick-action icons now resolve their matching `Tab-Icons/*.png` through the executor's `getcustomasset` API, caching the files locally. The supplied asset IDs remain as a fallback when the API is unavailable.
 - Checks: compile touched modules; rebuild; bundle check; boot probe; UI smoke; `git diff --check`.
+
+## v4.27 — Readable EXP session totals
+
+- **Fixed:** `FormatCount` regrouped only the left side of each number, so seven-digit totals and hourly rates dropped their last three digits (`3,511,335` printed as `3,511`). Totals, rates, and the current/starting EXP lines now use the full comma-separated values.
+- **Changed:** the webhook and Status tab show one **Average EXP / Hour** line instead of both hourly and per-minute rates. The value is the session average measured from **Reset Session**.
+- Checks: compile touched modules; bundle rebuild; bundle check; boot probe with a `3,511,335` report regression; UI smoke; `git diff --check`.

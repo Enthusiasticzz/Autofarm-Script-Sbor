@@ -790,31 +790,36 @@ return {
                 UIRef.EventCurrencyLabel:Set(AICUI.FormatEventCurrency(Amount))
             end
         end
-        --// The Status tab's rate lines use the webhook's session start and
+        local function FormatCount(Value)
+            local Text = tostring(math.max(0, math.floor(tonumber(Value) or 0)))
+            local Groups = {}
+
+            while #Text > 3 do
+                table.insert(Groups, 1, string.sub(Text, -3))
+                Text = string.sub(Text, 1, -4)
+            end
+
+            table.insert(Groups, 1, Text)
+            return table.concat(Groups, ",")
+        end
+
+        --// The Status tab's rate line uses the webhook's session start and
         --// EXP baseline, so the two readouts cannot drift apart. A missing
-        --// helper (Webhook not started yet) leaves them as "--".
+        --// helper (Webhook not started yet) leaves it as "--".
         local function UpdateExpRates()
-            if not UIRef.ExpHourLabel and not UIRef.ExpMinuteLabel then
+            if not UIRef.ExpHourLabel then
                 return
             end
 
             local ReadProgress = AICFeature.GetExpProgress
-            local Gained, PerHour, PerMinute
+            local Gained, PerHour
 
             if type(ReadProgress) == "function" then
-                Gained, PerHour, PerMinute = ReadProgress()
+                Gained, PerHour = ReadProgress()
             end
 
-            local PerHourText = Gained ~= nil and tostring(math.floor(PerHour or 0)) or "--"
-            local PerMinuteText = Gained ~= nil and tostring(math.floor(PerMinute or 0)) or "--"
-
-            if UIRef.ExpHourLabel then
-                UIRef.ExpHourLabel:Set("EXP / HOUR     " .. PerHourText)
-            end
-
-            if UIRef.ExpMinuteLabel then
-                UIRef.ExpMinuteLabel:Set("EXP / MINUTE   " .. PerMinuteText)
-            end
+            local PerHourText = Gained ~= nil and FormatCount(PerHour) or "--"
+            UIRef.ExpHourLabel:Set("AVG EXP / HOUR  " .. PerHourText)
         end
 
         function AICUI.updateEventCurrency()

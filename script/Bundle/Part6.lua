@@ -86,12 +86,13 @@ return Base + Exp
 end
 local function FormatCount(Value)
 local Text = tostring(math.max(0, math.floor(tonumber(Value) or 0)))
-local Left, Right = string.match(Text, "^(%d+)(%d%d%d)$")
-while Left do
-Text = Left .. "," .. Right
-Left, Right = string.match(Left, "^(%d+)(%d%d%d)$")
+local Groups = {}
+while #Text > 3 do
+table.insert(Groups, 1, string.sub(Text, -3))
+Text = string.sub(Text, 1, -4)
 end
-return Text
+table.insert(Groups, 1, Text)
+return table.concat(Groups, ",")
 end
 local function ReadCurrency()
 local PlayerStats = GetPlayerStats()
@@ -188,8 +189,8 @@ return nil
 end
 local Gained = math.max(0, GainedNow - self.S.StartTotalExp)
 local Minutes = self:GetElapsed() / 60
-local PerMinute = Minutes > 0 and Gained / Minutes or 0
-return Gained, PerMinute * 60, PerMinute
+local PerHour = Minutes > 0 and Gained / Minutes * 60 or 0
+return Gained, PerHour
 end
 AICFeature.GetExpProgress = function()
 return Feature:GetExpProgress()
@@ -296,22 +297,21 @@ if CONFIG.DISCORD_FORMAT == FORMAT_EXP then
 table.insert(Lines, "**Current Level:** " .. tostring(Level or 0))
 table.insert(Lines, string.format(
 "Current EXP: %s/%s",
-tostring(Exp or 0),
-tostring(NeededExp(Level) or 0)
+FormatCount(Exp or 0),
+FormatCount(NeededExp(Level) or 0)
 ))
-local Gained, PerHour, PerMinute = self:GetExpProgress()
+local Gained, PerHour = self:GetExpProgress()
 if Gained then
-table.insert(Lines, "**Total EXP Gained:** " .. FormatCount(Gained))
-table.insert(Lines, "EXP / Hour: " .. FormatCount(PerHour))
-table.insert(Lines, "EXP / Minute: " .. FormatCount(PerMinute))
+table.insert(Lines, "**Session EXP Gained:** " .. FormatCount(Gained))
+table.insert(Lines, "**Average EXP / Hour:** " .. FormatCount(PerHour))
 end
 if Ending then
 local StartLevel = self.S.StartLevel or Level or 0
 table.insert(Lines, "**Starting Level:** " .. tostring(StartLevel))
 table.insert(Lines, string.format(
 "Starting EXP: %s/%s",
-tostring(self.S.StartExp or Exp or 0),
-tostring(NeededExp(StartLevel) or 0)
+FormatCount(self.S.StartExp or Exp or 0),
+FormatCount(NeededExp(StartLevel) or 0)
 ))
 end
 else
@@ -569,13 +569,12 @@ local Text = string.format(
 S.StartedEpoch and ClockAt(S.StartedEpoch) or tostring(S.StartedClock or "--"),
 FormatDuration(Feature:GetElapsed())
 )
-local Gained, PerHour, PerMinute = Feature:GetExpProgress()
+local Gained, PerHour = Feature:GetExpProgress()
 if Gained then
 Text = Text .. string.format(
-"   ·   EXP +%s   ·   %s/h   ·   %s/m",
+"   ·   EXP +%s   ·   AVG %s/h",
 FormatCount(Gained),
-FormatCount(PerHour),
-FormatCount(PerMinute)
+FormatCount(PerHour)
 )
 end
 SessionLabel:Set(Text)
@@ -1796,23 +1795,27 @@ if UIRef.EventCurrencyLabel then
 UIRef.EventCurrencyLabel:Set(AICUI.FormatEventCurrency(Amount))
 end
 end
+local function FormatCount(Value)
+local Text = tostring(math.max(0, math.floor(tonumber(Value) or 0)))
+local Groups = {}
+while #Text > 3 do
+table.insert(Groups, 1, string.sub(Text, -3))
+Text = string.sub(Text, 1, -4)
+end
+table.insert(Groups, 1, Text)
+return table.concat(Groups, ",")
+end
 local function UpdateExpRates()
-if not UIRef.ExpHourLabel and not UIRef.ExpMinuteLabel then
+if not UIRef.ExpHourLabel then
 return
 end
 local ReadProgress = AICFeature.GetExpProgress
-local Gained, PerHour, PerMinute
+local Gained, PerHour
 if type(ReadProgress) == "function" then
-Gained, PerHour, PerMinute = ReadProgress()
+Gained, PerHour = ReadProgress()
 end
-local PerHourText = Gained ~= nil and tostring(math.floor(PerHour or 0)) or "--"
-local PerMinuteText = Gained ~= nil and tostring(math.floor(PerMinute or 0)) or "--"
-if UIRef.ExpHourLabel then
-UIRef.ExpHourLabel:Set("EXP / HOUR     " .. PerHourText)
-end
-if UIRef.ExpMinuteLabel then
-UIRef.ExpMinuteLabel:Set("EXP / MINUTE   " .. PerMinuteText)
-end
+local PerHourText = Gained ~= nil and FormatCount(PerHour) or "--"
+UIRef.ExpHourLabel:Set("AVG EXP / HOUR  " .. PerHourText)
 end
 function AICUI.updateEventCurrency()
 UpdateExpRates()
