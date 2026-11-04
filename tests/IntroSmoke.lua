@@ -47,8 +47,15 @@ end
 run(nil)
 assert(waits > 5, "intro returned before completing its animation sequence")
 local boot = { Ready = false }
+local revealedAt
+boot.RevealMenu = function()
+    assert(boot.Ready and boot.HeartbeatStarted, "menu revealed before boot readiness")
+    assert(playerGui:FindFirstChild("GildedArchiveIntro"), "menu was not prepared until after intro removal")
+    revealedAt = waits
+end
 run(nil, boot)
 assert(boot.HeartbeatStarted and waits > 12, "intro did not wait for heartbeat readiness before exiting")
+assert(revealedAt == 12 and waits > revealedAt, "menu was not revealed before the intro exit animation")
 run(1)
 assert(waits == 1, "a cancelled intro kept playing")
 local create = TweenService.Create

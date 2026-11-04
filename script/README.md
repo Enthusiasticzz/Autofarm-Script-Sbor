@@ -23,8 +23,9 @@ time and starts them in dependency order. It needs an executor (`loadstring`,
 `game:HttpGet`, `LocalPlayer`/`PlayerGui`).
 
 Startup plays `Intro.lua` while loading the modules and starting the heartbeat
-behind it. Once startup is ready, the intro fades out, removes its blur and
-reveals the menu. The intro plays once per script execution;
+behind it. Once startup is ready, the menu is rendered under the opaque intro
+before its exit fade, so it is already in place as the intro and blur disappear.
+The intro plays once per script execution;
 reopening the menu with its hotkey does not replay it.
 
 

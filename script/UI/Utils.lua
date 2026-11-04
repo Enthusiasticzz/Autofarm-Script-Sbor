@@ -895,6 +895,11 @@ end
 -- A booting window cannot be opened by a hotkey or expose its cursor/UI.
 function Library:SetStartupHidden(hidden)
 	self.StartupHidden = hidden == true
+	if not self.StartupHidden then
+		if self._scaleTw then self._scaleTw:Cancel(); self._scaleTw = nil end
+		self.Scale.Scale = self.BaseScale
+		self._open = true
+	end
 	self.Gui.Enabled = not self.StartupHidden
 	self.CursorGui.Enabled = not self.StartupHidden
 	self.Root.Visible = not self.StartupHidden
@@ -2618,8 +2623,9 @@ function Section:AddPriority(name, values, options)
 	local minValue = tonumber(options.Min) or 0
 	local maxValue = tonumber(options.Max) or math.huge
 
-	local header = self:_row((hasValues or hasChecks) and 46 or 36)
-	lib:Label(header, string.upper(tostring(name or "")), {
+	local header = self:_row(32)
+	local caption = self.Title == name and "Saved entries" or tostring(name or "")
+	lib:Label(header, caption, {
 		Bold = true,
 		TextSize = 12,
 		Position = UDim2.fromOffset(14, 7),
@@ -2636,28 +2642,7 @@ function Section:AddPriority(name, values, options)
 	})
 	countLabel.AnchorPoint = Vector2.new(1, 0)
 	countLabel.TextXAlignment = Enum.TextXAlignment.Right
-
-	--// A count sits over its own column instead of a caption floating at the
-	--// left where it described nothing.
-	if hasValues then
-		local cap = lib:Label(header, string.upper(tostring(options.ValueLabel or "Value")), {
-			TextSize = 9,
-			Color = "SubText",
-			Position = UDim2.new(1, -108, 0, 24),
-			SizeUDim = UDim2.fromOffset(64, 12),
-		})
-		cap.AnchorPoint = Vector2.new(1, 0)
-		cap.TextXAlignment = Enum.TextXAlignment.Center
-	end
-	if hasChecks then
-		local cap = lib:Label(header, string.upper(tostring(options.CheckLabel or "Check")), {
-			TextSize = 9,
-			Color = "SubText",
-			Position = UDim2.fromOffset(14, 24),
-			SizeUDim = UDim2.fromOffset(20, 12),
-		})
-		cap.TextXAlignment = Enum.TextXAlignment.Center
-	end
+	lib:_attachTip(header, name, options.Description)
 
 	local listRow = self:_row(0, true)
 	listRow.Size = UDim2.new(1, 0, 0, 0)
@@ -2735,34 +2720,37 @@ function Section:AddPriority(name, values, options)
 	--// A small round-cornered glyph button on the right of a row: faint at rest
 	--// so a list of entries reads as text, and filled in under the pointer so
 	--// the controls are still visible as controls, not discovered by accident.
-	local function IconButton(parent, glyph, x, danger, textSize)
+	local function IconButton(parent, glyph, x, danger, textSize, label, enabled)
 		local button = New("TextButton", {
-			AnchorPoint = Vector2.new(1, .5),
-			Position = UDim2.new(1, x, .5, 0),
+			Name = label,
+			AnchorPoint = Vector2.new(1, 1),
+			Position = UDim2.new(1, x, 1, -6),
 			Size = UDim2.fromOffset(24, 24),
 			BackgroundColor3 = lib.Theme.Element,
-			BackgroundTransparency = 1,
+			BackgroundTransparency = .35,
 			BorderSizePixel = 0,
 			Text = glyph,
 			Font = Fonts.Bold,
 			TextSize = textSize or 11,
 			TextColor3 = danger and lib.Theme.Danger or lib.Theme.SubText,
-			TextTransparency = .35,
+			TextTransparency = enabled == false and .75 or 0,
+			Active = enabled ~= false,
 			AutoButtonColor = false,
 			Parent = parent,
 		})
 		Round(button, 6)
 		local stroke = Stroke(button, lib.Theme.Border, 1)
-		stroke.Transparency = 1
+		stroke.Transparency = .6
+		lib:_attachTip(button, label, label)
 		button.MouseEnter:Connect(function()
 			lib:Tween(button, { BackgroundTransparency = 0, BackgroundColor3 = (danger and lib.Theme.Danger) or lib.Theme.Element, TextTransparency = 0 }, .12)
 			lib:Tween(button, { TextColor3 = danger and lib.Theme.Window or lib.Theme.Text }, .12)
 			lib:Tween(stroke, { Transparency = .5 }, .12)
 		end)
 		button.MouseLeave:Connect(function()
-			lib:Tween(button, { BackgroundTransparency = 1, TextTransparency = .35 }, .12)
+			lib:Tween(button, { BackgroundTransparency = .35, TextTransparency = enabled == false and .75 or 0 }, .12)
 			lib:Tween(button, { TextColor3 = danger and lib.Theme.Danger or lib.Theme.SubText }, .12)
-			lib:Tween(stroke, { Transparency = 1 }, .12)
+			lib:Tween(stroke, { Transparency = .6 }, .12)
 		end)
 		return button
 	end
@@ -2799,9 +2787,8 @@ function Section:AddPriority(name, values, options)
 			return
 		end
 
-		--// Where the text has to stop: the count box and the three buttons sit
-		--// at the right, packed from the edge inwards.
-		local rightInset = hasValues and 172 or 100
+		-- Text uses the row width; editing actions occupy a separate bottom line.
+		local rightInset = 14
 
 		for index, value in ipairs(component.Priority) do
 			local shown, sub
@@ -2814,7 +2801,8 @@ function Section:AddPriority(name, values, options)
 
 			local row = New("Frame", {
 				LayoutOrder = index,
-				Size = UDim2.new(1, 0, 0, sub and 46 or 38),
+				Name = "ListEntry",
+				Size = UDim2.new(1, 0, 0, sub and 90 or 68),
 				BackgroundColor3 = lib.Theme.Element,
 				BackgroundTransparency = .45,
 				BorderSizePixel = 0,
@@ -2836,7 +2824,7 @@ function Section:AddPriority(name, values, options)
 				lib:Tween(rowStroke, { Transparency = .4 }, .12)
 			end)
 
-			Total += (sub and 46 or 38) + 5
+			Total += (sub and 90 or 68) + 5
 
 			local left = 14
 			if hasChecks then
@@ -2844,7 +2832,7 @@ function Section:AddPriority(name, values, options)
 				local check = New("TextButton", {
 					Size = UDim2.fromOffset(18, 18),
 					AnchorPoint = Vector2.new(0, .5),
-					Position = UDim2.new(0, 12, .5, 0),
+					Position = UDim2.fromOffset(12, 20),
 					BackgroundColor3 = checked and lib.Theme.Accent or lib.Theme.Element,
 					BorderSizePixel = 0,
 					Text = checked and "✓" or "",
@@ -2855,6 +2843,7 @@ function Section:AddPriority(name, values, options)
 					Parent = row,
 				})
 				Round(check, 5)
+				lib:_attachTip(check, options.CheckLabel or "Check", options.CheckLabel or "Check")
 				Stroke(check, checked and lib.Theme.Accent or lib.Theme.Border).Transparency = checked and 0 or .2
 				lib:_Connect(check.MouseButton1Click, function()
 					component:SetCheck(index, not component.Checks[index])
@@ -2867,32 +2856,40 @@ function Section:AddPriority(name, values, options)
 					Color = "Text",
 					TextSize = 12,
 					Position = UDim2.fromOffset(left, 7),
-					SizeUDim = UDim2.new(1, -(left + rightInset), 0, 15),
+					SizeUDim = UDim2.new(1, -(left + rightInset), 0, 28),
 				})
 				title.Font = Fonts.Medium
-				title.TextTruncate = Enum.TextTruncate.AtEnd
-				lib:Label(row, sub, {
+				title.TextTruncate = Enum.TextTruncate.None
+				title.TextWrapped = true
+				title.TextYAlignment = Enum.TextYAlignment.Top
+				local detail = lib:Label(row, sub, {
 					Color = "SubText",
 					TextSize = 10,
-					Position = UDim2.fromOffset(left, 24),
-					SizeUDim = UDim2.new(1, -(left + rightInset), 0, 13),
+					Position = UDim2.fromOffset(left, 36),
+					SizeUDim = UDim2.new(1, -(left + rightInset), 0, 22),
 				})
+				detail.TextWrapped = true
+				detail.TextTruncate = Enum.TextTruncate.None
+				detail.TextYAlignment = Enum.TextYAlignment.Top
 			else
 				local title = lib:Label(row, shown, {
 					Color = "Text",
 					TextSize = 12,
-					Position = UDim2.fromOffset(left, 0),
-					SizeUDim = UDim2.new(1, -(left + rightInset), 1, 0),
+					Position = UDim2.fromOffset(left, 7),
+					SizeUDim = UDim2.new(1, -(left + rightInset), 0, 28),
 				})
 				title.Font = Fonts.Medium
-				title.TextTruncate = Enum.TextTruncate.AtEnd
+				title.TextTruncate = Enum.TextTruncate.None
+				title.TextWrapped = true
+				title.TextYAlignment = Enum.TextYAlignment.Top
 			end
+			lib:_attachTip(row, shown, sub and (shown .. "\n" .. sub) or shown)
 
 			if component.OnSelect then
 				local select = New("TextButton", {
 					Name = "SelectEntry", BackgroundTransparency = 1, BorderSizePixel = 0,
 					Text = "", AutoButtonColor = false, Position = UDim2.fromOffset(left, 0),
-					Size = UDim2.new(1, -(left + rightInset), 1, 0), Parent = row,
+					Size = UDim2.new(1, -(left + rightInset), 0, sub and 58 or 36), Parent = row,
 				})
 				select.MouseButton1Click:Connect(function()
 					component.OnSelect(value)
@@ -2901,8 +2898,8 @@ function Section:AddPriority(name, values, options)
 
 			if hasValues then
 				local box = New("TextBox", {
-					AnchorPoint = Vector2.new(1, .5),
-					Position = UDim2.new(1, -98, .5, 0),
+					AnchorPoint = Vector2.new(0, 1),
+					Position = UDim2.new(0, 14, 1, -6),
 					Size = UDim2.fromOffset(64, 24),
 					BackgroundColor3 = lib.Theme.Window,
 					BackgroundTransparency = .25,
@@ -2916,6 +2913,7 @@ function Section:AddPriority(name, values, options)
 					Parent = row,
 				})
 				Round(box, 6)
+				lib:_attachTip(box, options.ValueLabel or "Value", options.ValueLabel or "Value")
 				local boxStroke = Stroke(box, lib.Theme.Border, 1)
 				boxStroke.Transparency = .2
 				lib:_focusStroke(box, boxStroke)
@@ -2933,9 +2931,9 @@ function Section:AddPriority(name, values, options)
 				end)
 			end
 
-			local up = IconButton(row, "▲", -66, false, 8)
-			local down = IconButton(row, "▼", -38, false, 8)
-			local remove = IconButton(row, "X", -10, true)
+			local up = IconButton(row, "↑", -66, false, 14, "Move up", index > 1)
+			local down = IconButton(row, "↓", -38, false, 14, "Move down", index < Count)
+			local remove = IconButton(row, "×", -10, true, 16, "Remove entry")
 
 			lib:_Connect(up.MouseButton1Click, function()
 				component:MoveUp(value)

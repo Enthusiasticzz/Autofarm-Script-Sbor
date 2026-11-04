@@ -265,7 +265,7 @@ assert(clipboard == "123456", "click did not copy the user ID")
 assert(#list.Priority == 1, "copy changed the list")
 local remove
 for _, child in ipairs(row:GetChildren()) do
-    if child:IsA("TextButton") and child.Text == "X" then remove = child end
+    if child:IsA("TextButton") and child.Name == "Remove entry" then remove = child end
 end
 assert(remove, "plain X remove button missing")
 remove.MouseButton1Click:Fire()
@@ -669,7 +669,7 @@ assert(firstRow, "the first hiding spot has no row")
 local removeButton
 
 for _, Node in ipairs(firstRow:GetChildren()) do
-    if Node:IsA("TextButton") and Node.Text == "X" then
+    if Node:IsA("TextButton") and Node.Name == "Remove entry" then
         removeButton = Node
     end
 end

@@ -296,6 +296,30 @@ Check("a priority list says how many entries it holds", function()
     priority:SetPriority({ "A", "B" }, { 3, 4 }, { true, false })
 end)
 
+Check("list actions leave room for names and preserve attached values", function()
+    local sec = tab:AddSection{ Title = "Saved destinations" }
+    local list = sec:AddPriority("Saved destinations", { "A long saved destination name", "Second destination" }, {
+        Values = true, Checks = true, ValueLabel = "Wait seconds",
+    })
+    list:SetPriority(list:GetPriority(), { 7, 9 }, { true, false })
+    local first
+    for _, child in ipairs(list.Holder:GetChildren()) do
+        if child.Name == "ListEntry" and child.LayoutOrder == 1 then first = child end
+    end
+    Expect(first ~= nil, "the first list entry is missing")
+    local label
+    for _, child in ipairs(first:GetChildren()) do
+        if child:IsA("TextLabel") and child.Text == "A long saved destination name" then label = child end
+    end
+    Expect(label and label.TextWrapped, "a long entry name cannot wrap")
+    Expect(label.Size.X.Offset == -54, "entry actions still consume the name column")
+    Expect(first:FindFirstChild("Move up").Active == false, "first entry has an active move-up action")
+    first:FindFirstChild("Move down").MouseButton1Click:Fire()
+    Expect(list.Priority[2] == "A long saved destination name", "the move action did not reorder the entry")
+    Expect(list.Values[2] == 7 and list.Checks[2], "reordering detached entry settings")
+    Expect(list.Frame.Size.Y.Offset <= 300, "the redesigned list lost its scroll height cap")
+end)
+
 Check("setting a toggle to what it already is does nothing", function()
     --// Auto Block syncs its own toggle from inside that toggle's callback.
     --// Without this, turning it on called itself until the stack ran out.
@@ -373,8 +397,12 @@ Check("startup keeps the menu hidden while features initialize", function()
     Expect(not hidden.CursorHolder.Visible, "startup exposed the custom cursor")
     hidden:FinishLoading(true)
     Expect(hidden.Loader == nil, "intro completion would reveal a second loader")
+    hidden.Scale.Scale = .1
+    local cancelled = false
+    hidden._scaleTw = { Cancel = function() cancelled = true end }
     hidden:SetStartupHidden(false)
     Expect(hidden.Gui.Enabled and hidden.Root.Visible, "ready menu was not revealed")
+    Expect(hidden.Scale.Scale == hidden.BaseScale and cancelled, "startup left a stale scale animation on the menu")
     hidden:Destroy()
 end)
 

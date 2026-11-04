@@ -354,6 +354,13 @@ local UI = nil
 local FETCH_SHARE = 0.5
 local Startup = { Ready = false, Failed = false, IntroDone = false }
 Context.Startup = Startup
+function Startup.RevealMenu()
+    if Startup.Revealed or Startup.Failed or not Startup.Ready or not Lifetime.Alive then return end
+    if UI then
+        UI:SetStartupHidden(false)
+        Startup.Revealed = true
+    end
+end
 
 local function report(Fraction, Text)
     if UI then
@@ -1023,7 +1030,7 @@ while not Startup.IntroDone and Lifetime.Alive do
     task.wait()
 end
 if Lifetime.Alive and Context.UI then
-    Context.UI:SetStartupHidden(false)
+    Startup.RevealMenu()
 end
 
 return Context

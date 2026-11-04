@@ -5034,9 +5034,18 @@ return {
             --// Hiding Spots: the list the hold picks from
             ----------------------------------------------------------------
 
-            ListSection:AddNote("Every hold picks one spot from this list at random, never the same one twice in a row. Keep one spot to always hide in the same place")
-
-            UIRef.EvadeListComponent = ListSection:AddPriority("Hiding Spots", {})
+            UIRef.EvadeListComponent = ListSection:AddPriority("Hiding Spots", {}, {
+                Description = "Every hold picks a spot at random, avoiding the last one. Keep one spot to always hide in the same place.",
+                Format = function(Label)
+                    local Index = table.find(BuildEvadeLabels(), Label)
+                    local Spot = Index and GetEvadeSpots()[Index]
+                    if Spot and Spot.Kind == "Prompt" then
+                        return string.format("#%d  %s", Index, Spot.Name ~= "" and Spot.Name or "Saved prompt"),
+                            string.format("PROMPT  ·  %.0f, %.0f, %.0f", Spot.X, Spot.Y, Spot.Z)
+                    end
+                    return Label, "Saved waypoint destination"
+                end,
+            })
 
             local ListMoveUp = UIRef.EvadeListComponent.MoveUp
             local ListMoveDown = UIRef.EvadeListComponent.MoveDown

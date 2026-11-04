@@ -573,6 +573,12 @@ while Context and Context.Startup and not Context.Startup.Ready do
 	if Context.Startup.Failed or not pause(0.1) then return end
 end
 
+-- Render the ready menu underneath the still-opaque scene. The exit title
+-- animation gives the client time to lay it out before the background fades.
+if Context and Context.Startup and Context.Startup.RevealMenu then
+	Context.Startup.RevealMenu()
+end
+
 -- EXIT: loading details soften away first. The two title lines follow with
 -- a tiny upward drift, then the atmosphere dissolves to the menu underneath.
 running = false
