@@ -3530,12 +3530,6 @@ return {
             end
         end
 
-        local function EvadeStep(Now)
-            return AICFeature.BossEvadeReady == true
-                and type(AICFeature.BossEvadeTick) == "function"
-                and AICFeature.BossEvadeTick(Now) == true
-        end
-
         ------------------------------------------------------------------------
         --// Boss route floor visualization (separate from the mob debugger).
         ------------------------------------------------------------------------

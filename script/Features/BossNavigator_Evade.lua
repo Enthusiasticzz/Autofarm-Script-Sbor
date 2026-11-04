@@ -886,6 +886,10 @@ return {
             ResetWalk()
         end
 
+        --// How the route ends a hold it did not start: StopRoute calls its
+        --// EndEvade, which forwards here.
+        AICFeature.BossEvadeEnd = EndEvade
+
         AICFeature.BossEvadeReady = true
 
         return { Name = "BossNavigator_Evade" }

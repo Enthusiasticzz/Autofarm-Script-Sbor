@@ -2084,11 +2084,6 @@ if AICFeature.BossEvadeReady == true and type(AICFeature.BossEvadeEnd) == "funct
 AICFeature.BossEvadeEnd(Now, Restart)
 end
 end
-local function EvadeStep(Now)
-return AICFeature.BossEvadeReady == true
-and type(AICFeature.BossEvadeTick) == "function"
-and AICFeature.BossEvadeTick(Now) == true
-end
 local VisualFolder
 local ColorSaveQueued = false
 local function QueueColorSave()
@@ -3540,6 +3535,7 @@ S.SkipSpotWaitNext = false
 SyncDeathMark()
 ResetWalk()
 end
+AICFeature.BossEvadeEnd = EndEvade
 AICFeature.BossEvadeReady = true
 return { Name = "BossNavigator_Evade" }
 end,
