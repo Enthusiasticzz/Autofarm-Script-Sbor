@@ -30,7 +30,7 @@ return {
             ["Party System"] = "Follows the Leader to their server with the tp friend command",
             ["Waypoint Loop"] = "Farms only the zones paired with waypoints, walking between them",
             ["Boss Route"] = "Walks the saved boss stops, fights at each and resets on its own timers",
-            ["Debug Visualizer"] = "Draws zones, waypoints and targets in the world",
+            ["Visualizer"] = "Draws zones, waypoints and targets in the world",
             ["Auto Mining"] = "Mines the Ore Priority ores inside mine zones",
             ["Auto Smithing"] = "Crafts the Recipe Priority recipes at a smithing table",
             ["Leave On Danger Group"] = "Blocks, then leaves when a Danger Group member joins",
@@ -55,13 +55,13 @@ return {
             ["Remove Stop"] = "Removes the selected boss stop",
             ["Loop Route"] = "Starts again at the first boss stop after the last one",
 
-            --// Debug Visualizer
-            ["Debug Waypoints"] = "Shows waypoint markers and the route",
-            ["Debug Farm Zones"] = "Shows the farm zone circles",
-            ["Debug Deadzones"] = "Shows the deadzone circles",
-            ["Debug Mine Zones"] = "Shows the mine zone circles",
-            ["Debug Ore Status"] = "Labels each ore with what Auto Mining thinks of it",
-            ["Debug Smithing Tables"] = "Labels each smithing table with its state",
+            --// Visualizer
+            ["Waypoints"] = "Shows waypoint markers and the route",
+            ["Farm Zones"] = "Shows the farm zone circles",
+            ["Deadzones"] = "Shows the deadzone circles",
+            ["Mine Zones"] = "Shows the mine zone circles",
+            ["Ore Status"] = "Labels each ore with what Auto Mining thinks of it",
+            ["Smithing Tables"] = "Labels each smithing table with its state",
             ["Radius Billboard Labels"] = "Shows each zone's number and radius over it",
 
             --// Combat and targets

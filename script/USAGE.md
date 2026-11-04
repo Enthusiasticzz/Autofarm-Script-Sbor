@@ -334,7 +334,7 @@ Auto Mining works only inside mine zones, so this section is what makes the rest
 - **Mine Zone Radius** (5–300, default 60) — size of the zone picked in **Edit Mine Zone**.
 - **Clear Mine Zones** — removes every mine zone, which stops mining until one is added again.
 - Any zone edit needs a profile: without one loaded it reports `CREATE / LOAD PROFILE FIRST`, and a built-in place preset is read-only ("DEFAULT PLACE_CONFIG IS READ-ONLY"). Load or create a profile first, then add zones.
-- Cross-reference: the Debug tab's **Debug Mine Zones** draws the zones and **Debug Ore Status** labels each ore with what mining thinks of it — `TARGET`, `CLAIMING`, `MINING  2.0s`, `READY  120 / 500`, `DONE  500 / 500`, `TAKEN  <player>`, `REGENERATING`, `OUTSIDE MINE ZONE`, `IN DEADZONE`, `NOT IN PRIORITY`, `UNREACHABLE`.
+- Cross-reference: the Utility tab's **Visualizer** section draws the zones; **Mine Zones** turns the circles on and **Ore Status** labels each ore with what mining thinks of it — `TARGET`, `CLAIMING`, `MINING  2.0s`, `READY  120 / 500`, `DONE  500 / 500`, `TAKEN  <player>`, `REGENERATING`, `OUTSIDE MINE ZONE`, `IN DEADZONE`, `NOT IN PRIORITY`, `UNREACHABLE`.
 
 ### Crafting tab
 
@@ -1035,24 +1035,11 @@ A read-only window on what the farm is doing, plus the Reset Stats button.
 - **PLACE ID**, **WALKSPEED**, **WAYPOINTS:  n / m**, **FALLEN CAMELLIA**, **PLAY TIME**, **POSITION**, **DEATH**, **EXP** (readouts) — the current place, walk speed, route progress, the event currency, time on the server, position, death count and experience. The event currency line is named after the currency this event hands out and counts the inventory item of that name (`AICUI.S.TargetCurrency` in `Core/Runtime.lua`), so it is renamed when the event's currency changes.
 - **Reset Stats** (button) — fires `StatsEvent` with 0 for Vitality, Agility, Luck, Strength and Defense. A stat at or above `STAT_RESET_THRESHOLD` (500) is refused with a notice: firing that many points at the game's anticheat trips it and the reset never lands, so 499 is the highest that resets.
 
-### Debug tab
-
-World-space drawing for the zones, routes and targets the farm uses. Everything here is saved per
-profile. **Debug Visualizer** (default on) is the master switch — off removes the debug folder from
-the workspace and nothing below draws; the toggles below it pick which overlays appear while it is
-on.
-- **Debug Waypoints** (default on) — waypoint markers and the route.
-- **Debug Farm Zones** (default on) — farm zone circles.
-- **Debug Deadzones** (default on) — deadzone circles.
-- **Debug Mine Zones** (default on) — mine zone circles.
-- **Debug Ore Status** (default on) — a label per ore with what Auto Mining thinks of it. Fed by Auto Mining, so it needs that feature running to update.
-- **Debug Smithing Tables** (default on) — a label per smithing table with its state. Fed by Auto Smithing the same way.
-- **Radius Billboard Labels** (default on) — each zone's number and radius over it.
-
 ### Utility tab
 
-Global controls that are about the client rather than the farm loop, plus the Discord report.
-Everything here is shared by every profile and PlaceId, so none of it is part of a profile export.
+Client controls and the Discord report live here, alongside the world visualizer. The client
+controls and webhook are shared by every profile and PlaceId; the visualizer options are saved per
+profile.
 
 - **Auto Start Game** (off, global) — clicks through the title screen into the game. Shared by every profile: it runs before a profile has been loaded.
 - **FPS Boost** (off, global) — turns off shadows, post effects, particles, lights and water waves for frames. Shared by every profile; it is about the machine, not the farm.
@@ -1068,6 +1055,21 @@ Everything here is shared by every profile and PlaceId, so none of it is part of
   in an unknown shape can be added from its real path. Executor only: pressing it needs one of
   the click methods GuiClick uses (`getconnections`, `firesignal`, `VirtualInputManager`, the real
   mouse).
+
+#### Visualizer
+
+World-space drawing for the zones, routes and targets the farm uses. Everything here is saved per
+profile. **Visualizer** (default on) is the master switch — off removes its folder from the
+workspace and nothing below draws; the toggles below it pick which overlays appear while it is
+on.
+
+- **Waypoints** (default on) — waypoint markers and the route.
+- **Farm Zones** (default on) — farm zone circles.
+- **Deadzones** (default on) — deadzone circles.
+- **Mine Zones** (default on) — mine zone circles.
+- **Ore Status** (default on) — a label per ore with what Auto Mining thinks of it. Fed by Auto Mining, so it needs that feature running to update.
+- **Smithing Tables** (default on) — a label per smithing table with its state. Fed by Auto Smithing the same way.
+- **Radius Billboard Labels** (default on) — each zone's number and radius over it.
 
 #### Webhook
 
@@ -1230,7 +1232,7 @@ clean. If `FARM STATE` is not updating at all:
    `MainWeld` child). A sword in the Backpack does not count and the script never
    takes it out for you. `(in-game check)` the name — the loop looks for `Sword`
    exactly.
-2. Check you are not standing in a deadzone (**Debug Deadzones** draws them) and
+2. Check you are not standing in a deadzone (**Deadzones** draws them) and
    that `PlayerStats` exists under your Player.
 3. Confirm the script actually started: the boot window reaching 100% and the tabs
    appearing means `Init.lua` got that far.

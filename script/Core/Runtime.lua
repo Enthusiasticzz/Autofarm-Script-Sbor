@@ -111,8 +111,7 @@ return {
         --// owned for each slot, ranked by the real damage/defence numbers in
         --// the game's item table (AutoEquip).
         UIRef.GearTab = UI:AddTab{ Name = "Gear", Description = "Put on the best gear you own, by damage or by the armour build you pick" }
-        UIRef.DebugTab = UI:AddTab{ Name = "Debug", Description = "Draw zones, waypoints and targets in the world" }
-        UIRef.UtilityTab = UI:AddTab{ Name = "Utility", Description = "Webhook reports and profiles" }
+        UIRef.UtilityTab = UI:AddTab{ Name = "Utility", Description = "Webhook reports, profiles and the world visualizer" }
         UIRef.UtilitySection = UIRef.UtilityTab:AddSection{ Title = "Utilities" }
         --// Discord reports (Webhook): URL, mention, duo and format in one
         --// place, on the tab about the machine rather than the farm.
@@ -133,7 +132,7 @@ return {
         --// when they run out.
         UIRef.BoosterSection = UIRef.FarmTab:AddSection{ Title = "Booster Reset" }
         UIRef.StatusSection = UIRef.StatusTab:AddSection{ Title = "Live Status" }
-        UIRef.DebugSection = UIRef.DebugTab:AddSection{ Title = "Debug Visualizer" }
+        UIRef.DebugSection = UIRef.UtilityTab:AddSection{ Title = "Visualizer" }
         UIRef.MineSection = UIRef.MineTab:AddSection{ Title = "Auto Mining" }
         UIRef.CraftSection = UIRef.CraftTab:AddSection{ Title = "Auto Smithing" }
         UIRef.PartySection = UIRef.PartyTab:AddSection{ Title = "Party System" }

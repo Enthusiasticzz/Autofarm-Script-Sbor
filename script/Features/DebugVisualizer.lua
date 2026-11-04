@@ -727,7 +727,7 @@ return {
         function Module:BuildLateUI()
             if UIRef.DebugSection then
                 FeatureState.DebugVisualizer.Button = UIRef.DebugSection:AddToggle{
-                    Name = "Debug Visualizer",
+                    Name = "Visualizer",
                     Default = FeatureState.DebugVisualizer.Enabled,
                     Callback = function(Value)
                         FeatureState.DebugVisualizer.Enabled = Value
@@ -747,7 +747,7 @@ return {
         function Module:CreateUI()
             if UIRef.DebugSection then
                 FeatureState.DebugWaypoints.Button = UIRef.DebugSection:AddToggle{
-                    Name = "Debug Waypoints",
+                    Name = "Waypoints",
                     Default = FeatureState.DebugWaypoints.Enabled,
                     Callback = function(Value)
                         FeatureState.DebugWaypoints.Enabled = Value
@@ -757,7 +757,7 @@ return {
                 }
 
                 FeatureState.DebugFarmZones.Button = UIRef.DebugSection:AddToggle{
-                    Name = "Debug Farm Zones",
+                    Name = "Farm Zones",
                     Default = FeatureState.DebugFarmZones.Enabled,
                     Callback = function(Value)
                         FeatureState.DebugFarmZones.Enabled = Value
@@ -767,7 +767,7 @@ return {
                 }
 
                 FeatureState.DebugDeadzones.Button = UIRef.DebugSection:AddToggle{
-                    Name = "Debug Deadzones",
+                    Name = "Deadzones",
                     Default = FeatureState.DebugDeadzones.Enabled,
                     Callback = function(Value)
                         FeatureState.DebugDeadzones.Enabled = Value
@@ -777,7 +777,7 @@ return {
                 }
 
                 FeatureState.DebugMineZones.Button = UIRef.DebugSection:AddToggle{
-                    Name = "Debug Mine Zones",
+                    Name = "Mine Zones",
                     Default = FeatureState.DebugMineZones.Enabled,
                     Callback = function(Value)
                         FeatureState.DebugMineZones.Enabled = Value
@@ -789,7 +789,7 @@ return {
                 --// Auto Mining feeds the billboards; turning this off drops
                 --// them on its next update.
                 FeatureState.DebugOres.Button = UIRef.DebugSection:AddToggle{
-                    Name = "Debug Ore Status",
+                    Name = "Ore Status",
                     Default = FeatureState.DebugOres.Enabled,
                     Callback = function(Value)
                         FeatureState.DebugOres.Enabled = Value
@@ -800,7 +800,7 @@ return {
                 --// Auto Smithing's billboards over smithing tables, same
                 --// arrangement as the ores.
                 FeatureState.DebugSmithing.Button = UIRef.DebugSection:AddToggle{
-                    Name = "Debug Smithing Tables",
+                    Name = "Smithing Tables",
                     Default = FeatureState.DebugSmithing.Enabled,
                     Callback = function(Value)
                         FeatureState.DebugSmithing.Enabled = Value

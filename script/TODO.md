@@ -1890,3 +1890,9 @@ Asked and answered from play, then applied:
 
 - **Moved:** **Path to Boss** from the left of the Bosses tab to the right, after **Add A Hiding Spot**. The section is created after that section, so it lays out at the bottom of the right column; its controls and behaviour are unchanged.
 - Checks: `luau-compile` clean on `Features/BossNavigator.lua`; bundle rebuilt; `run-bundle-check` 0 compile failures; `run-boot-probe` passes; `run-ui-smoke` 0 failed checks. Not run in game.
+
+## v4.23 — Debug Tab Folded Into Utility
+
+- **Moved:** the **Debug** tab is gone; its **Visualizer** section now sits on the **Utility** tab after **Webhook**.
+- **Renamed:** the section **Debug Visualizer** → **Visualizer**, and the toggles **Debug Waypoints**, **Debug Farm Zones**, **Debug Deadzones**, **Debug Mine Zones**, **Debug Ore Status** and **Debug Smithing Tables** → **Waypoints**, **Farm Zones**, **Deadzones**, **Mine Zones**, **Ore Status** and **Smithing Tables**. **Radius Billboard Labels** is unchanged. Internal feature keys, saved settings and keybinds were not renamed, so existing profiles still load.
+- Checks: `luau-compile` clean on `Core/Runtime.lua`, `Features/DebugVisualizer.lua` and `UI/Descriptions.lua`; bundle rebuilt; `run-bundle-check` 0 compile failures; `run-boot-probe` passes (including the tab/section assertions); `run-ui-smoke` 0 failed checks. Not run in game.
