@@ -39,7 +39,8 @@ workspace.CurrentCamera = {
     WorldToViewportPoint = function(_, p) return Vector3.new(400+p.X, 300-p.Y*10, p.Z), true end,
 }
 
-local function run(useDrawing)
+local function run(useDrawing, ownCharacter)
+    Players.LocalPlayer.Character = ownCharacter and target or nil
     Drawing = useDrawing and { new = function()
         return { Remove = function(self) self.Removed = true; self.Visible = false end }
     end } or nil
@@ -87,6 +88,8 @@ local function run(useDrawing)
     assert(not workspace:FindFirstChild("Outlines"), "outline folder survived cleanup")
     anchor.Position = Vector3.new(0,0,100)
 end
-run(false)
-run(true)
-print("ESP SMOKE PASSED: GUI, Drawing, outline range/death, text layout, cleanup")
+run(false, true)
+run(true, true)
+run(false, false)
+run(true, false)
+print("ESP SMOKE PASSED: own/other players, GUI, Drawing, outline range/death, text layout, cleanup")

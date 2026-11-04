@@ -12,7 +12,8 @@
 -- coloured box, and corner brackets instead of a closed box if that style is
 -- picked.
 --
--- Players are the models directly in workspace that have a Humanoid. Mobs are
+-- Players include the local character, so Player outline also outlines you.
+-- Characters are models directly in workspace that have a Humanoid. Mobs are
 -- the models in workspace.Mobs. Weapons are the Sword and Sword2 models on a
 -- player, or the mob's Weapon model.
 return {
@@ -919,8 +920,7 @@ return {
 
             if WantPlayer or WantWeapon then
                 for _, Child in ipairs(workspace:GetChildren()) do
-                    if Child:IsA("Model") and Child ~= Player.Character
-                        and Child:FindFirstChildOfClass("Humanoid") then
+                    if Child:IsA("Model") and Child:FindFirstChildOfClass("Humanoid") then
                         if WantPlayer then
                             Mark(Child, "Player")
                         end

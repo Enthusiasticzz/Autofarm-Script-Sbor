@@ -6041,8 +6041,7 @@ local WantMob = IsEnabled("Mob")
 local WantWeapon = IsEnabled("Weapon")
 if WantPlayer or WantWeapon then
 for _, Child in ipairs(workspace:GetChildren()) do
-if Child:IsA("Model") and Child ~= Player.Character
-and Child:FindFirstChildOfClass("Humanoid") then
+if Child:IsA("Model") and Child:FindFirstChildOfClass("Humanoid") then
 if WantPlayer then
 Mark(Child, "Player")
 end
