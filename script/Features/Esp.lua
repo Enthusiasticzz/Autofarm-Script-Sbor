@@ -1,10 +1,9 @@
 -- Esp outlines players, mobs and equipped weapons in the world.
 --
 -- Each enabled kind draws either an outline (Highlight) or a 2D box, never
--- both, and can add text around the box: the name with the HP under it above
--- the box, the level (and the EXP a mob gives) down its right side, the
--- distance below it.
--- Outlines live in a folder inside one ScreenGui. Boxes and labels are drawn
+-- both. Name and health form a compact block above the box; level, mob EXP
+-- and distance share one line below it. Outlines live in Workspace.
+-- Boxes and labels are drawn
 -- with the executor's Drawing API when it has one, because a Drawing object
 -- costs no GUI work per frame; otherwise they fall back to Frames and
 -- TextLabels inside that same ScreenGui.
@@ -49,10 +48,10 @@ return {
         --// Every piece of text is the same pixel size at any distance, like
         --// the popular ESP libraries. Change this one number to resize all
         --// of it.
-        local TEXT_SIZE = 16
+        local TEXT_SIZE = 14
         --// The Drawing font the text uses: UI, System, Plex or Monospace
         --// (some executors also have Roboto, Legacy, SourceSans, RobotoMono).
-        local TEXT_FONT_NAME = "Monospace"
+        local TEXT_FONT_NAME = "Plex"
 
         local KINDS = { "Player", "Mob", "Weapon" }
         local TITLES = { Player = "Players", Mob = "Mobs", Weapon = "Weapons" }
@@ -287,6 +286,7 @@ return {
             if Root then
                 pcall(function() Root:Destroy() end)
             end
+            if HighlightFolder then HighlightFolder:Destroy() end
             Root, HighlightFolder = nil, nil
             Clear()
 
@@ -315,7 +315,8 @@ return {
 
             local Folder = Instance.new("Folder")
             Folder.Name = "Outlines"
-            Folder.Parent = Gui
+            -- Highlights belong to the world render tree, not the UI tree.
+            Folder.Parent = workspace
 
             Root, HighlightFolder = Gui, Folder
             return Root
@@ -665,10 +666,12 @@ return {
             local Camera = workspace.CurrentCamera
             if Camera and Anchor and Anchor.Parent then
                 local Distance = (Anchor.Position - Camera.CFrame.Position).Magnitude
-                Bottom = math.floor(Distance + 0.5) .. "m"
+                Bottom = math.floor(Distance + 0.5) .. " studs"
             end
 
-            return { Name = Name, Hp = Hp, Right = table.concat(Right, "\n"), Bottom = Bottom }
+            if Bottom ~= "" then table.insert(Right, Bottom) end
+            local Ratio = Humanoid and Humanoid.MaxHealth > 0 and math.clamp(Humanoid.Health / Humanoid.MaxHealth, 0, 1) or 1
+            return { Name = Name, Hp = Hp, Bottom = table.concat(Right, "  ·  "), HealthRatio = Ratio }
         end
 
         local function SetLabelText(Target, Kind, Entry)
@@ -679,14 +682,27 @@ return {
             for _, Part in ipairs(Entry.TextParts) do
                 local Text = Texts[Part.Key] or ""
                 Part.Empty = Text == ""
+                Part.Color = Part.Key == "Name" and S.Kinds[Kind].Color
+                    or (Part.Key == "Hp" and Color3.fromRGB(245, 105, 105):Lerp(Color3.fromRGB(120, 225, 155), Texts.HealthRatio))
+                    or Color3.fromRGB(220, 225, 235)
 
                 Part.Lines = 1
                 for _ in string.gmatch(Text, "\n") do
                     Part.Lines += 1
                 end
 
-                if Part.Draw then Part.Draw.Text = Text end
-                if Part.Gui then Part.Gui.Text = Text end
+                -- Text.Position is the top of Drawing text, not its centre.
+                -- Cache its width on the text tick for viewport-safe placement.
+                Part.Width = math.max(30, #Text * TEXT_SIZE * .58)
+                if Part.Draw then
+                    Part.Draw.Text = Text
+                    Part.Draw.Color = Part.Color
+                    pcall(function() Part.Width = math.max(30, Part.Draw.TextBounds.X) end)
+                end
+                if Part.Gui then
+                    Part.Gui.Text = Text
+                    Part.Gui.TextColor3 = Part.Color
+                end
             end
         end
 
@@ -738,6 +754,7 @@ return {
             Highlight.Name = Kind
             Highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
             Highlight.FillTransparency = 1
+            Highlight.Enabled = false
             Highlight.OutlineColor = C.Color
             Highlight.OutlineTransparency = 0
             Highlight.Adornee = Target
@@ -793,7 +810,7 @@ return {
         --// One text object per piece. Weapons only have a name and a
         --// distance, so they get no HP or right-hand piece.
         local function AddLabel(Entry, Target, C, Kind)
-            local Keys = Kind == "Weapon" and { "Name", "Bottom" } or { "Name", "Hp", "Right", "Bottom" }
+            local Keys = Kind == "Weapon" and { "Name", "Bottom" } or { "Name", "Hp", "Bottom" }
             Entry.TextParts = {}
 
             for _, Key in ipairs(Keys) do
@@ -805,7 +822,7 @@ return {
                         Color = C.Color,
                         Size = TEXT_SIZE,
                         Font = TextFont,
-                        Center = Key ~= "Right",
+                        Center = true,
                         Transparency = 1,
                         Visible = false,
                     })
@@ -820,27 +837,16 @@ return {
                     Text.TextColor3 = C.Color
                     Text.TextStrokeColor3 = BLACK
                     Text.TextStrokeTransparency = 0
-                    Text.Font = Enum.Font.GothamBold
+                    Text.Font = Key == "Name" and Enum.Font.GothamBold or Enum.Font.GothamMedium
                     Text.TextSize = TEXT_SIZE
                     Text.Visible = false
                     Text.ZIndex = 3
 
-                    if Key == "Name" or Key == "Hp" then
-                        Text.AnchorPoint = Vector2.new(0.5, 1)
-                        Text.Size = UDim2.fromOffset(340, 40)
-                        Text.TextXAlignment = Enum.TextXAlignment.Center
-                        Text.TextYAlignment = Enum.TextYAlignment.Bottom
-                    elseif Key == "Bottom" then
-                        Text.AnchorPoint = Vector2.new(0.5, 0)
-                        Text.Size = UDim2.fromOffset(340, 40)
-                        Text.TextXAlignment = Enum.TextXAlignment.Center
-                        Text.TextYAlignment = Enum.TextYAlignment.Top
-                    else
-                        Text.AnchorPoint = Vector2.new(0, 0.5)
-                        Text.Size = UDim2.fromOffset(200, 100)
-                        Text.TextXAlignment = Enum.TextXAlignment.Left
-                        Text.TextYAlignment = Enum.TextYAlignment.Center
-                    end
+                    Text.AnchorPoint = Vector2.new(0.5, 0)
+                    Text.Size = UDim2.fromOffset(340, TEXT_SIZE + 4)
+                    Text.TextXAlignment = Enum.TextXAlignment.Center
+                    Text.TextYAlignment = Enum.TextYAlignment.Top
+                    Text.TextTruncate = Enum.TextTruncate.AtEnd
 
                     Text.Parent = Root
                     Part.Gui = Text
@@ -859,10 +865,10 @@ return {
             local C = S.Kinds[Kind]
             if not (C.Outline or C.Box or C.Label) then return end
 
-            local Entry = { Kind = Kind }
+            local Entry = { Kind = Kind, Humanoid = Target:FindFirstChildOfClass("Humanoid") }
 
             --// Measured first so the label can carry the distance straight away.
-            if C.Box or C.Label then
+            if C.Box or C.Label or C.Outline then
                 Measure(Target, Entry)
             end
 
@@ -951,8 +957,8 @@ return {
             --// first seen is picked up without one frame paying for every mob.
             local Measured = 0
             for Target, Entry in pairs(S.Entries) do
-                if Target.Parent and Entry.BoxHeight == nil
-                    and (Entry.Frame or Entry.BoxLines or Entry.TextParts) then
+                if Target.Parent and (Entry.BoxHeight == nil or not Entry.Anchor or not Entry.Anchor.Parent)
+                    and (Entry.Frame or Entry.BoxLines or Entry.TextParts or Entry.Highlight) then
                     if Measured >= MEASURE_PER_SCAN then break end
                     Measure(Target, Entry)
                     Measured += 1
@@ -998,12 +1004,12 @@ return {
             local Viewport = Camera.ViewportSize
             local Range = S.Settings.Range
 
-            for _, Entry in pairs(S.Entries) do
+            for Target, Entry in pairs(S.Entries) do
                 local Frame, ShadowFrame = Entry.Frame, Entry.ShadowFrame
                 local TextParts = Entry.TextParts
                 local Lines, Shadow = Entry.BoxLines, Entry.BoxShadow
 
-                if Frame or TextParts or Lines then
+                if Frame or TextParts or Lines or Entry.Highlight then
                     local X1, Y1, X2, Y2
                     local Anchor = Entry.Anchor
                     local Distance = math.huge
@@ -1013,9 +1019,15 @@ return {
                     --// move it but never resize or skew it.
                     if Anchor and Anchor.Parent then
                         Distance = (Anchor.Position - CameraPosition).Magnitude
-                        if Entry.BoxHeight and Distance <= Range then
+                        local Alive = not Entry.Humanoid or Entry.Humanoid.Health > 0
+                        if Entry.Highlight then
+                            Entry.Highlight.Enabled = Target.Parent ~= nil and Alive and Distance <= Range
+                        end
+                        if Target.Parent and Alive and Entry.BoxHeight and Distance <= Range then
                             X1, Y1, X2, Y2 = ProjectUpright(Anchor.Position, Entry, Camera)
                         end
+                    elseif Entry.Highlight then
+                        Entry.Highlight.Enabled = false
                     end
 
                     --// Off-screen targets are hidden rather than moved, so a
@@ -1085,49 +1097,42 @@ return {
                         end
                     end
 
-                    --// Text is spaced around the box rather than stacked on
-                    --// top of it: the HP just above the top edge with the name
-                    --// above that (each centred on its own, so they line up),
-                    --// the level (and a mob's EXP) down the right edge, the
-                    --// distance below the bottom edge.
+                    -- Drawing and GUI text share the same top-aligned layout.
                     if TextParts then
                         local Pad = 4 + Thickness
-                        local RowHeight = TextSize + 2
+                        local RowHeight = TextSize + 4
                         local HpHeight = Entry.HasHp and RowHeight or 0
                         local CenterX = X1 and (X1 + X2) * 0.5
-                        local MiddleY = X1 and (Y1 + Y2) * 0.5
+                        local BlockWidth = 30
+                        for _, Part in ipairs(TextParts) do
+                            BlockWidth = math.max(BlockWidth, Part.Width or 30)
+                        end
+                        BlockWidth = math.min(BlockWidth + 8, math.max(1, Viewport.X - 8))
+                        local TopY, BottomY
+                        if X1 then
+                            CenterX = math.clamp(CenterX, BlockWidth * .5 + 4, Viewport.X - BlockWidth * .5 - 4)
+                            BottomY = math.clamp(Y2 + Pad, 4, math.max(4, Viewport.Y - RowHeight - 4))
+                            TopY = Y1 - Pad - RowHeight - HpHeight
+                            if TopY < 4 then TopY = BottomY + RowHeight + 2 end
+                            TopY = math.clamp(TopY, 4, math.max(4, Viewport.Y - RowHeight - HpHeight - 4))
+                        end
 
                         for _, Part in ipairs(TextParts) do
                             local Show = X1 ~= nil and not Part.Empty
                             local Key = Part.Key
-                            local Block = Part.Lines * RowHeight * 0.5
+                            local Y = X1 and (Key == "Bottom" and BottomY or (TopY + (Key == "Hp" and RowHeight or 0)))
 
                             if Part.Draw then
                                 if Show then
                                     Part.Draw.Size = TextSize
-                                    if Key == "Hp" then
-                                        Part.Draw.Position = Vector2.new(CenterX, Y1 - Pad - Block)
-                                    elseif Key == "Name" then
-                                        Part.Draw.Position = Vector2.new(CenterX, Y1 - Pad - HpHeight - Block)
-                                    elseif Key == "Bottom" then
-                                        Part.Draw.Position = Vector2.new(CenterX, Y2 + Pad + Block)
-                                    else
-                                        Part.Draw.Position = Vector2.new(X2 + Pad, MiddleY - Block)
-                                    end
+                                    Part.Draw.Position = Vector2.new(CenterX, Y)
                                 end
                                 Part.Draw.Visible = Show
                             elseif Part.Gui then
                                 if Show and Part.Gui.Parent then
                                     Part.Gui.TextSize = TextSize
-                                    if Key == "Hp" then
-                                        Part.Gui.Position = UDim2.fromOffset(CenterX, Y1 - Pad)
-                                    elseif Key == "Name" then
-                                        Part.Gui.Position = UDim2.fromOffset(CenterX, Y1 - Pad - HpHeight)
-                                    elseif Key == "Bottom" then
-                                        Part.Gui.Position = UDim2.fromOffset(CenterX, Y2 + Pad)
-                                    else
-                                        Part.Gui.Position = UDim2.fromOffset(X2 + Pad, MiddleY)
-                                    end
+                                    Part.Gui.Position = UDim2.fromOffset(CenterX, Y)
+                                    Part.Gui.Size = UDim2.fromOffset(BlockWidth, RowHeight)
                                     Part.Gui.Visible = true
                                 else
                                     Part.Gui.Visible = false
@@ -1195,8 +1200,10 @@ return {
                     if Entry.Stroke then Entry.Stroke.Color = Color end
                     if Entry.TextParts then
                         for _, Part in ipairs(Entry.TextParts) do
-                            if Part.Gui then Part.Gui.TextColor3 = Color end
-                            if Part.Draw then Part.Draw.Color = Color end
+                            if Part.Key == "Name" then
+                                if Part.Gui then Part.Gui.TextColor3 = Color end
+                                if Part.Draw then Part.Draw.Color = Color end
+                            end
                         end
                     end
                     if Entry.BoxLines then
@@ -1333,6 +1340,7 @@ return {
             RenderConnection:Disconnect()
             Clear()
             if Root then Root:Destroy() end
+            if HighlightFolder then HighlightFolder:Destroy() end
         end)
 
         return Feature

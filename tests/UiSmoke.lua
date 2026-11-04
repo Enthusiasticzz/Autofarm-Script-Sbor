@@ -296,7 +296,7 @@ Check("a priority list says how many entries it holds", function()
     priority:SetPriority({ "A", "B" }, { 3, 4 }, { true, false })
 end)
 
-Check("list actions leave room for names and preserve attached values", function()
+Check("compact list actions preserve attached values", function()
     local sec = tab:AddSection{ Title = "Saved destinations" }
     local list = sec:AddPriority("Saved destinations", { "A long saved destination name", "Second destination" }, {
         Values = true, Checks = true, ValueLabel = "Wait seconds",
@@ -312,7 +312,8 @@ Check("list actions leave room for names and preserve attached values", function
         if child:IsA("TextLabel") and child.Text == "A long saved destination name" then label = child end
     end
     Expect(label and label.TextWrapped, "a long entry name cannot wrap")
-    Expect(label.Size.X.Offset == -54, "entry actions still consume the name column")
+    Expect(label.Size.X.Offset == -130, "compact columns overlap the name")
+    Expect(first.Size.Y.Offset <= 48, "the compact list still uses oversized cards")
     Expect(first:FindFirstChild("Move up").Active == false, "first entry has an active move-up action")
     first:FindFirstChild("Move down").MouseButton1Click:Fire()
     Expect(list.Priority[2] == "A long saved destination name", "the move action did not reorder the entry")

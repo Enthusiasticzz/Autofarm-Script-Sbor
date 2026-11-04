@@ -354,6 +354,10 @@ local UI = nil
 local FETCH_SHARE = 0.5
 local Startup = { Ready = false, Failed = false, IntroDone = false }
 Context.Startup = Startup
+function Startup.AttachIntro(Gui)
+    Startup.IntroGui = Gui
+    if UI and Gui.Parent then Gui.Parent = UI.Gui.Parent end
+end
 function Startup.RevealMenu()
     if Startup.Revealed or Startup.Failed or not Startup.Ready or not Lifetime.Alive then return end
     if UI then
@@ -497,6 +501,9 @@ local function createWindow(Utils)
 
     UI = Window
     Context.UI = Window
+    if Startup.IntroGui and Startup.IntroGui.Parent then
+        Startup.IntroGui.Parent = Window.Gui.Parent
+    end
 
     Lifetime.OnEnd(function()
         Window:Destroy()

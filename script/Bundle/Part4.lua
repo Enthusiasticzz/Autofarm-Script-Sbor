@@ -2572,6 +2572,14 @@ end,
 }
 UIRef.BossListComponent = UIRef.BossStopsSection:AddPriority("Boss Route", BuildLabels(), {
 Values = true,
+Format = function(Label)
+local Index = table.find(BuildLabels(), Label)
+local Stop = Index and GetStops()[Index]
+if not Stop then return Label end
+local Route = (Stop.Waypoint or 0) > 0 and ("WP" .. Stop.Waypoint) or "Walk"
+if #(Stop.Path or {}) > 0 then Route ..= " · " .. #Stop.Path .. " points" end
+return string.format("#%d  %s", Index, Stop.Label), Route
+end,
 ValueLabel = "Reset (s)",
 Default = AICConfig.DEFAULT_BOSS_RESET_WAIT,
 Min = 0,
@@ -5409,8 +5417,8 @@ local RunService = game:GetService("RunService")
 local SCAN_INTERVAL = 0.5
 local MEASURE_PER_SCAN = 12
 local LABEL_INTERVAL = 0.25
-local TEXT_SIZE = 16
-local TEXT_FONT_NAME = "Monospace"
+local TEXT_SIZE = 14
+local TEXT_FONT_NAME = "Plex"
 local KINDS = { "Player", "Mob", "Weapon" }
 local TITLES = { Player = "Players", Mob = "Mobs", Weapon = "Weapons" }
 local COLORS = {
@@ -5582,6 +5590,7 @@ end
 if Root then
 pcall(function() Root:Destroy() end)
 end
+if HighlightFolder then HighlightFolder:Destroy() end
 Root, HighlightFolder = nil, nil
 Clear()
 local Gui = Instance.new("ScreenGui")
@@ -5607,7 +5616,7 @@ return nil
 end
 local Folder = Instance.new("Folder")
 Folder.Name = "Outlines"
-Folder.Parent = Gui
+Folder.Parent = workspace
 Root, HighlightFolder = Gui, Folder
 return Root
 end
@@ -5834,9 +5843,11 @@ local Anchor = Entry and Entry.Anchor
 local Camera = workspace.CurrentCamera
 if Camera and Anchor and Anchor.Parent then
 local Distance = (Anchor.Position - Camera.CFrame.Position).Magnitude
-Bottom = math.floor(Distance + 0.5) .. "m"
+Bottom = math.floor(Distance + 0.5) .. " studs"
 end
-return { Name = Name, Hp = Hp, Right = table.concat(Right, "\n"), Bottom = Bottom }
+if Bottom ~= "" then table.insert(Right, Bottom) end
+local Ratio = Humanoid and Humanoid.MaxHealth > 0 and math.clamp(Humanoid.Health / Humanoid.MaxHealth, 0, 1) or 1
+return { Name = Name, Hp = Hp, Bottom = table.concat(Right, "  ·  "), HealthRatio = Ratio }
 end
 local function SetLabelText(Target, Kind, Entry)
 if not Entry.TextParts then return end
@@ -5845,12 +5856,23 @@ Entry.HasHp = (Texts.Hp or "") ~= ""
 for _, Part in ipairs(Entry.TextParts) do
 local Text = Texts[Part.Key] or ""
 Part.Empty = Text == ""
+Part.Color = Part.Key == "Name" and S.Kinds[Kind].Color
+or (Part.Key == "Hp" and Color3.fromRGB(245, 105, 105):Lerp(Color3.fromRGB(120, 225, 155), Texts.HealthRatio))
+or Color3.fromRGB(220, 225, 235)
 Part.Lines = 1
 for _ in string.gmatch(Text, "\n") do
 Part.Lines += 1
 end
-if Part.Draw then Part.Draw.Text = Text end
-if Part.Gui then Part.Gui.Text = Text end
+Part.Width = math.max(30, #Text * TEXT_SIZE * .58)
+if Part.Draw then
+Part.Draw.Text = Text
+Part.Draw.Color = Part.Color
+pcall(function() Part.Width = math.max(30, Part.Draw.TextBounds.X) end)
+end
+if Part.Gui then
+Part.Gui.Text = Text
+Part.Gui.TextColor3 = Part.Color
+end
 end
 end
 local function RefreshLabels()
@@ -5890,6 +5912,7 @@ local Highlight = Instance.new("Highlight")
 Highlight.Name = Kind
 Highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
 Highlight.FillTransparency = 1
+Highlight.Enabled = false
 Highlight.OutlineColor = C.Color
 Highlight.OutlineTransparency = 0
 Highlight.Adornee = Target
@@ -5934,7 +5957,7 @@ Entry.ShadowFrame, Entry.ShadowStroke = ShadowFrame, ShadowStroke
 end
 end
 local function AddLabel(Entry, Target, C, Kind)
-local Keys = Kind == "Weapon" and { "Name", "Bottom" } or { "Name", "Hp", "Right", "Bottom" }
+local Keys = Kind == "Weapon" and { "Name", "Bottom" } or { "Name", "Hp", "Bottom" }
 Entry.TextParts = {}
 for _, Key in ipairs(Keys) do
 local Part = { Key = Key, Lines = 1, Empty = true }
@@ -5944,7 +5967,7 @@ SetProps(DrawText, {
 Color = C.Color,
 Size = TEXT_SIZE,
 Font = TextFont,
-Center = Key ~= "Right",
+Center = true,
 Transparency = 1,
 Visible = false,
 })
@@ -5958,26 +5981,15 @@ Text.BackgroundTransparency = 1
 Text.TextColor3 = C.Color
 Text.TextStrokeColor3 = BLACK
 Text.TextStrokeTransparency = 0
-Text.Font = Enum.Font.GothamBold
+Text.Font = Key == "Name" and Enum.Font.GothamBold or Enum.Font.GothamMedium
 Text.TextSize = TEXT_SIZE
 Text.Visible = false
 Text.ZIndex = 3
-if Key == "Name" or Key == "Hp" then
-Text.AnchorPoint = Vector2.new(0.5, 1)
-Text.Size = UDim2.fromOffset(340, 40)
-Text.TextXAlignment = Enum.TextXAlignment.Center
-Text.TextYAlignment = Enum.TextYAlignment.Bottom
-elseif Key == "Bottom" then
 Text.AnchorPoint = Vector2.new(0.5, 0)
-Text.Size = UDim2.fromOffset(340, 40)
+Text.Size = UDim2.fromOffset(340, TEXT_SIZE + 4)
 Text.TextXAlignment = Enum.TextXAlignment.Center
 Text.TextYAlignment = Enum.TextYAlignment.Top
-else
-Text.AnchorPoint = Vector2.new(0, 0.5)
-Text.Size = UDim2.fromOffset(200, 100)
-Text.TextXAlignment = Enum.TextXAlignment.Left
-Text.TextYAlignment = Enum.TextYAlignment.Center
-end
+Text.TextTruncate = Enum.TextTruncate.AtEnd
 Text.Parent = Root
 Part.Gui = Text
 end
@@ -5990,8 +6002,8 @@ if not Target or Target.Parent == nil then return end
 if S.Entries[Target] then return end
 local C = S.Kinds[Kind]
 if not (C.Outline or C.Box or C.Label) then return end
-local Entry = { Kind = Kind }
-if C.Box or C.Label then
+local Entry = { Kind = Kind, Humanoid = Target:FindFirstChildOfClass("Humanoid") }
+if C.Box or C.Label or C.Outline then
 Measure(Target, Entry)
 end
 if C.Outline then
@@ -6062,8 +6074,8 @@ end
 end
 local Measured = 0
 for Target, Entry in pairs(S.Entries) do
-if Target.Parent and Entry.BoxHeight == nil
-and (Entry.Frame or Entry.BoxLines or Entry.TextParts) then
+if Target.Parent and (Entry.BoxHeight == nil or not Entry.Anchor or not Entry.Anchor.Parent)
+and (Entry.Frame or Entry.BoxLines or Entry.TextParts or Entry.Highlight) then
 if Measured >= MEASURE_PER_SCAN then break end
 Measure(Target, Entry)
 Measured += 1
@@ -6093,19 +6105,25 @@ if not Camera then return end
 local CameraPosition = Camera.CFrame.Position
 local Viewport = Camera.ViewportSize
 local Range = S.Settings.Range
-for _, Entry in pairs(S.Entries) do
+for Target, Entry in pairs(S.Entries) do
 local Frame, ShadowFrame = Entry.Frame, Entry.ShadowFrame
 local TextParts = Entry.TextParts
 local Lines, Shadow = Entry.BoxLines, Entry.BoxShadow
-if Frame or TextParts or Lines then
+if Frame or TextParts or Lines or Entry.Highlight then
 local X1, Y1, X2, Y2
 local Anchor = Entry.Anchor
 local Distance = math.huge
 if Anchor and Anchor.Parent then
 Distance = (Anchor.Position - CameraPosition).Magnitude
-if Entry.BoxHeight and Distance <= Range then
+local Alive = not Entry.Humanoid or Entry.Humanoid.Health > 0
+if Entry.Highlight then
+Entry.Highlight.Enabled = Target.Parent ~= nil and Alive and Distance <= Range
+end
+if Target.Parent and Alive and Entry.BoxHeight and Distance <= Range then
 X1, Y1, X2, Y2 = ProjectUpright(Anchor.Position, Entry, Camera)
 end
+elseif Entry.Highlight then
+Entry.Highlight.Enabled = false
 end
 if X1 and (X2 < 0 or Y2 < 0 or X1 > Viewport.X or Y1 > Viewport.Y) then
 X1 = nil
@@ -6164,40 +6182,37 @@ end
 end
 if TextParts then
 local Pad = 4 + Thickness
-local RowHeight = TextSize + 2
+local RowHeight = TextSize + 4
 local HpHeight = Entry.HasHp and RowHeight or 0
 local CenterX = X1 and (X1 + X2) * 0.5
-local MiddleY = X1 and (Y1 + Y2) * 0.5
+local BlockWidth = 30
+for _, Part in ipairs(TextParts) do
+BlockWidth = math.max(BlockWidth, Part.Width or 30)
+end
+BlockWidth = math.min(BlockWidth + 8, math.max(1, Viewport.X - 8))
+local TopY, BottomY
+if X1 then
+CenterX = math.clamp(CenterX, BlockWidth * .5 + 4, Viewport.X - BlockWidth * .5 - 4)
+BottomY = math.clamp(Y2 + Pad, 4, math.max(4, Viewport.Y - RowHeight - 4))
+TopY = Y1 - Pad - RowHeight - HpHeight
+if TopY < 4 then TopY = BottomY + RowHeight + 2 end
+TopY = math.clamp(TopY, 4, math.max(4, Viewport.Y - RowHeight - HpHeight - 4))
+end
 for _, Part in ipairs(TextParts) do
 local Show = X1 ~= nil and not Part.Empty
 local Key = Part.Key
-local Block = Part.Lines * RowHeight * 0.5
+local Y = X1 and (Key == "Bottom" and BottomY or (TopY + (Key == "Hp" and RowHeight or 0)))
 if Part.Draw then
 if Show then
 Part.Draw.Size = TextSize
-if Key == "Hp" then
-Part.Draw.Position = Vector2.new(CenterX, Y1 - Pad - Block)
-elseif Key == "Name" then
-Part.Draw.Position = Vector2.new(CenterX, Y1 - Pad - HpHeight - Block)
-elseif Key == "Bottom" then
-Part.Draw.Position = Vector2.new(CenterX, Y2 + Pad + Block)
-else
-Part.Draw.Position = Vector2.new(X2 + Pad, MiddleY - Block)
-end
+Part.Draw.Position = Vector2.new(CenterX, Y)
 end
 Part.Draw.Visible = Show
 elseif Part.Gui then
 if Show and Part.Gui.Parent then
 Part.Gui.TextSize = TextSize
-if Key == "Hp" then
-Part.Gui.Position = UDim2.fromOffset(CenterX, Y1 - Pad)
-elseif Key == "Name" then
-Part.Gui.Position = UDim2.fromOffset(CenterX, Y1 - Pad - HpHeight)
-elseif Key == "Bottom" then
-Part.Gui.Position = UDim2.fromOffset(CenterX, Y2 + Pad)
-else
-Part.Gui.Position = UDim2.fromOffset(X2 + Pad, MiddleY)
-end
+Part.Gui.Position = UDim2.fromOffset(CenterX, Y)
+Part.Gui.Size = UDim2.fromOffset(BlockWidth, RowHeight)
 Part.Gui.Visible = true
 else
 Part.Gui.Visible = false
@@ -6251,8 +6266,10 @@ if Entry.Highlight then Entry.Highlight.OutlineColor = Color end
 if Entry.Stroke then Entry.Stroke.Color = Color end
 if Entry.TextParts then
 for _, Part in ipairs(Entry.TextParts) do
+if Part.Key == "Name" then
 if Part.Gui then Part.Gui.TextColor3 = Color end
 if Part.Draw then Part.Draw.Color = Color end
+end
 end
 end
 if Entry.BoxLines then
@@ -6375,6 +6392,7 @@ end
 RenderConnection:Disconnect()
 Clear()
 if Root then Root:Destroy() end
+if HighlightFolder then HighlightFolder:Destroy() end
 end)
 return Feature
 end,

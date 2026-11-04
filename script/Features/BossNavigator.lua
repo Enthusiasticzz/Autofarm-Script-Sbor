@@ -4211,6 +4211,14 @@ return {
             --// whole pause, waited exactly. The reset is not held at all when it
             --// would cost nothing, unless Always Wait After Kill is on.
             Values = true,
+            Format = function(Label)
+                local Index = table.find(BuildLabels(), Label)
+                local Stop = Index and GetStops()[Index]
+                if not Stop then return Label end
+                local Route = (Stop.Waypoint or 0) > 0 and ("WP" .. Stop.Waypoint) or "Walk"
+                if #(Stop.Path or {}) > 0 then Route ..= " · " .. #Stop.Path .. " points" end
+                return string.format("#%d  %s", Index, Stop.Label), Route
+            end,
             ValueLabel = "Reset (s)",
             Default = AICConfig.DEFAULT_BOSS_RESET_WAIT,
             Min = 0,

@@ -37,9 +37,16 @@ playerGui.Parent = Players.LocalPlayer
 local function run(cancel, boot)
     waits, cancelAt = 0, cancel
     startup = boot
+    if boot then
+        boot.AttachIntro = function(gui)
+            boot.IntroGui = gui
+            gui.Parent = Services.CoreGui
+        end
+    end
     lifetime = { Alive = true, OnEnd = function(fn) cleanup = fn end }
     Intro.Start({ Lifetime = lifetime, Startup = startup })
     assert(not playerGui:FindFirstChild("GildedArchiveIntro"), "intro still covers the menu after Start returns")
+    assert(not Services.CoreGui:FindFirstChild("GildedArchiveIntro"), "intro in the menu container survived cleanup")
     assert(not lighting:FindFirstChild("GildedArchiveBlur"), "intro blur leaked")
     assert(topbar == false, "intro changed the original topbar state")
     cleanup() -- A later script replay must not restore stale UI state.
@@ -50,7 +57,8 @@ local boot = { Ready = false }
 local revealedAt
 boot.RevealMenu = function()
     assert(boot.Ready and boot.HeartbeatStarted, "menu revealed before boot readiness")
-    assert(playerGui:FindFirstChild("GildedArchiveIntro"), "menu was not prepared until after intro removal")
+    assert(boot.IntroGui and boot.IntroGui.Parent == Services.CoreGui, "intro and menu are in different UI containers")
+    assert(boot.IntroGui.DisplayOrder > 999999, "menu/ESP can cover the intro")
     revealedAt = waits
 end
 run(nil, boot)

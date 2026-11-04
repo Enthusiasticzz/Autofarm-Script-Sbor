@@ -2723,11 +2723,11 @@ function Section:AddPriority(name, values, options)
 	local function IconButton(parent, glyph, x, danger, textSize, label, enabled)
 		local button = New("TextButton", {
 			Name = label,
-			AnchorPoint = Vector2.new(1, 1),
-			Position = UDim2.new(1, x, 1, -6),
-			Size = UDim2.fromOffset(24, 24),
+			AnchorPoint = Vector2.new(1, .5),
+			Position = UDim2.new(1, x, .5, 0),
+			Size = UDim2.fromOffset(20, 20),
 			BackgroundColor3 = lib.Theme.Element,
-			BackgroundTransparency = .35,
+			BackgroundTransparency = 1,
 			BorderSizePixel = 0,
 			Text = glyph,
 			Font = Fonts.Bold,
@@ -2740,17 +2740,17 @@ function Section:AddPriority(name, values, options)
 		})
 		Round(button, 6)
 		local stroke = Stroke(button, lib.Theme.Border, 1)
-		stroke.Transparency = .6
+		stroke.Transparency = 1
 		lib:_attachTip(button, label, label)
 		button.MouseEnter:Connect(function()
-			lib:Tween(button, { BackgroundTransparency = 0, BackgroundColor3 = (danger and lib.Theme.Danger) or lib.Theme.Element, TextTransparency = 0 }, .12)
-			lib:Tween(button, { TextColor3 = danger and lib.Theme.Window or lib.Theme.Text }, .12)
+			lib:Tween(button, { BackgroundTransparency = .3, BackgroundColor3 = lib.Theme.Element, TextTransparency = 0 }, .12)
+			lib:Tween(button, { TextColor3 = danger and lib.Theme.Danger or lib.Theme.Text }, .12)
 			lib:Tween(stroke, { Transparency = .5 }, .12)
 		end)
 		button.MouseLeave:Connect(function()
-			lib:Tween(button, { BackgroundTransparency = .35, TextTransparency = enabled == false and .75 or 0 }, .12)
+			lib:Tween(button, { BackgroundTransparency = 1, TextTransparency = enabled == false and .75 or 0 }, .12)
 			lib:Tween(button, { TextColor3 = danger and lib.Theme.Danger or lib.Theme.SubText }, .12)
-			lib:Tween(stroke, { Transparency = .6 }, .12)
+			lib:Tween(stroke, { Transparency = 1 }, .12)
 		end)
 		return button
 	end
@@ -2787,8 +2787,8 @@ function Section:AddPriority(name, values, options)
 			return
 		end
 
-		-- Text uses the row width; editing actions occupy a separate bottom line.
-		local rightInset = 14
+		-- Compact table rows: description, optional value, then aligned actions.
+		local rightInset = hasValues and 90 or 54
 
 		for index, value in ipairs(component.Priority) do
 			local shown, sub
@@ -2802,29 +2802,27 @@ function Section:AddPriority(name, values, options)
 			local row = New("Frame", {
 				LayoutOrder = index,
 				Name = "ListEntry",
-				Size = UDim2.new(1, 0, 0, sub and 90 or 68),
+				Size = UDim2.new(1, 0, 0, sub and 48 or 40),
 				BackgroundColor3 = lib.Theme.Element,
-				BackgroundTransparency = .45,
+				BackgroundTransparency = .9,
 				BorderSizePixel = 0,
 				Parent = listFrame,
 			})
 			Round(row, 6)
 
 			local rowStroke = Stroke(row, lib.Theme.Border)
-			rowStroke.Transparency = .4
+			rowStroke.Transparency = 1
 
 			--// The whole row answers the pointer, so it reads as something that
 			--// can be moved and removed rather than a printed line.
 			row.MouseEnter:Connect(function()
-				lib:Tween(row, { BackgroundTransparency = .3 }, .12)
-				lib:Tween(rowStroke, { Transparency = .12 }, .12)
+				lib:Tween(row, { BackgroundTransparency = .65 }, .12)
 			end)
 			row.MouseLeave:Connect(function()
-				lib:Tween(row, { BackgroundTransparency = .45 }, .12)
-				lib:Tween(rowStroke, { Transparency = .4 }, .12)
+				lib:Tween(row, { BackgroundTransparency = .9 }, .12)
 			end)
 
-			Total += (sub and 90 or 68) + 5
+			Total += (sub and 48 or 40) + 5
 
 			local left = 14
 			if hasChecks then
@@ -2856,20 +2854,18 @@ function Section:AddPriority(name, values, options)
 					Color = "Text",
 					TextSize = 12,
 					Position = UDim2.fromOffset(left, 7),
-					SizeUDim = UDim2.new(1, -(left + rightInset), 0, 28),
+					SizeUDim = UDim2.new(1, -(left + rightInset), 0, 16),
 				})
 				title.Font = Fonts.Medium
-				title.TextTruncate = Enum.TextTruncate.None
-				title.TextWrapped = true
+				title.TextTruncate = Enum.TextTruncate.AtEnd
 				title.TextYAlignment = Enum.TextYAlignment.Top
 				local detail = lib:Label(row, sub, {
 					Color = "SubText",
 					TextSize = 10,
-					Position = UDim2.fromOffset(left, 36),
-					SizeUDim = UDim2.new(1, -(left + rightInset), 0, 22),
+					Position = UDim2.fromOffset(left, 26),
+					SizeUDim = UDim2.new(1, -(left + rightInset), 0, 14),
 				})
-				detail.TextWrapped = true
-				detail.TextTruncate = Enum.TextTruncate.None
+				detail.TextTruncate = Enum.TextTruncate.AtEnd
 				detail.TextYAlignment = Enum.TextYAlignment.Top
 			else
 				local title = lib:Label(row, shown, {
@@ -2889,7 +2885,7 @@ function Section:AddPriority(name, values, options)
 				local select = New("TextButton", {
 					Name = "SelectEntry", BackgroundTransparency = 1, BorderSizePixel = 0,
 					Text = "", AutoButtonColor = false, Position = UDim2.fromOffset(left, 0),
-					Size = UDim2.new(1, -(left + rightInset), 0, sub and 58 or 36), Parent = row,
+					Size = UDim2.new(1, -(left + rightInset), 1, 0), Parent = row,
 				})
 				select.MouseButton1Click:Connect(function()
 					component.OnSelect(value)
@@ -2898,9 +2894,9 @@ function Section:AddPriority(name, values, options)
 
 			if hasValues then
 				local box = New("TextBox", {
-					AnchorPoint = Vector2.new(0, 1),
-					Position = UDim2.new(0, 14, 1, -6),
-					Size = UDim2.fromOffset(64, 24),
+					AnchorPoint = Vector2.new(1, .5),
+					Position = UDim2.new(1, -52, .5, 0),
+					Size = UDim2.fromOffset(32, 22),
 					BackgroundColor3 = lib.Theme.Window,
 					BackgroundTransparency = .25,
 					BorderSizePixel = 0,
@@ -2931,9 +2927,13 @@ function Section:AddPriority(name, values, options)
 				end)
 			end
 
-			local up = IconButton(row, "↑", -66, false, 14, "Move up", index > 1)
-			local down = IconButton(row, "↓", -38, false, 14, "Move down", index < Count)
-			local remove = IconButton(row, "×", -10, true, 16, "Remove entry")
+			local up = IconButton(row, "↑", -28, false, 11, "Move up", index > 1)
+			local down = IconButton(row, "↓", -28, false, 11, "Move down", index < Count)
+			up.Position = UDim2.new(1, -28, .5, -9)
+			down.Position = UDim2.new(1, -28, .5, 9)
+			up.Size = UDim2.fromOffset(18, 16)
+			down.Size = UDim2.fromOffset(18, 16)
+			local remove = IconButton(row, "×", -6, true, 14, "Remove entry")
 
 			lib:_Connect(up.MouseButton1Click, function()
 				component:MoveUp(value)

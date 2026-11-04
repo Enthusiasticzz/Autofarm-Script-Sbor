@@ -67,9 +67,12 @@ gui = Instance.new("ScreenGui")
 gui.Name = "GildedArchiveIntro"
 gui.IgnoreGuiInset = true
 gui.ResetOnSpawn = false
-gui.DisplayOrder = 10000
+gui.DisplayOrder = 2147483647
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = playerGui
+if Context and Context.Startup and Context.Startup.AttachIntro then
+	Context.Startup.AttachIntro(gui)
+end
 
 -- CanvasGroup lets the entire composition fade together without separate
 -- elements popping out of sync.
