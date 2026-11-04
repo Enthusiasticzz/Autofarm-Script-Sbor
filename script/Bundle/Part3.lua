@@ -2626,13 +2626,13 @@ if not UIRef.FeatureSection then
 return
 end
 UIRef.ExecuteChargeSlider = AICUI.AddSettingSlider(
-UIRef.FeatureSection, "Execute Charge at HP%", "EXECUTE_CHARGE_HP_PERCENT", true
+UIRef.CombatSection, "Execute Charge at HP%", "EXECUTE_CHARGE_HP_PERCENT", true
 )
 UIRef.RetreatHealthSlider = AICUI.AddSettingSlider(
-UIRef.FeatureSection, "Retreat At HP%", "RETREAT_HEALTH_PERCENT", true
+UIRef.HealthSection, "Retreat At HP%", "RETREAT_HEALTH_PERCENT", true
 )
 UIRef.AutoHealHealthSlider = AICUI.AddSettingSlider(
-UIRef.FeatureSection, "Auto Heal at HP%", "AUTO_HEAL_HEALTH_PERCENT", true
+UIRef.HealthSection, "Auto Heal at HP%", "AUTO_HEAL_HEALTH_PERCENT", true
 )
 end
 if UIRef.StatusSection then
@@ -4040,9 +4040,9 @@ FeatureState.AutoPatrol.Enabled = self.Enabled
 end
 end
 function Feature:CreateUI()
-if UIRef.FeatureSection and UIRef.FeatureSection.AddToggle then
+if UIRef.NavigationSection and UIRef.NavigationSection.AddToggle then
 self.Enabled = FeatureState.AutoPatrol.Enabled == true
-self.Button = UIRef.FeatureSection:AddToggle{
+self.Button = UIRef.NavigationSection:AddToggle{
 Name = "Auto Patrol",
 Default = self.Enabled,
 Callback = function(Value)
@@ -6491,8 +6491,8 @@ if not Section or not Browser then
 return
 end
 local LoadRecipeList = BuildCraftSection(Section, Browser)
-local StatusSection = UIRef.CraftTab:AddSection{ Title = "Recipe Status" }
-local LoadReserveList = BuildReserveSection(UIRef.CraftTab:AddSection{ Title = "Material Reserve" })
+local StatusSection = UIRef.CraftTab:AddSection{ Title = "Recipe Status", Side = "Right" }
+local LoadReserveList = BuildReserveSection(UIRef.CraftTab:AddSection{ Title = "Material Reserve", Side = "Right" })
 function CraftUI.RefreshInfo()
 UIRef.SmithSkillLabel:Set("SMITHING SKILL  " .. tostring(Recipes:GetSkill()))
 local Saved = Runtime:GetPlaceConfig().SMITH_TABLE

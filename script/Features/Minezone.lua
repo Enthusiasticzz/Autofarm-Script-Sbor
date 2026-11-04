@@ -50,7 +50,7 @@ return {
             AICUI.SetProfileStatus(Status)
         end
 
-        UIRef.MineZoneSection = UIRef.MineTab:AddSection{ Title = "Mine Zone" }
+        UIRef.MineZoneSection = UIRef.MineTab:AddSection{ Title = "Mining Zones", Side = "Left" }
 
         UIRef.MineRadiusSlider = UIRef.MineZoneSection:AddSlider{
             Name = "Mine Zone Radius",

@@ -134,8 +134,8 @@ return {
             UIRef.ProfileDropdown:Set("Default Config", true)
         end
     end
-        UIRef.ProfileTab = UI:AddTab{ Name = "Profile Settings", Icon = UI:Icon("ProfileSettings", "rbxassetid://139006229418347") }
-        UIRef.ProfilesSection = UIRef.ProfileTab:AddSection{ Title = "Profiles" }
+        UIRef.ProfileTab = UI:AddTab{ Name = "Profiles & Routes", Icon = UI:Icon("ProfileSettings", "rbxassetid://139006229418347"), Description = "Saved profiles and waypoints on the left; farm boundaries and excluded zones on the right." }
+        UIRef.ProfilesSection = UIRef.ProfileTab:AddSection{ Title = "Saved Profiles", Side = "Left", Description = "Create, load, import and export" }
 
 UIRef.ProfileStatusLabel = UIRef.ProfilesSection:AddLabel("STATUS:  DEFAULT PLACE_CONFIG (READ-ONLY)")
 

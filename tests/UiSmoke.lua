@@ -367,6 +367,22 @@ Check("search", function()
     win:_search("")
 end)
 
+Check("section search keeps context and matches category names", function()
+    local t = win:AddTab{ Name = "Organized", Description = "Grouped controls" }
+    local s = t:AddSection{ Title = "Recovery", Description = "Health thresholds" }
+    s:AddToggle{ Name = "Potion", Default = false }
+    local control = s._lastRow
+    win:_search("recovery")
+    Expect(s.Frame.Visible and control.Visible, "section title search hid its controls")
+    Expect(s.Header.Visible, "section search hid the category header")
+    win:_search("potion")
+    Expect(s.Header.Visible and control.Visible, "control search lost its category context")
+    win:_search("no-such-control")
+    Expect(not s.Frame.Visible, "unmatched section remained visible")
+    win:_search("")
+    Expect(s.Frame.Visible and control.Visible, "clearing search did not restore the section")
+end)
+
 Check("the search box searches once, not per key", function()
     --// The search walks every row and every label in the menu. Running it on
     --// every keystroke is what made typing in the box feel heavy.

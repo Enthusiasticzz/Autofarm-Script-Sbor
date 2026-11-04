@@ -3946,43 +3946,56 @@ Utils = UtilsChunk()
 end
 UI = Utils.new{ Title = "GILDED ARCHIVES" }
 end
-UIRef.StatusTab = UI:AddTab{ Name = "Status", Icon = UI:Icon("Status", "rbxassetid://110833916970208"), Description = "Live readout: farm state, position, money, EXP and timers" }
+UIRef.StatusTab = UI:AddTab{ Name = "Overview", Icon = UI:Icon("Status", "rbxassetid://110833916970208"), Description = "Session progress on the left; client utilities on the right." }
 UIRef.FarmTab = UI:AddTab{ Name = "Farming", Icon = UI:Icon("Farming", "rbxassetid://133374538392505"), Description = "Waypoints, targets, combat and the rules the farm follows" }
 UIRef.BossTab = UI:AddTab{ Name = "Bosses", Icon = UI:Icon("Bosses", "rbxassetid://120519237137109"), Description = "Boss stops, their timers, when a reset is taken and how a stranger is evaded" }
-UIRef.EspTab = UI:AddTab{ Name = "ESP", Icon = UI:Icon("ESP", "rbxassetid://88721966949157"), Description = "Outline players, mobs and equipped weapons in the world" }
-UIRef.MineTab = UI:AddTab{ Name = "Mining", Icon = UI:Icon("Mining", "rbxassetid://72830736643456"), Description = "Ore priority and the mine zones Auto Mining works in" }
-UIRef.CraftTab = UI:AddTab{ Name = "Crafting", Icon = UI:Icon("Crafting", "rbxassetid://86086981959623"), Description = "Recipe priority, the materials kept in reserve and the tables" }
-UIRef.PartyTab = UI:AddTab{ Name = "Party", Icon = UI:Icon("Party", "rbxassetid://77490778358048"), Description = "Follow the leader between servers" }
-UIRef.ServerTab = UI:AddTab{ Name = "Server", Icon = UI:Icon("Server", "rbxassetid://103577755616730"), Description = "Rejoin, hop, job IDs and the player log" }
-UIRef.TeleportTab = UI:AddTab{ Name = "Teleport", Icon = UI:Icon("Teleport", "rbxassetid://88623751030168"), Description = "Doors and waypoints, by name or by number" }
-UIRef.QuestTab = UI:AddTab{ Name = "Quest", Icon = UI:Icon("Quest", "rbxassetid://125636928571624"), Description = "Walk to a quest giver, accept its quest and fight what it asks for" }
-UIRef.GearTab = UI:AddTab{ Name = "Gear", Icon = UI:Icon("Gear", "rbxassetid://74812344382135"), Description = "Put on the best gear you own, by damage or by the armour build you pick" }
-UIRef.UtilityTab = UI:AddTab{ Name = "Utility", Icon = UI:Icon("Utility", "rbxassetid://105423623486862"), Description = "Webhook reports, profiles and the world visualizer" }
-UIRef.UtilitySection = UIRef.UtilityTab:AddSection{ Title = "Utilities" }
-UIRef.WebhookSection = UIRef.UtilityTab:AddSection{ Title = "Webhook" }
-UIRef.FeatureSection = UIRef.FarmTab:AddSection{ Title = "Core" }
-UIRef.CoreSection = UIRef.FeatureSection
-UIRef.CombatSection = UIRef.FarmTab:AddSection{ Title = "Combat" }
-UIRef.TargetSection = UIRef.FarmTab:AddSection{ Title = "Targeting" }
-UIRef.BlockSection = UIRef.FarmTab:AddSection{ Title = "Auto Block" }
-UIRef.WhitelistSection = UIRef.FarmTab:AddSection{ Title = "Block Whitelist" }
-UIRef.GatherSection = UIRef.FarmTab:AddSection{ Title = "Mob Gather" }
-UIRef.BoosterSection = UIRef.FarmTab:AddSection{ Title = "Booster Reset" }
-UIRef.StatusSection = UIRef.StatusTab:AddSection{ Title = "Live Status" }
-UIRef.DebugSection = UIRef.UtilityTab:AddSection{ Title = "Visualizer" }
-UIRef.MineSection = UIRef.MineTab:AddSection{ Title = "Auto Mining" }
-UIRef.CraftSection = UIRef.CraftTab:AddSection{ Title = "Auto Smithing" }
-UIRef.PartySection = UIRef.PartyTab:AddSection{ Title = "Party System" }
-UIRef.ServerSection = UIRef.ServerTab:AddSection{ Title = "Current Server" }
-UIRef.ServerSafetySection = UIRef.ServerTab:AddSection{ Title = "Server Safety" }
-UIRef.ServerLogSection = UIRef.ServerTab:AddSection{ Title = "Player Log" }
-UIRef.DoorTeleportSection = UIRef.TeleportTab:AddSection{ Title = "Door Teleport" }
-UIRef.WaypointTeleportSection = UIRef.TeleportTab:AddSection{ Title = "Waypoint Teleport" }
-UIRef.GearSection = UIRef.GearTab:AddSection{ Title = "Auto Equip" }
-UIRef.QuestSection = UIRef.QuestTab:AddSection{ Title = "Auto Quest" }
-UIRef.QuestTrackerSection = UIRef.QuestTab:AddSection{ Title = "Quest Tracker" }
-UIRef.QuestHelperSection = UIRef.QuestTab:AddSection{ Title = "Quest Helper" }
-UIRef.QuestAssignSection = UIRef.QuestTab:AddSection{ Title = "Assign By ID" }
+UIRef.MineTab = UI:AddTab{ Name = "Resources", Icon = UI:Icon("Mining", "rbxassetid://72830736643456"), Description = "Mining and zones on the left; smithing, recipes and reserves on the right." }
+UIRef.CraftTab = UIRef.MineTab
+UIRef.QuestTab = UI:AddTab{ Name = "Character", Icon = UI:Icon("Quest", "rbxassetid://125636928571624"), Description = "Quest automation on the left; equipment and quest tools on the right." }
+UIRef.EspTab = UI:AddTab{ Name = "World", Icon = UI:Icon("ESP", "rbxassetid://88721966949157"), Description = "Travel and route visualization on the left; ESP overlays on the right." }
+UIRef.TeleportTab = UIRef.EspTab
+UIRef.ServerTab = UI:AddTab{ Name = "Server", Icon = UI:Icon("Server", "rbxassetid://103577755616730"), Description = "Server and party on the left; player safety and Discord reports on the right." }
+UIRef.PartyTab = UIRef.ServerTab
+UIRef.GearTab = UIRef.QuestTab
+UIRef.UtilityTab = UIRef.StatusTab
+UIRef.UtilitySection = UIRef.UtilityTab:AddSection{ Title = "Client Utilities", Side = "Right", Description = "Startup, recovery and performance" }
+UIRef.WebhookSection = UIRef.ServerTab:AddSection{ Title = "Discord Reports", Side = "Right", Description = "Report destination, format and session" }
+UIRef.FeatureSection = UIRef.FarmTab:AddSection{ Title = "Farm Controls", Side = "Left", Description = "Start and configure automatic farming" }
+UIRef.NavigationSection = UIRef.FarmTab:AddSection{ Title = "Navigation Rules", Side = "Left", Description = "Target seeking, patrol and zone return" }
+UIRef.CoreSection = UIRef.NavigationSection
+UIRef.HealthSection = UIRef.FarmTab:AddSection{ Title = "Health & Recovery", Side = "Right", Description = "Retreat and potion thresholds" }
+UIRef.CombatSection = UIRef.FarmTab:AddSection{ Title = "Combat Behavior", Side = "Right", Description = "Skills, spacing and movement in fights" }
+UIRef.TargetSection = UIRef.FarmTab:AddSection{ Title = "Enemy Priority", Side = "Left", Description = "Choose and rank what the farm attacks" }
+UIRef.BlockSection = UIRef.ServerTab:AddSection{ Title = "Stranger Protection", Side = "Right", Description = "Auto Block and departure rules" }
+UIRef.WhitelistSection = UIRef.ServerTab:AddSection{ Title = "Trusted Players", Side = "Right", Description = "Players excluded from Auto Block" }
+UIRef.GatherSection = UIRef.FarmTab:AddSection{ Title = "Mob Gather", Side = "Right", Description = "Group enemies before attacking" }
+UIRef.BoosterSection = UIRef.FarmTab:AddSection{ Title = "Booster Reset", Side = "Right", Description = "Reset rules when boosts expire" }
+UIRef.StatusSection = UIRef.StatusTab:AddSection{ Title = "Live Session", Side = "Left", Description = "Farm state, EXP, currency and timers" }
+UIRef.DebugSection = UIRef.EspTab:AddSection{ Title = "Route Visualizer", Side = "Left", Description = "Draw saved zones and waypoints" }
+UIRef.MineSection = UIRef.MineTab:AddSection{ Title = "Auto Mining", Side = "Left", Description = "Mining controls and ore priority" }
+UIRef.CraftSection = UIRef.CraftTab:AddSection{ Title = "Auto Smithing", Side = "Right", Description = "Crafting controls and recipe priority" }
+UIRef.PartySection = UIRef.PartyTab:AddSection{ Title = "Party Follow", Side = "Left" }
+UIRef.ServerSection = UIRef.ServerTab:AddSection{ Title = "Current Server", Side = "Left" }
+UIRef.ServerSafetySection = UIRef.ServerTab:AddSection{ Title = "Server Safety", Side = "Left" }
+UIRef.ServerLogSection = UIRef.ServerTab:AddSection{ Title = "Player Log", Side = "Left" }
+UIRef.DoorTeleportSection = UIRef.TeleportTab:AddSection{ Title = "Door Teleport", Side = "Left" }
+UIRef.WaypointTeleportSection = UIRef.TeleportTab:AddSection{ Title = "Waypoint Teleport", Side = "Left" }
+UIRef.GearSection = UIRef.GearTab:AddSection{ Title = "Auto Equip", Side = "Right", Description = "Weapon and armor build preferences" }
+UIRef.QuestSection = UIRef.QuestTab:AddSection{ Title = "Auto Quest", Side = "Left", Description = "Quest givers and automation controls" }
+UIRef.QuestTrackerSection = UIRef.QuestTab:AddSection{ Title = "Quest Tracker", Side = "Left" }
+UIRef.QuestHelperSection = UIRef.QuestTab:AddSection{ Title = "Quest Helper", Side = "Right" }
+UIRef.QuestAssignSection = UIRef.QuestTab:AddSection{ Title = "Assign Quest By ID", Side = "Right" }
+UIRef.BlockSection.Frame.LayoutOrder = 1
+UIRef.WhitelistSection.Frame.LayoutOrder = 2
+UIRef.WebhookSection.Frame.LayoutOrder = 3
+UIRef.ServerSection.Frame.LayoutOrder = 1
+UIRef.ServerSafetySection.Frame.LayoutOrder = 2
+UIRef.PartySection.Frame.LayoutOrder = 3
+UIRef.ServerLogSection.Frame.LayoutOrder = 4
+UIRef.TargetSection.Frame.LayoutOrder = 2
+UIRef.NavigationSection.Frame.LayoutOrder = 3
+UIRef.CombatSection.Frame.LayoutOrder = 1
+UIRef.HealthSection.Frame.LayoutOrder = 2
 local NotifyState = {
 GAP = 0.4,
 Last = -10,

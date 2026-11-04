@@ -1213,7 +1213,7 @@ return {
         ----------------------------------------------------------------------
 
         if UIRef.EspTab then
-            local SettingsSection = UIRef.EspTab:AddSection{ Title = "ESP Settings" }
+            local SettingsSection = UIRef.EspTab:AddSection{ Title = "ESP Settings", Side = "Right", Description = "Visibility and overlay distance" }
 
             Controls.BoxStyle = SettingsSection:AddDropdown{
                 Name = "Box style",
@@ -1259,7 +1259,7 @@ return {
 
             for _, Kind in ipairs(KINDS) do
                 local C = S.Kinds[Kind]
-                local Sec = UIRef.EspTab:AddSection{ Title = TITLES[Kind] }
+                local Sec = UIRef.EspTab:AddSection{ Title = TITLES[Kind], Side = "Right" }
 
                 Controls.Kinds[Kind] = Sec:AddToggle{
                     Name = Kind .. " ESP",

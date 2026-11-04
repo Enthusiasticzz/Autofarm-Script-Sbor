@@ -44,6 +44,21 @@ feature does, what it needs before it acts, and what its status line means.
 
 ## What's included
 
+The menu has nine tabs, including Settings. Each page describes its columns;
+section headers stay visible when searching for a control.
+
+| Tab | Contents |
+| --- | --- |
+| Overview | Live session status, EXP totals/rates, client utilities |
+| Farming | Farm controls, enemy priority, navigation, combat, health, boosts |
+| Bosses | Boss route, stops, travel, stranger holds and hiding spots |
+| Resources | Mining and zones (left), smithing and material reserves (right) |
+| Character | Quests and tracker (left), gear and quest tools (right) |
+| World | Teleports and route visualizer (left), ESP (right) |
+| Server | Server, party and player log (left), protection, trusted players and Discord reports (right) |
+| Profiles & Routes | Profiles and waypoints (left), farm boundaries and excluded zones (right) |
+| Settings | Appearance, input, notifications and window behavior |
+
 The feature modules, roughly grouped:
 
 - **Combat & farming** — AutoFarming, AutoBlock, SafeCombat, JumpWhileFighting,

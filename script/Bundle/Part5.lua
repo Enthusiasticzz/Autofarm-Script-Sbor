@@ -1646,8 +1646,8 @@ else
 UIRef.ProfileDropdown:Set("Default Config", true)
 end
 end
-UIRef.ProfileTab = UI:AddTab{ Name = "Profile Settings", Icon = UI:Icon("ProfileSettings", "rbxassetid://139006229418347") }
-UIRef.ProfilesSection = UIRef.ProfileTab:AddSection{ Title = "Profiles" }
+UIRef.ProfileTab = UI:AddTab{ Name = "Profiles & Routes", Icon = UI:Icon("ProfileSettings", "rbxassetid://139006229418347"), Description = "Saved profiles and waypoints on the left; farm boundaries and excluded zones on the right." }
+UIRef.ProfilesSection = UIRef.ProfileTab:AddSection{ Title = "Saved Profiles", Side = "Left", Description = "Create, load, import and export" }
 UIRef.ProfileStatusLabel = UIRef.ProfilesSection:AddLabel("STATUS:  DEFAULT PLACE_CONFIG (READ-ONLY)")
 UIRef.ProfileNameBox = UIRef.ProfilesSection:AddTextBox{
 Name = "Profile Name",
@@ -2633,9 +2633,9 @@ FeatureState.ReturnToFarmZone.Enabled = self.Enabled
 end
 end
 function Feature:CreateUI()
-if UIRef.FeatureSection and UIRef.FeatureSection.AddToggle then
+if UIRef.NavigationSection and UIRef.NavigationSection.AddToggle then
 self.Enabled = FeatureState.ReturnToFarmZone.Enabled == true
-self.Button = UIRef.FeatureSection:AddToggle{
+self.Button = UIRef.NavigationSection:AddToggle{
 Name = "Return To Farm Zone",
 Default = self.Enabled,
 Callback = function(Value)
@@ -6253,7 +6253,7 @@ local _, _, RootPart = Runtime:GetCharacter()
 return RootPart
 end
 local Module = {Name = "Waypoints", IsFeature = true}
-UIRef.WaypointSection = UIRef.ProfileTab:AddSection{ Title = "Waypoints" }
+UIRef.WaypointSection = UIRef.ProfileTab:AddSection{ Title = "Waypoint Route", Side = "Left", Description = "Travel stops and waypoint loop" }
 UIRef.WaypointSection:AddButton{
 Name = "Add Waypoint Here",
 Callback = function()

@@ -970,8 +970,8 @@ return {
             end
 
             local LoadRecipeList = BuildCraftSection(Section, Browser)
-            local StatusSection = UIRef.CraftTab:AddSection{ Title = "Recipe Status" }
-            local LoadReserveList = BuildReserveSection(UIRef.CraftTab:AddSection{ Title = "Material Reserve" })
+            local StatusSection = UIRef.CraftTab:AddSection{ Title = "Recipe Status", Side = "Right" }
+            local LoadReserveList = BuildReserveSection(UIRef.CraftTab:AddSection{ Title = "Material Reserve", Side = "Right" })
 
             function CraftUI.RefreshInfo()
                 UIRef.SmithSkillLabel:Set("SMITHING SKILL  " .. tostring(Recipes:GetSkill()))

@@ -16,7 +16,7 @@ return {
         end
 
         local Module = {Name = "Waypoints", IsFeature = true}
-        UIRef.WaypointSection = UIRef.ProfileTab:AddSection{ Title = "Waypoints" }
+        UIRef.WaypointSection = UIRef.ProfileTab:AddSection{ Title = "Waypoint Route", Side = "Left", Description = "Travel stops and waypoint loop" }
 
 UIRef.WaypointSection:AddButton{
     Name = "Add Waypoint Here",

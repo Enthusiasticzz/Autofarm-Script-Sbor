@@ -147,7 +147,7 @@ return {
             return table.find(AICUI.BuildZoneLabels(GetDeadzones(), "Deadzone"), Label)
         end
 
-        UIRef.DeadzoneSection = UIRef.ProfileTab:AddSection{ Title = "Deadzone" }
+        UIRef.DeadzoneSection = UIRef.ProfileTab:AddSection{ Title = "Excluded Zones", Side = "Right", Description = "Areas to avoid while fighting or travelling" }
 
         UIRef.DeadzoneRadiusSlider = UIRef.DeadzoneSection:AddSlider{
             Name = "Deadzone Radius",

@@ -15,7 +15,7 @@ return {
         end
 
         local Module = {Name = "Farmzone", IsFeature = true}
-        UIRef.FarmzoneSection = UIRef.ProfileTab:AddSection{ Title = "Farmzone" }
+        UIRef.FarmzoneSection = UIRef.ProfileTab:AddSection{ Title = "Farm Boundaries", Side = "Right", Description = "Where targets and farming are allowed" }
         UIRef.FarmzoneSection = UIRef.FarmzoneSection
 
 UIRef.FarmRadiusSlider = UIRef.FarmzoneSection:AddSlider{

@@ -4269,7 +4269,7 @@ end
 local function FindDeadzoneIndex(Label)
 return table.find(AICUI.BuildZoneLabels(GetDeadzones(), "Deadzone"), Label)
 end
-UIRef.DeadzoneSection = UIRef.ProfileTab:AddSection{ Title = "Deadzone" }
+UIRef.DeadzoneSection = UIRef.ProfileTab:AddSection{ Title = "Excluded Zones", Side = "Right", Description = "Areas to avoid while fighting or travelling" }
 UIRef.DeadzoneRadiusSlider = UIRef.DeadzoneSection:AddSlider{
 Name = "Deadzone Radius",
 Default = 35,
@@ -6254,7 +6254,7 @@ end
 end
 end
 if UIRef.EspTab then
-local SettingsSection = UIRef.EspTab:AddSection{ Title = "ESP Settings" }
+local SettingsSection = UIRef.EspTab:AddSection{ Title = "ESP Settings", Side = "Right", Description = "Visibility and overlay distance" }
 Controls.BoxStyle = SettingsSection:AddDropdown{
 Name = "Box style",
 Options = BOX_STYLES,
@@ -6298,7 +6298,7 @@ end,
 }
 for _, Kind in ipairs(KINDS) do
 local C = S.Kinds[Kind]
-local Sec = UIRef.EspTab:AddSection{ Title = TITLES[Kind] }
+local Sec = UIRef.EspTab:AddSection{ Title = TITLES[Kind], Side = "Right" }
 Controls.Kinds[Kind] = Sec:AddToggle{
 Name = Kind .. " ESP",
 Bold = true,
@@ -6387,7 +6387,7 @@ local _, _, RootPart = Runtime:GetCharacter()
 return RootPart
 end
 local Module = {Name = "Farmzone", IsFeature = true}
-UIRef.FarmzoneSection = UIRef.ProfileTab:AddSection{ Title = "Farmzone" }
+UIRef.FarmzoneSection = UIRef.ProfileTab:AddSection{ Title = "Farm Boundaries", Side = "Right", Description = "Where targets and farming are allowed" }
 UIRef.FarmzoneSection = UIRef.FarmzoneSection
 UIRef.FarmRadiusSlider = UIRef.FarmzoneSection:AddSlider{
 Name = "Farm Radius",
@@ -7055,6 +7055,7 @@ Start = function(Context)
 local AICFeature = Context.AICFeature
 local AICCombat = Context.AICCombat
 local AICUI = Context.AICUI
+local UIRef = Context.UIRef
 local PatrolState = Context.PatrolState
 local Feature = {
 Name = "IgnoreFarmZone",
@@ -7074,7 +7075,7 @@ AICFeature.S.FarmReturnPosition = nil
 AICFeature.S.LastFarmReturnCalculateTime = 0
 AICCombat.UpdateValidMobs()
 AICCombat.S.ClosestTarget = AICCombat.GetClosestGoblin()
-end)
+end, UIRef.NavigationSection)
 return Feature
 end,
 }
@@ -7139,7 +7140,7 @@ AICProfile.SaveActiveProfile()
 AICDebug.UpdateDebugVisualizer()
 AICUI.SetProfileStatus(Status)
 end
-UIRef.MineZoneSection = UIRef.MineTab:AddSection{ Title = "Mine Zone" }
+UIRef.MineZoneSection = UIRef.MineTab:AddSection{ Title = "Mining Zones", Side = "Left" }
 UIRef.MineRadiusSlider = UIRef.MineZoneSection:AddSlider{
 Name = "Mine Zone Radius",
 Default = DEFAULT_RADIUS,

@@ -164,18 +164,23 @@ local RuntimeTabs = {
     { Context.UIRef.BossTab, "Bosses", "120519237137109" },
     { Context.UIRef.EspTab, "ESP", "88721966949157" },
     { Context.UIRef.MineTab, "Mining", "72830736643456" },
-    { Context.UIRef.CraftTab, "Crafting", "86086981959623" },
-    { Context.UIRef.PartyTab, "Party", "77490778358048" },
     { Context.UIRef.ServerTab, "Server", "103577755616730" },
-    { Context.UIRef.TeleportTab, "Teleport", "88623751030168" },
     { Context.UIRef.QuestTab, "Quest", "125636928571624" },
-    { Context.UIRef.GearTab, "Gear", "74812344382135" },
-    { Context.UIRef.UtilityTab, "Utility", "105423623486862" },
 }
 
 for _, Entry in ipairs(RuntimeTabs) do
     assert(TabIcon(Entry[1]) == "rbxassetid://" .. Entry[3], Entry[2] .. " tab icon is missing")
 end
+
+assert(#UI.Tabs == 7, "runtime should build seven task-focused tabs")
+assert(Context.UIRef.CraftTab == Context.UIRef.MineTab, "resource pages were not consolidated")
+assert(Context.UIRef.GearTab == Context.UIRef.QuestTab, "character pages were not consolidated")
+assert(Context.UIRef.PartyTab == Context.UIRef.ServerTab, "party is not on Server")
+assert(Context.UIRef.TeleportTab == Context.UIRef.EspTab, "travel is not on World")
+assert(Context.UIRef.BlockSection.Tab == Context.UIRef.ServerTab, "player safety is not on Server")
+assert(Context.UIRef.WebhookSection.Tab == Context.UIRef.ServerTab, "reports are not on Server")
+assert(Context.UIRef.StatusTab.Heading, "the page has no visible heading")
+assert(Context.UIRef.TargetSection.Header, "the section has no distinct heading")
 
 print("runtime ok, tabs: " .. tostring(#UI.Tabs))
 
@@ -429,18 +434,18 @@ assert(boss.EvadeSection and boss.EvadeListSection and boss.EvadeAddSection, "ev
 assert(SectionTitle(boss.EvadeSection) == "Pause For Strangers", "the hold's title is not at the top of its section: " .. SectionTitle(boss.EvadeSection))
 assert(SectionTitle(boss.EvadeListSection) == "Hiding Spots", "the hiding-spot list's title is not at the top")
 assert(SectionTitle(boss.EvadeAddSection) == "Add A Hiding Spot", "the add-a-spot section's title is not at the top")
-assert(SectionTitle(boss.BlockSection) == "Auto Block", "the auto block title is not at the top of its section")
-assert(SectionTitle(boss.WhitelistSection) == "Block Whitelist", "the whitelist title is not at the top of its section")
-assert(boss.BlockSection.Tab == boss.FarmTab, "auto block is not on the farming tab")
+assert(SectionTitle(boss.BlockSection) == "Stranger Protection", "the auto block title is not at the top of its section")
+assert(SectionTitle(boss.WhitelistSection) == "Trusted Players", "the whitelist title is not at the top of its section")
+assert(boss.BlockSection.Tab == boss.ServerTab, "auto block is not on the server tab")
 assert(boss.DebugTab == nil, "debug tab still exists")
-assert(boss.DebugSection and boss.DebugSection.Tab == boss.UtilityTab, "visualizer is not on the utility tab")
-assert(SectionTitle(boss.DebugSection) == "Visualizer", "visualizer section title is wrong")
+assert(boss.DebugSection and boss.DebugSection.Tab == boss.EspTab, "visualizer is not on the World tab")
+assert(SectionTitle(boss.DebugSection) == "Route Visualizer", "visualizer section title is wrong")
 assert(boss.BossBoundsVisualToggle, "fight bounds toggle missing")
 assert(boss.BossDuoSyncToggle, "duo sync toggle missing")
 assert(boss.BossDuoNameBox, "duo sync name box missing")
 assert(boss.BossDuoRangeBox, "duo range box missing")
 assert(boss.BossDuoSyncToggle:Get() == false, "duo sync started on")
-assert(boss.WhitelistSection.Tab == boss.FarmTab, "the whitelist is not on the farming tab")
+assert(boss.WhitelistSection.Tab == boss.ServerTab, "the whitelist is not on the server tab")
 assert(boss.EvadePauseToggle, "pause for strangers toggle missing")
 assert(boss.EvadeListComponent, "hiding-spot list missing")
 assert(boss.EvadeWaypointBox and boss.EvadePromptButton, "hiding-spot controls missing")

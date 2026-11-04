@@ -1691,6 +1691,15 @@ function Library:AddTab(o)
 	New("UIPadding", { PaddingLeft = UDim.new(0,12), PaddingRight = UDim.new(0,16), PaddingTop = UDim.new(0,12), PaddingBottom = UDim.new(0,12), Parent = holder })
 	tab.Body = New("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1,0,0,0), AutomaticSize = Enum.AutomaticSize.Y, Parent = holder })
 	New("UIListLayout", { Padding = UDim.new(0,10), SortOrder = Enum.SortOrder.LayoutOrder, Parent = tab.Body })
+	-- Keep orientation visible on the page, rather than only in a hover tip.
+	local heading = New("Frame", { Name = "PageHeading", BackgroundTransparency = 1, Size = UDim2.new(1,0,0,o.Description and 66 or 32), LayoutOrder = 0, Parent = tab.Body })
+	self:Label(heading, tab.Name, { Bold = true, TextSize = 20, SizeUDim = UDim2.new(1,0,0,28) })
+	if o.Description then
+		local subtitle = self:Label(heading, o.Description, { Color = "SubText", TextSize = 13, Position = UDim2.fromOffset(0,30), SizeUDim = UDim2.new(1,0,0,34) })
+		subtitle.TextWrapped = true
+		subtitle.TextYAlignment = Enum.TextYAlignment.Top
+	end
+	tab.Heading = heading
 	tab.Page = page
 	b.MouseButton1Click:Connect(function() self:SelectTab(tab) end)
 
@@ -1722,7 +1731,7 @@ function Library:AddTab(o)
 			self._split.Count[side] += 1
 			parentFrame, order = self._split[side], self._split.Count[side]
 		end
-		local sec = setmetatable({ Win = win, Tab = self, _n = 0, Components = {} }, { __index = Library.Section })
+		local sec = setmetatable({ Win = win, Tab = self, Title = so.Title, Description = so.Description, _n = 0, Components = {} }, { __index = Library.Section })
 		sec.Frame = New("Frame", { Size = UDim2.new(1,0,0,0), AutomaticSize = Enum.AutomaticSize.Y, BorderSizePixel = 0, Active = true, LayoutOrder = order, Parent = parentFrame })
 		Round(sec.Frame, 8)
 		Blocks(sec.Frame)
@@ -1730,8 +1739,20 @@ function Library:AddTab(o)
 		win:Themed(Stroke(sec.Frame), { Color = "Border" })
 		New("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, Parent = sec.Frame })
 		if so.Title then
-			local r = sec:_row(34)
-			win:Label(r, so.Title, { Bold = true, TextSize = 15, Position = UDim2.fromOffset(14,0), SizeUDim = UDim2.new(1,-28,1,0) })
+			local r = sec:_row(so.Description and 70 or 42, true)
+			sec.Header = r
+			r.Name = "SectionHeading"
+			r.BackgroundTransparency = .25
+			win:Themed(r, { BackgroundColor3 = "Element" })
+			local accent = New("Frame", { BorderSizePixel = 0, Size = UDim2.new(0,3,1,-16), Position = UDim2.fromOffset(0,8), Parent = r })
+			win:Themed(accent, { BackgroundColor3 = "Accent" })
+			win:Label(r, so.Title, { Bold = true, TextSize = 15, Position = UDim2.fromOffset(14,4), SizeUDim = UDim2.new(1,-28,0,34) })
+			if so.Description then
+				local detail = win:Label(r, so.Description, { Color = "SubText", TextSize = 12, Position = UDim2.fromOffset(14,37), SizeUDim = UDim2.new(1,-28,0,30) })
+				detail.TextWrapped = true
+				detail.TextYAlignment = Enum.TextYAlignment.Top
+			end
+			sec._lastRow = nil
 		end
 		table.insert(self.Sections, sec)
 		return sec
@@ -1768,11 +1789,12 @@ function Library:_search(q)
 	for _, tab in ipairs(self.Tabs) do
 		for _, sec in ipairs(tab.Sections) do
 			local secAny = false
+			local sectionMatch = q ~= "" and ((sec.Title or "") .. " " .. (sec.Description or "")):lower():find(q, 1, true) ~= nil
 			for _, row in ipairs(sec.Frame:GetChildren()) do
 				-- A row is a Frame of controls; AddLabel adds its TextLabel
 				-- straight to the section, so it is searched by its own text.
-				if row:IsA("Frame") or row:IsA("TextLabel") then
-					local m = (q == "")
+				if row ~= sec.Header and (row:IsA("Frame") or row:IsA("TextLabel")) then
+					local m = (q == "" or sectionMatch)
 					if not m then
 						if row:IsA("TextLabel") then
 							m = row.Text:lower():find(q, 1, true) ~= nil
@@ -1789,6 +1811,7 @@ function Library:_search(q)
 					if m then secAny = true end
 				end
 			end
+			if sec.Header then sec.Header.Visible = true end
 			sec.Frame.Visible = secAny or q == ""
 			if secAny then matches[tab] = true end
 		end

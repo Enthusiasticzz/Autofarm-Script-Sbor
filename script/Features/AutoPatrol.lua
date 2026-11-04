@@ -589,9 +589,9 @@ return {
         end
 
         function Feature:CreateUI()
-            if UIRef.FeatureSection and UIRef.FeatureSection.AddToggle then
+            if UIRef.NavigationSection and UIRef.NavigationSection.AddToggle then
                 self.Enabled = FeatureState.AutoPatrol.Enabled == true
-                self.Button = UIRef.FeatureSection:AddToggle{
+                self.Button = UIRef.NavigationSection:AddToggle{
                     Name = "Auto Patrol",
                     Default = self.Enabled,
                     Callback = function(Value)

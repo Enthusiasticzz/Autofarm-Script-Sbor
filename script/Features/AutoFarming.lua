@@ -907,13 +907,13 @@ return {
 
             --// Ranges and defaults come from SaveConfig.Settings.
             UIRef.ExecuteChargeSlider = AICUI.AddSettingSlider(
-                UIRef.FeatureSection, "Execute Charge at HP%", "EXECUTE_CHARGE_HP_PERCENT", true
+                UIRef.CombatSection, "Execute Charge at HP%", "EXECUTE_CHARGE_HP_PERCENT", true
             )
             UIRef.RetreatHealthSlider = AICUI.AddSettingSlider(
-                UIRef.FeatureSection, "Retreat At HP%", "RETREAT_HEALTH_PERCENT", true
+                UIRef.HealthSection, "Retreat At HP%", "RETREAT_HEALTH_PERCENT", true
             )
             UIRef.AutoHealHealthSlider = AICUI.AddSettingSlider(
-                UIRef.FeatureSection, "Auto Heal at HP%", "AUTO_HEAL_HEALTH_PERCENT", true
+                UIRef.HealthSection, "Auto Heal at HP%", "AUTO_HEAL_HEALTH_PERCENT", true
             )
         end
 

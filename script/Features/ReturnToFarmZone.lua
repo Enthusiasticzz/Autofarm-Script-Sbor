@@ -170,11 +170,11 @@ return {
         end
 
         function Feature:CreateUI()
-            if UIRef.FeatureSection and UIRef.FeatureSection.AddToggle then
+            if UIRef.NavigationSection and UIRef.NavigationSection.AddToggle then
                 --// Defaults to on. Without this the toggle drew as off while the
                 --// return logic was actually running.
                 self.Enabled = FeatureState.ReturnToFarmZone.Enabled == true
-                self.Button = UIRef.FeatureSection:AddToggle{
+                self.Button = UIRef.NavigationSection:AddToggle{
                     Name = "Return To Farm Zone",
                     Default = self.Enabled,
                     Callback = function(Value)

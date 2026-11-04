@@ -7,6 +7,7 @@ return {
         local AICFeature = Context.AICFeature
         local AICCombat = Context.AICCombat
         local AICUI = Context.AICUI
+        local UIRef = Context.UIRef
         local PatrolState = Context.PatrolState
 
         local Feature = {
@@ -29,7 +30,7 @@ return {
             AICFeature.S.LastFarmReturnCalculateTime = 0
             AICCombat.UpdateValidMobs()
             AICCombat.S.ClosestTarget = AICCombat.GetClosestGoblin()
-        end)
+        end, UIRef.NavigationSection)
 
         return Feature
     end,
