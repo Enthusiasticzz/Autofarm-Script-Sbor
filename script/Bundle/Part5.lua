@@ -1646,7 +1646,7 @@ else
 UIRef.ProfileDropdown:Set("Default Config", true)
 end
 end
-UIRef.ProfileTab = UI:AddTab{ Name = "Profile Settings" }
+UIRef.ProfileTab = UI:AddTab{ Name = "Profile Settings", Icon = "rbxassetid://139006229418347" }
 UIRef.ProfilesSection = UIRef.ProfileTab:AddSection{ Title = "Profiles" }
 UIRef.ProfileStatusLabel = UIRef.ProfilesSection:AddLabel("STATUS:  DEFAULT PLACE_CONFIG (READ-ONLY)")
 UIRef.ProfileNameBox = UIRef.ProfilesSection:AddTextBox{

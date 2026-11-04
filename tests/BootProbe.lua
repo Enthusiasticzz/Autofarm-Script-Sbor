@@ -11,6 +11,14 @@ local TimeZones = TimeZonesModule.Start({})
 
 local UI = Library.new{ Title = "BOOT PROBE", ManualLoading = true }
 
+local function TabIcon(Tab)
+    for _, Child in ipairs(Tab.Button:GetChildren()) do
+        if Child.ClassName == "ImageLabel" then
+            return Child.Image
+        end
+    end
+end
+
 local noop = function() end
 local function Stub(name)
     return setmetatable({}, {
@@ -150,6 +158,25 @@ Context.Feature.ResetStats = Context.Feature.ResetStats or { Enabled = false }
 Context.Feature.AutoFarm = Context.Feature.AutoFarm or { Enabled = true }
 
 local AICUI = Context.AICUI
+local RuntimeTabs = {
+    { Context.UIRef.StatusTab, "Status", "110833916970208" },
+    { Context.UIRef.FarmTab, "Farming", "133374538392505" },
+    { Context.UIRef.BossTab, "Bosses", "120519237137109" },
+    { Context.UIRef.EspTab, "ESP", "88721966949157" },
+    { Context.UIRef.MineTab, "Mining", "72830736643456" },
+    { Context.UIRef.CraftTab, "Crafting", "86086981959623" },
+    { Context.UIRef.PartyTab, "Party", "77490778358048" },
+    { Context.UIRef.ServerTab, "Server", "103577755616730" },
+    { Context.UIRef.TeleportTab, "Teleport", "88623751030168" },
+    { Context.UIRef.QuestTab, "Quest", "125636928571624" },
+    { Context.UIRef.GearTab, "Gear", "74812344382135" },
+    { Context.UIRef.UtilityTab, "Utility", "105423623486862" },
+}
+
+for _, Entry in ipairs(RuntimeTabs) do
+    assert(TabIcon(Entry[1]) == "rbxassetid://" .. Entry[3], Entry[2] .. " tab icon is missing")
+end
+
 print("runtime ok, tabs: " .. tostring(#UI.Tabs))
 
 for _, name in ipairs({ "Components", "Bootstrap" }) do
@@ -276,6 +303,7 @@ Context.AICProfile.LoadProfile = function()
 end
 Context.AICProfile.ApplyDefaultPlaceConfig = function() defaultLoads += 1 end
 local ProfileSettings = ProfileSettingsModule.Start(Context)
+assert(TabIcon(Context.UIRef.ProfileTab) == "rbxassetid://139006229418347", "profile settings tab icon is missing")
 local updateFeatureButtons = Context.AICUI.updateFeatureButtons
 Context.AICUI.RefreshProfileDropdown()
 assert(Context.UIRef.ProfileDropdown:Get() == "Saved", "saved profile not displayed")

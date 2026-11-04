@@ -384,14 +384,16 @@ return {
         --// never built a toggle is skipped rather than faked.
         do
             local STATUS = {
-                { Label = "Auto Farm", Feature = "AutoFarm" },
-                { Label = "Auto Block", Feature = "AutoBlock" },
-                { Label = "Safe Combat", Feature = "SafeCombat" },
-                { Label = "Auto Skill", Feature = "AutoSkill" },
-                { Label = "Auto Mining", Feature = "AutoMining" },
-                { Label = "Auto Smithing", Feature = "AutoSmithing" },
-                { Label = "Waypoint Loop", Feature = "WaypointLoop" },
-                { Label = "Boss Route", Feature = "BossRoute" },
+                { Label = "Auto Farm", Feature = "AutoFarm", Icon = "rbxassetid://133374538392505" },
+                { Label = "Auto Block", Feature = "AutoBlock", Icon = "rbxassetid://125587936929367" },
+                { Label = "Safe Combat", Feature = "SafeCombat", Icon = "rbxassetid://107856876586024" },
+                { Label = "Auto Skill", Feature = "AutoSkill", Icon = "rbxassetid://72965291026814" },
+                { Label = "Auto Mining", Feature = "AutoMining", Icon = "rbxassetid://72830736643456" },
+                --// Auto Smithing had no ID of its own in the icon set; it is the
+                --// crafting quick action, so it shares the Crafting tab icon.
+                { Label = "Auto Smithing", Feature = "AutoSmithing", Icon = "rbxassetid://86086981959623" },
+                { Label = "Waypoint Loop", Feature = "WaypointLoop", Icon = "rbxassetid://123378225199598" },
+                { Label = "Boss Route", Feature = "BossRoute", Icon = "rbxassetid://126073685852021" },
             }
 
             local Icons = {}
@@ -403,6 +405,7 @@ return {
                 if type(Button) == "table" and type(Button.Get) == "function" then
                     local Icon = UI:AddStatusIcon{
                         Name = Entry.Label,
+                        Icon = Entry.Icon,
                         Callback = function(Value)
                             Button:Set(Value)
                         end,

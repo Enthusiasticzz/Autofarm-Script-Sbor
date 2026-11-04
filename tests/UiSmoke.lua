@@ -133,8 +133,13 @@ end)
 
 Check("status icons sit in the sidebar and toggle", function()
     local heard
-    local icon = win:AddStatusIcon{ Name = "Auto Farm", Callback = function(v) heard = v end }
+    local icon = win:AddStatusIcon{ Name = "Auto Farm", Icon = "rbxassetid://133374538392505", Callback = function(v) heard = v end }
     Expect(icon ~= nil, "no icon")
+    local image
+    for _, child in ipairs(icon.Button:GetChildren()) do
+        if child.ClassName == "ImageLabel" then image = child end
+    end
+    Expect(image and image.Image == "rbxassetid://133374538392505", "status icon did not use the asset image")
     Expect(icon.Button.Parent == win.Sidebar, "the icon is not in the sidebar")
     Expect(icon.Button.Position.Y.Scale == 1, "the icon is not docked to the bottom")
 
@@ -499,6 +504,11 @@ Check("loader + settings tab", function()
     win:SetLoadingProgress(nil, "Load failed", true)
     win:FinishLoading()
     Expect(win.SettingsTab ~= nil, "settings tab missing")
+    local settingsImage
+    for _, child in ipairs(win.SettingsTab.Button:GetChildren()) do
+        if child.ClassName == "ImageLabel" then settingsImage = child.Image end
+    end
+    Expect(settingsImage == "rbxassetid://93565715244756", "settings tab icon is missing")
     local count = 0
     for _, sec in ipairs(win.SettingsTab.Sections) do
         count += #sec.Frame:GetChildren()

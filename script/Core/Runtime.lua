@@ -95,23 +95,23 @@ return {
         --// only creates the tabs/sections they attach those controls to.
         --// Every tab carries the line that explains it at the top of its page,
         --// so a page says what it is for before the controls start.
-        UIRef.StatusTab = UI:AddTab{ Name = "Status", Description = "Live readout: farm state, position, money, EXP and timers" }
-        UIRef.FarmTab = UI:AddTab{ Name = "Farming", Description = "Waypoints, targets, combat and the rules the farm follows" }
+        UIRef.StatusTab = UI:AddTab{ Name = "Status", Icon = "rbxassetid://110833916970208", Description = "Live readout: farm state, position, money, EXP and timers" }
+        UIRef.FarmTab = UI:AddTab{ Name = "Farming", Icon = "rbxassetid://133374538392505", Description = "Waypoints, targets, combat and the rules the farm follows" }
         --// Boss route: its own tab, list and timers, apart from the farming
         --// waypoints and the profile waypoints (BossNavigator).
-        UIRef.BossTab = UI:AddTab{ Name = "Bosses", Description = "Boss stops, their timers, when a reset is taken and how a stranger is evaded" }
-        UIRef.EspTab = UI:AddTab{ Name = "ESP", Description = "Outline players, mobs and equipped weapons in the world" }
-        UIRef.MineTab = UI:AddTab{ Name = "Mining", Description = "Ore priority and the mine zones Auto Mining works in" }
-        UIRef.CraftTab = UI:AddTab{ Name = "Crafting", Description = "Recipe priority, the materials kept in reserve and the tables" }
-        UIRef.PartyTab = UI:AddTab{ Name = "Party", Description = "Follow the leader between servers" }
-        UIRef.ServerTab = UI:AddTab{ Name = "Server", Description = "Rejoin, hop, job IDs and the player log" }
-        UIRef.TeleportTab = UI:AddTab{ Name = "Teleport", Description = "Doors and waypoints, by name or by number" }
-        UIRef.QuestTab = UI:AddTab{ Name = "Quest", Description = "Walk to a quest giver, accept its quest and fight what it asks for" }
+        UIRef.BossTab = UI:AddTab{ Name = "Bosses", Icon = "rbxassetid://120519237137109", Description = "Boss stops, their timers, when a reset is taken and how a stranger is evaded" }
+        UIRef.EspTab = UI:AddTab{ Name = "ESP", Icon = "rbxassetid://88721966949157", Description = "Outline players, mobs and equipped weapons in the world" }
+        UIRef.MineTab = UI:AddTab{ Name = "Mining", Icon = "rbxassetid://72830736643456", Description = "Ore priority and the mine zones Auto Mining works in" }
+        UIRef.CraftTab = UI:AddTab{ Name = "Crafting", Icon = "rbxassetid://86086981959623", Description = "Recipe priority, the materials kept in reserve and the tables" }
+        UIRef.PartyTab = UI:AddTab{ Name = "Party", Icon = "rbxassetid://77490778358048", Description = "Follow the leader between servers" }
+        UIRef.ServerTab = UI:AddTab{ Name = "Server", Icon = "rbxassetid://103577755616730", Description = "Rejoin, hop, job IDs and the player log" }
+        UIRef.TeleportTab = UI:AddTab{ Name = "Teleport", Icon = "rbxassetid://88623751030168", Description = "Doors and waypoints, by name or by number" }
+        UIRef.QuestTab = UI:AddTab{ Name = "Quest", Icon = "rbxassetid://125636928571624", Description = "Walk to a quest giver, accept its quest and fight what it asks for" }
         --// Gear: read the game's own Equipment panel and put on the best item
         --// owned for each slot, ranked by the real damage/defence numbers in
         --// the game's item table (AutoEquip).
-        UIRef.GearTab = UI:AddTab{ Name = "Gear", Description = "Put on the best gear you own, by damage or by the armour build you pick" }
-        UIRef.UtilityTab = UI:AddTab{ Name = "Utility", Description = "Webhook reports, profiles and the world visualizer" }
+        UIRef.GearTab = UI:AddTab{ Name = "Gear", Icon = "rbxassetid://74812344382135", Description = "Put on the best gear you own, by damage or by the armour build you pick" }
+        UIRef.UtilityTab = UI:AddTab{ Name = "Utility", Icon = "rbxassetid://105423623486862", Description = "Webhook reports, profiles and the world visualizer" }
         UIRef.UtilitySection = UIRef.UtilityTab:AddSection{ Title = "Utilities" }
         --// Discord reports (Webhook): URL, mention, duo and format in one
         --// place, on the tab about the machine rather than the farm.

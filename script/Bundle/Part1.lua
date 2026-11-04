@@ -2484,7 +2484,7 @@ return true
 end
 function Library:_BuildSettingsTab()
 if self.SettingsTab then return self.SettingsTab end
-local tab = self:AddTab{ Name = "Settings", Description = "Menu, cursor and config options." }
+local tab = self:AddTab{ Name = "Settings", Icon = "rbxassetid://93565715244756", Description = "Menu, cursor and config options." }
 self.SettingsTab = tab
 local fontChoices = self:_GetFontChoices()
 local defaultFont = self.FontName or fontChoices.Names[1]
