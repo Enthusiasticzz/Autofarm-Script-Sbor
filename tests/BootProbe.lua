@@ -1586,6 +1586,9 @@ do
     local oldFind=Context.Services.Replicated.FindFirstChild
     local oldPlayers=players.GetPlayers
     local oldFlee=nav.FleeStep
+    local oldActiveProfile=Context.AICProfile.S.ActiveProfileName
+    Context.AICProfile.S.ActiveProfileName="Safe reset test"
+    Context.AICProfile.S.SelectedBossStopIndex=1
     local function pos(x)
         return setmetatable({X=x,Y=0,Z=0}, {__typename="Vector3",
             __sub=function(a,b) return {Magnitude=math.abs(a.X-b.X)} end})
@@ -1616,7 +1619,18 @@ do
     place.BOSS_ROUTE={{Label="Safety",Position=pos(0),Targets={},Path={},Radius=100}}
     place.BOSS_EVADE={Spots={{Kind="Waypoint",Waypoint=7}}}
     boss.EvadeSafeResetToggle:Set(true)
-    assert(Context.CONFIG.BOSS_EVADE_SAFE_RESET,"safe-reset toggle did not set saved config")
+    assert(place.BOSS_ROUTE[1].EvadeBeforeReset==true,"safe-reset toggle did not set the selected stop")
+    assert(boss.EvadeSafeResetToggle.Row.Parent==boss.BossEditorSection.Frame,"safe-reset toggle is not in the selected stop section")
+    local saved=Context.AICConfig.NormalizeBossStops(place.BOSS_ROUTE)
+    assert(saved[1].EvadeBeforeReset==true,"per-stop safe reset did not survive normalization")
+    state.Index=1
+    local second=table.clone(place.BOSS_ROUTE[1]); second.EvadeBeforeReset=false
+    place.BOSS_ROUTE[2]=second
+    state.Index=2
+    assert(not nav.UseSafeEvadeReset(),"safe reset setting leaked from another stop")
+    state.Index=1
+    assert(nav.UseSafeEvadeReset(),"active stop lost its safe reset setting")
+    place.BOSS_ROUTE[2]=nil
     nav.BeginStop(3000)
     Context.AICFeature.BossEvadeStep(3000)
     Context.AICFeature.BossEvadeStep(3100)
@@ -1671,6 +1685,7 @@ do
     Context.Services.Replicated.FindFirstChild=oldFind
     players.GetPlayers=oldPlayers
     nav.FleeStep=oldFlee
+    Context.AICProfile.S.ActiveProfileName=oldActiveProfile
     print("SAFE EVADE RESET passed: all mob types, damage tags, clear window, reset, respawn, hiding travel, cancellation")
 end
 print("BOOT PROBE PASSED")

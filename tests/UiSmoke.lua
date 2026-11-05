@@ -263,6 +263,26 @@ Check("priority redraws release connections and theme bindings", function()
     Expect(Owners() == owners, "destroyed rows retained resource owners")
 end)
 
+Check("lists: background color and fitted text", function()
+    local previous = win.Theme.List
+    local color = Color3.fromRGB(70, 40, 90)
+    win:SetTheme{ List = color }
+    win:Refresh()
+    Expect(priority.Holder.BackgroundColor3 == color and priority.Holder.BackgroundTransparency == 0,
+        "list background did not follow its color setting")
+    for _, child in ipairs(priority.Holder:GetChildren()) do
+        if child.Name == "ListEntry" then
+            for _, label in ipairs(child:GetChildren()) do
+                if label.ClassName == "TextLabel" then
+                    Expect(label.TextScaled and label.TextYAlignment == Enum.TextYAlignment.Center,
+                        "list text does not fill its row vertically")
+                end
+            end
+        end
+    end
+    win:SetTheme{ List = previous }
+end)
+
 Check("a priority row can show a name and a second line", function()
     --// The whitelist shows a username with the id under it. The row used to
     --// squeeze both onto one line inside the width of one, which cut it off.
@@ -827,6 +847,16 @@ Check("watermark: live data, switches and saved fields", function()
     Expect(not win:GetWatermarkFields().Username, "hidden username must stay hidden")
     win:SetWatermarkField("Boss", true)
     Expect(win.WatermarkLabel.Text == "Boss: WAITING FOR DUO" and win.Watermark.Visible, "boss-only watermark failed")
+    Expect(win.WatermarkLabel.TextWrapped == false and win.WatermarkLabel.TextScaled == false,
+        "watermark must fit one line without wrapping")
+    local singleWidth = win.Watermark.Size.X.Offset
+    win:SetWatermarkField("Session", true)
+    Expect(win.Watermark.Size.X.Offset > singleWidth, "watermark did not grow left for added info")
+    win.WatermarkDataProvider = function() return { Boss = "LONG\n" .. string.rep("status ", 100) } end
+    win:_updateWatermark(60)
+    Expect(not win.WatermarkLabel.Text:find("\n", 1, true), "watermark allowed an explicit second line")
+    Expect(win.Watermark.Size.Y.Offset == math.round(12 * (win.TextScale or 1)) + 14,
+        "long watermark grew vertically")
     win:SetWatermark(false)
     win:SetWatermarkField("FPS", true)
     Expect(not win.Watermark.Visible, "field switch must respect master switch")
@@ -870,6 +900,37 @@ Check("toggle window", function()
     Expect(win.Root.Visible == false, "window did not close")
     win:Toggle(true)
     Expect(win.Root.Visible == true, "window did not reopen")
+end)
+
+Check("menu animation: rapid toggles keep position and visibility", function()
+    local home = win.Root.Position
+    for _, mode in ipairs({ "Pop", "Bounce", "Slide", "Snap", "None" }) do
+        win:SetMenuAnimation(mode)
+        win:Toggle(false)
+        win:Toggle(true)
+        win:Toggle(false)
+        SmokeEnv.FlushDelayed(100)
+        Expect(not win.Root.Visible, mode .. " did not finish closing")
+        Expect(win.Root.Position == home and win.Scale.Scale == win.BaseScale, mode .. " drifted or kept a stale scale")
+        win:Toggle(true)
+        SmokeEnv.FlushDelayed(100)
+        Expect(win.Root.Visible and win.Root.Position == home, mode .. " did not reopen in place")
+    end
+    win:SetMenuAnimation("Slide")
+    win:Toggle(false)
+    local cancelledScale, cancelledPosition = false, false
+    win._scaleTw.Cancel = function() cancelledScale = true end
+    win._menuPositionTw.Cancel = function() cancelledPosition = true end
+    win:Toggle(true)
+    SmokeEnv.FlushDelayed(100)
+    Expect(cancelledScale and cancelledPosition and win.Root.Visible,
+        "reopening did not cancel both tweens or stale close hid the menu")
+    win:Toggle(false)
+    win:SetMenuAnimation("None")
+    win:Toggle(true)
+    SmokeEnv.FlushDelayed(100)
+    Expect(win.Root.Position == home and win.Root.Visible, "switching to None kept a partial slide")
+    win:SetMenuAnimation("Pop")
 end)
 
 Check("render step", function()

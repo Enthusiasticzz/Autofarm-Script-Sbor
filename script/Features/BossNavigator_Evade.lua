@@ -21,7 +21,6 @@ return {
 
     Start = function(Context)
         local Runtime = Context.Runtime
-        local CONFIG = Context.CONFIG
         local Player = Context.Player
         local Players = Context.Services.Players
         local AICConfig = Context.AICConfig
@@ -39,7 +38,7 @@ return {
 
         local REQUIRED = {
             "S", "SetStatus", "Say", "IsEnabled", "CurrentStop", "GetStops",
-            "FleeStep", "GetDamageTag",
+            "FleeStep", "GetDamageTag", "UseSafeEvadeReset",
             "BeginStop", "ResetWalk", "EndDodge", "StopFlee", "ClearKillClock",
             "SyncDeathMark", "GetFloorOverlap", "LiftFromFloor", "FixLandedFloor",
             "TeleportToPoint", "TeleportToWaypoint", "FightStep", "ApproachStep",
@@ -174,7 +173,7 @@ return {
             --// Kept beside the name so a report always has someone to name,
             --// even if the snapshot below is ever empty.
             S.EvadeId = tonumber(OtherPlayer.UserId)
-            S.EvadeStage = CONFIG.BOSS_EVADE_SAFE_RESET == true and "ClearExp" or "Reset"
+            S.EvadeStage = Boss.UseSafeEvadeReset() and "ClearExp" or "Reset"
             S.EvadeSafeSince = nil
             S.EvadeSince = Now
             S.EvadeWaitUntil = nil
@@ -670,7 +669,7 @@ return {
                 elseif not Humanoid or not RootPart then
                     SetStatus("EVADING  @" .. S.EvadeName .. "  WAITING FOR CHARACTER")
                     return true
-                elseif CONFIG.BOSS_EVADE_SAFE_RESET ~= true then
+                elseif not Boss.UseSafeEvadeReset() then
                     StopFlee(Humanoid)
                     SetBlocking(false, Now)
                     S.EvadeStage = "Reset"

@@ -441,8 +441,9 @@ The left side holds the route, its stop list, the selected stop and its path.
   (with **Log When Hiding** on) and an ended one naming everybody still there if
   the window runs out (always). See **Webhook** on the Utility tab.
 
-**Evade Before Reset** is under **Pause For Strangers** (off by default,
-saved in your profile). Turn it on to stop attacking and flee nearby mobs
+**Evade Before Reset** is in the **Selected Stop** section (off by default,
+saved separately for each stop). When Pause For Strangers starts at that stop,
+turning this on makes the account stop attacking and flee nearby mobs
 of any type before the hiding reset. It waits until your game's damage tags
 have been clear for two seconds, then resets, travels to a random saved
 hiding prompt or waypoint, and starts the normal hiding timer. New damage

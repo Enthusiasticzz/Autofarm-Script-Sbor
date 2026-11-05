@@ -1122,6 +1122,8 @@ return {
                     --// a kill. Treat them as the new default, fight until the
                     --// boss is down and then reset.
                     local Legacy = Stop.ResetAfterKill == nil
+                    local EvadeBeforeReset
+                    if Stop.EvadeBeforeReset ~= nil then EvadeBeforeReset = Stop.EvadeBeforeReset == true end
 
                     table.insert(Result, {
                         Label = Label ~= "" and Label or ("Boss " .. tostring(#Result + 1)),
@@ -1133,6 +1135,7 @@ return {
                             math.floor(tonumber(Stop.Waypoint) or 0), 0, AICConfig.MAX_BOSS_WAYPOINT
                         ),
                         ResetAfterKill = Legacy or Stop.ResetAfterKill == true,
+                        EvadeBeforeReset = EvadeBeforeReset,
                         --// Saves made before v3.36 kept the fight timeout in
                         --// ResetAfter; that number is the pause at the corpse
                         --// now, so a wait the user had set keeps working.

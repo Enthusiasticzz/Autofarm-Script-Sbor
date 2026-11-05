@@ -731,7 +731,11 @@ local Stop = SelectedStop()
 RefreshBoundsVisuals(GetStops())
 if UIRef.BossResetModeDropdown then UIRef.BossResetModeDropdown:Set(GetResetMode(), true) end
 if UIRef.BossDuoSyncToggle then UIRef.BossDuoSyncToggle:Set(CONFIG.BOSS_DUO_SYNC == true, true) end
-if UIRef.EvadeSafeResetToggle then UIRef.EvadeSafeResetToggle:Set(CONFIG.BOSS_EVADE_SAFE_RESET == true, true) end
+if UIRef.EvadeSafeResetToggle then
+local Value = Stop and Stop.EvadeBeforeReset
+if Value == nil then Value = CONFIG.BOSS_EVADE_SAFE_RESET == true end
+UIRef.EvadeSafeResetToggle:Set(Value == true, true)
+end
 if UIRef.BossDuoNameBox then UIRef.BossDuoNameBox:Set(tostring(CONFIG.BOSS_DUO_NAME or ""), true) end
 if UIRef.BossDuoRangeBox then UIRef.BossDuoRangeBox:Set(tostring(CONFIG.BOSS_DUO_RANGE or 35), true) end
 if UIRef.BossDuoTimeoutBox then UIRef.BossDuoTimeoutBox:Set(tostring(CONFIG.BOSS_DUO_WAIT_TIMEOUT or 0), true) end
@@ -3426,13 +3430,16 @@ end,
 EvadeSection
 )
 UIRef.EvadeSpotLabel = EvadeSection:AddLabel("HIDING SPOTS:  NONE")
-UIRef.EvadeSafeResetToggle = EvadeSection:AddToggle{
+UIRef.EvadeSafeResetToggle = UIRef.BossEditorSection:AddToggle{
 Name = "Evade Before Reset",
-Default = CONFIG.BOSS_EVADE_SAFE_RESET == true,
+Default = false,
 Description = "Stop attacking and flee all nearby mob types until your damage tags have cleared for 2 seconds, then reset and hide as usual. Off resets immediately.",
 Callback = function(Value)
-CONFIG.BOSS_EVADE_SAFE_RESET = Value == true
-if AICProfile.S.ActiveProfileName then AICProfile.SaveActiveProfile() end
+local Stop = SelectedStop()
+if not Stop then SetStatus("ADD A BOSS STOP FIRST"); return end
+if not CanEdit("DEFAULT PLACE_CONFIG IS READ-ONLY") then RefreshEditor(); return end
+Stop.EvadeBeforeReset = Value == true
+AICProfile.SaveActiveProfile()
 end,
 }
 EvadeSection:AddNote("When someone who is not on your Block Whitelist shows up, the route stops. Your character resets, hides at one of your Hiding Spots, and waits 2-3 minutes for them to leave")
@@ -3575,6 +3582,11 @@ EndDodge = EndDodge,
 StopFlee = StopFlee,
 FleeStep = FleeStep,
 GetDamageTag = GetDamageTag,
+UseSafeEvadeReset = function()
+local Stop = CurrentStop()
+if Stop and Stop.EvadeBeforeReset ~= nil then return Stop.EvadeBeforeReset == true end
+return CONFIG.BOSS_EVADE_SAFE_RESET == true
+end,
 ClearKillClock = ClearKillClock,
 SyncDeathMark = SyncDeathMark,
 GetFloorOverlap = GetFloorOverlap,
@@ -3624,7 +3636,6 @@ Name = "BossNavigator_Evade",
 Dependencies = {"BossNavigator", "AutoBlock", "Webhook", "Logger"},
 Start = function(Context)
 local Runtime = Context.Runtime
-local CONFIG = Context.CONFIG
 local Player = Context.Player
 local Players = Context.Services.Players
 local AICConfig = Context.AICConfig
@@ -3637,7 +3648,7 @@ local FeatureState = Boss.FeatureState or Context.FeatureState or Context.Featur
 assert(FeatureState ~= nil, "BossNavigator_Evade: the route published no feature state")
 local REQUIRED = {
 "S", "SetStatus", "Say", "IsEnabled", "CurrentStop", "GetStops",
-"FleeStep", "GetDamageTag",
+"FleeStep", "GetDamageTag", "UseSafeEvadeReset",
 "BeginStop", "ResetWalk", "EndDodge", "StopFlee", "ClearKillClock",
 "SyncDeathMark", "GetFloorOverlap", "LiftFromFloor", "FixLandedFloor",
 "TeleportToPoint", "TeleportToWaypoint", "FightStep", "ApproachStep",
@@ -3740,7 +3751,7 @@ local function BeginEvade(Now, OtherPlayer)
 S.Evading = true
 S.EvadeName = tostring(OtherPlayer.Name)
 S.EvadeId = tonumber(OtherPlayer.UserId)
-S.EvadeStage = CONFIG.BOSS_EVADE_SAFE_RESET == true and "ClearExp" or "Reset"
+S.EvadeStage = Boss.UseSafeEvadeReset() and "ClearExp" or "Reset"
 S.EvadeSafeSince = nil
 S.EvadeSince = Now
 S.EvadeWaitUntil = nil
@@ -4060,7 +4071,7 @@ S.EvadeStage = "Travel"
 elseif not Humanoid or not RootPart then
 SetStatus("EVADING  @" .. S.EvadeName .. "  WAITING FOR CHARACTER")
 return true
-elseif CONFIG.BOSS_EVADE_SAFE_RESET ~= true then
+elseif not Boss.UseSafeEvadeReset() then
 StopFlee(Humanoid)
 SetBlocking(false, Now)
 S.EvadeStage = "Reset"

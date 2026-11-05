@@ -4633,6 +4633,8 @@ local PromptName = type(Stop.PromptName) == "string"
 and string.sub(Stop.PromptName:gsub("^%s*(.-)%s*$", "%1"), 1, 64)
 or ""
 local Legacy = Stop.ResetAfterKill == nil
+local EvadeBeforeReset
+if Stop.EvadeBeforeReset ~= nil then EvadeBeforeReset = Stop.EvadeBeforeReset == true end
 table.insert(Result, {
 Label = Label ~= "" and Label or ("Boss " .. tostring(#Result + 1)),
 Position = Position,
@@ -4643,6 +4645,7 @@ Waypoint = math.clamp(
 math.floor(tonumber(Stop.Waypoint) or 0), 0, AICConfig.MAX_BOSS_WAYPOINT
 ),
 ResetAfterKill = Legacy or Stop.ResetAfterKill == true,
+EvadeBeforeReset = EvadeBeforeReset,
 ResetWait = math.clamp(
 tonumber(Stop.ResetWait) or tonumber(Stop.ResetAfter)
 or AICConfig.DEFAULT_BOSS_RESET_WAIT,

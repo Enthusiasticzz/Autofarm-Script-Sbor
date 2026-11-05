@@ -1346,7 +1346,11 @@ return {
             if UIRef.BossResetModeDropdown then UIRef.BossResetModeDropdown:Set(GetResetMode(), true) end
             -- Duo preferences are profile settings, independent of the selected stop.
             if UIRef.BossDuoSyncToggle then UIRef.BossDuoSyncToggle:Set(CONFIG.BOSS_DUO_SYNC == true, true) end
-            if UIRef.EvadeSafeResetToggle then UIRef.EvadeSafeResetToggle:Set(CONFIG.BOSS_EVADE_SAFE_RESET == true, true) end
+            if UIRef.EvadeSafeResetToggle then
+                local Value = Stop and Stop.EvadeBeforeReset
+                if Value == nil then Value = CONFIG.BOSS_EVADE_SAFE_RESET == true end
+                UIRef.EvadeSafeResetToggle:Set(Value == true, true)
+            end
             if UIRef.BossDuoNameBox then UIRef.BossDuoNameBox:Set(tostring(CONFIG.BOSS_DUO_NAME or ""), true) end
             if UIRef.BossDuoRangeBox then UIRef.BossDuoRangeBox:Set(tostring(CONFIG.BOSS_DUO_RANGE or 35), true) end
             if UIRef.BossDuoTimeoutBox then UIRef.BossDuoTimeoutBox:Set(tostring(CONFIG.BOSS_DUO_WAIT_TIMEOUT or 0), true) end
@@ -5286,13 +5290,16 @@ return {
 
             UIRef.EvadeSpotLabel = EvadeSection:AddLabel("HIDING SPOTS:  NONE")
 
-            UIRef.EvadeSafeResetToggle = EvadeSection:AddToggle{
+            UIRef.EvadeSafeResetToggle = UIRef.BossEditorSection:AddToggle{
                 Name = "Evade Before Reset",
-                Default = CONFIG.BOSS_EVADE_SAFE_RESET == true,
+                Default = false,
                 Description = "Stop attacking and flee all nearby mob types until your damage tags have cleared for 2 seconds, then reset and hide as usual. Off resets immediately.",
                 Callback = function(Value)
-                    CONFIG.BOSS_EVADE_SAFE_RESET = Value == true
-                    if AICProfile.S.ActiveProfileName then AICProfile.SaveActiveProfile() end
+                    local Stop = SelectedStop()
+                    if not Stop then SetStatus("ADD A BOSS STOP FIRST"); return end
+                    if not CanEdit("DEFAULT PLACE_CONFIG IS READ-ONLY") then RefreshEditor(); return end
+                    Stop.EvadeBeforeReset = Value == true
+                    AICProfile.SaveActiveProfile()
                 end,
             }
 
@@ -5482,6 +5489,11 @@ return {
             StopFlee = StopFlee,
             FleeStep = FleeStep,
             GetDamageTag = GetDamageTag,
+            UseSafeEvadeReset = function()
+                local Stop = CurrentStop()
+                if Stop and Stop.EvadeBeforeReset ~= nil then return Stop.EvadeBeforeReset == true end
+                return CONFIG.BOSS_EVADE_SAFE_RESET == true
+            end,
             ClearKillClock = ClearKillClock,
             SyncDeathMark = SyncDeathMark,
             GetFloorOverlap = GetFloorOverlap,

@@ -74,13 +74,13 @@ local HEADER, MINI_W = 30, 250        -- top strip (minimize / close live here) 
 local MENU_ANIMATIONS = { "Pop", "Bounce", "Slide", "Snap", "None" }
 
 local MENU_ANIM = {
-	Pop    = { From = .86, To = .84, Time = .26, CloseTime = .18, Style = Enum.EasingStyle.Back,
-		CloseStyle = Enum.EasingStyle.Quad, CloseDir = Enum.EasingDirection.In },
-	Bounce = { From = .64, To = .72, Time = .44, CloseTime = .24, Style = Enum.EasingStyle.Back,
-		CloseStyle = Enum.EasingStyle.Back, CloseDir = Enum.EasingDirection.In },
-	Slide  = { From = .97, To = .97, Time = .26, CloseTime = .18, Style = Enum.EasingStyle.Quint,
-		CloseStyle = Enum.EasingStyle.Quad, CloseDir = Enum.EasingDirection.In, Travel = 28 },
-	Snap   = { From = .96, To = .97, Time = .12, CloseTime = .10, Style = Enum.EasingStyle.Quint,
+	Pop    = { From = .96, To = .97, Time = .24, CloseTime = .14, Style = Enum.EasingStyle.Quint,
+		CloseStyle = Enum.EasingStyle.Quad, CloseDir = Enum.EasingDirection.In, Travel = 8 },
+	Bounce = { From = .91, To = .96, Time = .32, CloseTime = .16, Style = Enum.EasingStyle.Back,
+		CloseStyle = Enum.EasingStyle.Quad, CloseDir = Enum.EasingDirection.In, Travel = 10 },
+	Slide  = { From = 1, To = 1, Time = .28, CloseTime = .18, Style = Enum.EasingStyle.Quint,
+		CloseStyle = Enum.EasingStyle.Quad, CloseDir = Enum.EasingDirection.In, Travel = 24 },
+	Snap   = { From = .985, To = .985, Time = .11, CloseTime = .09, Style = Enum.EasingStyle.Quint,
 		CloseStyle = Enum.EasingStyle.Quad, CloseDir = Enum.EasingDirection.In },
 }
 
@@ -270,7 +270,7 @@ function Library.new(o)
 	self.Text = {}
 	for k, v in pairs(Library.DefaultText) do self.Text[k] = v end
 	for k, v in pairs(o.Text or {}) do self.Text[k] = v end
-	self.Theme = { Accent = o.Accent or rgb(79,124,245), Hover = rgb(72,76,92), Danger = rgb(255,92,92), Warning = rgb(255,190,92) }
+	self.Theme = { Accent = o.Accent or rgb(79,124,245), Hover = rgb(72,76,92), Danger = rgb(255,92,92), Warning = rgb(255,190,92), List = rgb(21,21,27) }
 	for k, v in pairs(Library.Palettes.Default) do self.Theme[k] = v end
 	self.Palette = "Default"
 	--// Only the colours that differ from these are saved as a custom theme.
@@ -890,6 +890,7 @@ function Library:SetMinimized(state)
 	if state == nil then state = not self._minimized end
 	state = state and true or false
 	if state == (self._minimized or false) or self._minBusy then return end
+	self:_cancelMenuAnimation(true)
 	self._minimized, self._minBusy = state, true
 	if self._setMinIcon then self._setMinIcon(state) end
 	self:ClosePopup(true); self:_hideTip(true)
@@ -969,15 +970,16 @@ function Library:GetOcclusionRects()
 end
 --// Open and close are a real movement in both directions, and which movement
 --// is the player's choice (Settings tab, saved as UI_MENU_ANIMATION):
---//   Pop     a small scale pop with a Back overshoot - the default
---//   Bounce  the same idea, from much smaller, so it springs in
+--//   Pop     a subtle lift and scale settle, without overshoot - the default
+--//   Bounce  a restrained spring with a quicker, smooth exit
 --//   Slide   the window drops into place from above at full size
 --//   Snap    a quick, almost-instant settle for people who hate waiting
 --//   None    on screen or gone, nothing in between
---// Every one of them shrinks on the way out and is hidden when the tween
---// lands, so a close reads as a close rather than a flash.
+--// Closing finishes before hiding the frame. Direction changes cancel both
+--// position and scale tweens, with one saved resting position for the window.
 -- A booting window cannot be opened by a hotkey or expose its cursor/UI.
 function Library:SetStartupHidden(hidden)
+	self:_cancelMenuAnimation(true)
 	self.StartupHidden = hidden == true
 	if not self.StartupHidden then
 		if self._scaleTw then self._scaleTw:Cancel(); self._scaleTw = nil end
@@ -989,74 +991,88 @@ function Library:SetStartupHidden(hidden)
 	self.Root.Visible = not self.StartupHidden
 end
 
+function Library:_cancelMenuAnimation(restore)
+	self._menuGeneration = (self._menuGeneration or 0) + 1
+	for _, key in ipairs({ "_scaleTw", "_menuPositionTw" }) do
+		local tween = self[key]
+		if tween and tween.Cancel then pcall(function() tween:Cancel() end) end
+		self[key] = nil
+	end
+	if restore then
+		if self._menuHome then self.Root.Position = self._menuHome end
+		self.Scale.Scale = self.BaseScale
+		self._menuHome = nil
+	end
+end
+
 function Library:Toggle(state)
 	if self.StartupHidden then return end
+	if self.Destroyed then return end
 	if state == nil then state = not self._open end
 	if state == self._open then return end
 	self._open = state
 
 	local Anim = MENU_ANIM[self.MenuAnimation or "Pop"]
 
-	--// Half a tween left over from the other direction is stopped first, or the
-	--// two fight over the same UIScale and the movement stutters.
-	if self._scaleTw and self._scaleTw.Cancel then
-		pcall(function() self._scaleTw:Cancel() end)
-	end
-	self._scaleTw = nil
+	local Base = self._menuHome or self.Root.Position
+	local WasVisible = self.Root.Visible
+	self:_cancelMenuAnimation(false)
+	local Generation = self._menuGeneration
+	self._menuHome = Base
 
 	if not Anim then
 		--// "None" (or a name this build does not know): no animation at all.
 		self.Scale.Scale = self.BaseScale
+		self.Root.Position = Base
+		self._menuHome = nil
 		self.Root.Visible = state
 		return
 	end
 
 	--// Slide moves the whole window. A minimised window is a bar in a corner
 	--// whose position the minimise tween owns, so that one only scales.
-	local Travel = (Anim.Travel and self._minimized ~= true) and Anim.Travel or 0
-	local Base = self.Root.Position
+	local Travel = (Anim.Travel and not self._minimized and not self._minBusy) and Anim.Travel or 0
 	local SlideTo = Travel > 0
 		and UDim2.new(Base.X.Scale, Base.X.Offset, Base.Y.Scale, Base.Y.Offset - Travel)
 		or Base
 
 	if state then
 		self.Root.Visible = true
-		self.Scale.Scale = self.BaseScale * Anim.From
-
-		if Travel > 0 then
+		-- Reverse an in-flight close from its current pose. Only a fully
+		-- hidden window starts from the preset's opening pose.
+		if not WasVisible then
+			self.Scale.Scale = self.BaseScale * Anim.From
 			self.Root.Position = SlideTo
-			self:Tween(self.Root, { Position = Base }, Anim.Time, Anim.Style)
 		end
-
+		if not self._minBusy then
+			self._menuPositionTw = self:Tween(self.Root, { Position = Base }, Anim.Time, Anim.Style)
+		end
 		self._scaleTw = self:Tween(self.Scale, { Scale = self.BaseScale }, Anim.Time, Anim.Style)
 	else
 		self:ClosePopup(true)
 		self:_hideTip()
 
-		if Travel > 0 then
-			self:Tween(self.Root, { Position = SlideTo }, Anim.CloseTime, Anim.CloseStyle, Anim.CloseDir)
+		if not self._minBusy then
+			self._menuPositionTw = self:Tween(self.Root, { Position = SlideTo }, Anim.CloseTime, Anim.CloseStyle, Anim.CloseDir)
 		end
 
 		self._scaleTw = self:Tween(self.Scale, { Scale = self.BaseScale * Anim.To }, Anim.CloseTime, Anim.CloseStyle, Anim.CloseDir)
 
-		--// Hidden when the shrink finishes, so the last thing seen is the window
-		--// closing in rather than vanishing at full size. The scale and the
-		--// position are both put back while it is hidden, so the next open
-		--// starts from the same size and the same spot.
-		task.delay(Anim.CloseTime / math.max(self.AnimSpeed, .1), function()
-			if self._open then return end
-			self.Root.Visible = false
-			self.Scale.Scale = self.BaseScale
-
-			if Travel > 0 then
-				self.Root.Position = Base
-			end
-		end)
 	end
+	local Duration = state and Anim.Time or Anim.CloseTime
+	task.delay(Duration / math.max(self.AnimSpeed, .1), function()
+		if self.Destroyed or self._menuGeneration ~= Generation then return end
+		self.Root.Visible = self._open
+		self.Scale.Scale = self.BaseScale
+		if not self._minBusy then self.Root.Position = Base end
+		self._menuHome = nil
+		self._scaleTw, self._menuPositionTw = nil, nil
+	end)
 end
 function Library:Destroy()
 	if self.Destroyed then return end
 	self.Destroyed = true
+	self:_cancelMenuAnimation(true)
 	for _, c in ipairs(self._conns) do c:Disconnect() end
 	table.clear(self._conns)
 	pcall(function() RunService:UnbindFromRenderStep("UILibUnlock" .. self.Title) end)
@@ -2463,12 +2479,12 @@ function Library:Notify(o)
 end
 
 function Library:_buildWatermark()
-	local f = New("Frame", { AutomaticSize = Enum.AutomaticSize.Y, Size = UDim2.fromOffset(600,0), AnchorPoint = Vector2.new(1,0), Position = UDim2.new(1,-12,0,12), BorderSizePixel = 0, Visible = false, Parent = self.Gui })
+	local f = New("Frame", { Size = UDim2.fromOffset(600,26), AnchorPoint = Vector2.new(1,0), Position = UDim2.new(1,-12,0,12), BorderSizePixel = 0, Visible = false, Parent = self.Gui })
 	Round(f, 6)
 	self:Themed(f, { BackgroundColor3 = "Panel" })
 	self:Themed(Stroke(f), { Color = "Border" })
 	New("UIPadding", { PaddingTop = UDim.new(0,6), PaddingBottom = UDim.new(0,6), PaddingLeft = UDim.new(0,10), PaddingRight = UDim.new(0,10), Parent = f })
-	local l = New("TextLabel", { BackgroundTransparency = 1, AutomaticSize = Enum.AutomaticSize.Y, Size = UDim2.new(1,0,0,14), TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left, Font = Fonts.Medium, TextSize = 12, Text = "", Parent = f })
+	local l = New("TextLabel", { BackgroundTransparency = 1, Size = UDim2.new(1,0,1,0), TextWrapped = false, TextScaled = false, TextTruncate = Enum.TextTruncate.AtEnd, TextXAlignment = Enum.TextXAlignment.Left, Font = Fonts.Medium, TextSize = 12, Text = "", Parent = f })
 	self:Themed(l, { TextColor3 = "Text" })
 	self.Watermark, self.WatermarkLabel = f, l
 	self:_updateWatermark(60)
@@ -2505,18 +2521,21 @@ function Library:_updateWatermark(fps)
 	add("ExpTotal", data.ExpTotal and string.format("EXP gained: %.0f", data.ExpTotal) or "EXP gained: waiting for stats")
 	local seconds = math.floor(math.max(0, tonumber(data.Session) or 0))
 	add("Session", string.format("Session: %02d:%02d:%02d", math.floor(seconds / 3600), math.floor(seconds / 60) % 60, seconds % 60))
-	self.WatermarkLabel.Text = table.concat(parts, "  |  ")
+	self.WatermarkLabel.Text = (table.concat(parts, "  |  "):gsub("[\r\n]+", " "))
 	local camera = workspace.CurrentCamera
 	local width = camera and camera.ViewportSize.X or 800
 	local label = self.WatermarkLabel
+	local baseSize = math.max(1, math.round(12 * (self.TextScale or 1)))
 	local ok, bounds = pcall(function()
-		return TextService:GetTextSize(label.Text, label.TextSize, label.Font, Vector2.new(1000000, 4096))
+		return TextService:GetTextSize(label.Text, baseSize, label.Font, Vector2.new(1000000, 4096))
 	end)
 	local textWidth = ok and typeof(bounds) == "Vector2" and bounds.X
-		or (utf8.len(label.Text) or #label.Text) * label.TextSize * 0.6
-	-- Match the enabled text plus the frame's left/right padding. Long status
-	-- lines wrap only when the strip reaches the available screen width.
-	self.Watermark.Size = UDim2.fromOffset(math.min(math.ceil(textWidth) + 21, math.max(1, width - 24)), 0)
+		or (utf8.len(label.Text) or #label.Text) * baseSize * 0.6
+	-- Grow left from the top-right corner. At the screen edge, shrink the
+	-- text to keep every enabled item on exactly one line.
+	local frameWidth = math.min(math.ceil(textWidth) + 21, math.max(1, width - 24))
+	label.TextSize = math.max(1, math.floor(baseSize * math.min(1, math.max(1, frameWidth - 21) / math.max(1, textWidth))))
+	self.Watermark.Size = UDim2.fromOffset(frameWidth, baseSize + 14)
 	self.Watermark.Visible = self._WatermarkEnabled == true and #parts > 0
 end
 
@@ -2772,7 +2791,7 @@ function Section:AddPriority(name, values, options)
 
 	local listFrame = New("ScrollingFrame", {
 		Size = UDim2.fromScale(1, 1),
-		BackgroundTransparency = 1,
+		BackgroundTransparency = 0,
 		BorderSizePixel = 0,
 		ClipsDescendants = true,
 		ScrollingDirection = Enum.ScrollingDirection.Y,
@@ -2782,6 +2801,8 @@ function Section:AddPriority(name, values, options)
 		ScrollBarImageTransparency = .4,
 		Parent = listRow,
 	})
+	lib:Themed(listFrame, { BackgroundColor3 = "List" })
+	Round(listFrame, 6)
 
 	New("UIListLayout", {
 		Padding = UDim.new(0, 5),
@@ -2833,6 +2854,13 @@ function Section:AddPriority(name, values, options)
 	end
 
 	local Refresh
+	local function FitListText(label, maxSize)
+		label.TextScaled = true
+		local limit = New("UITextSizeConstraint", { MinTextSize = 8, MaxTextSize = maxSize, Parent = label })
+		lib:Bind(function()
+			limit.MaxTextSize = math.max(8, math.floor(maxSize * (lib.TextScale or 1)))
+		end, label)
+	end
 
 	--// A small round-cornered glyph button on the right of a row: faint at rest
 	--// so a list of entries reads as text, and filled in under the pointer so
@@ -2947,7 +2975,7 @@ function Section:AddPriority(name, values, options)
 				local check = New("TextButton", {
 					Size = UDim2.fromOffset(18, 18),
 					AnchorPoint = Vector2.new(0, .5),
-					Position = UDim2.fromOffset(12, 20),
+					Position = UDim2.new(0, 12, .5, 0),
 					BackgroundColor3 = checked and lib.Theme.Accent or lib.Theme.Element,
 					BorderSizePixel = 0,
 					Text = checked and "✓" or "",
@@ -2969,32 +2997,35 @@ function Section:AddPriority(name, values, options)
 			if sub then
 				local title = lib:Label(row, shown, {
 					Color = "Text",
-					TextSize = 12,
+					TextSize = 14,
 					Position = UDim2.fromOffset(left, 7),
-					SizeUDim = UDim2.new(1, -(left + rightInset), 0, 16),
+					SizeUDim = UDim2.new(1, -(left + rightInset), 0, 18),
 				})
 				title.Font = Fonts.Medium
 				title.TextTruncate = Enum.TextTruncate.AtEnd
-				title.TextYAlignment = Enum.TextYAlignment.Top
+				title.TextYAlignment = Enum.TextYAlignment.Center
+				FitListText(title, 16)
 				local detail = lib:Label(row, sub, {
 					Color = "SubText",
-					TextSize = 10,
+					TextSize = 12,
 					Position = UDim2.fromOffset(left, 26),
-					SizeUDim = UDim2.new(1, -(left + rightInset), 0, 14),
+					SizeUDim = UDim2.new(1, -(left + rightInset), 0, 16),
 				})
 				detail.TextTruncate = Enum.TextTruncate.AtEnd
-				detail.TextYAlignment = Enum.TextYAlignment.Top
+				detail.TextYAlignment = Enum.TextYAlignment.Center
+				FitListText(detail, 14)
 			else
 				local title = lib:Label(row, shown, {
 					Color = "Text",
-					TextSize = 12,
-					Position = UDim2.fromOffset(left, 7),
-					SizeUDim = UDim2.new(1, -(left + rightInset), 0, 28),
+					TextSize = 14,
+					Position = UDim2.fromOffset(left, 4),
+					SizeUDim = UDim2.new(1, -(left + rightInset), 1, -8),
 				})
 				title.Font = Fonts.Medium
 				title.TextTruncate = Enum.TextTruncate.None
 				title.TextWrapped = true
-				title.TextYAlignment = Enum.TextYAlignment.Top
+				title.TextYAlignment = Enum.TextYAlignment.Center
+				FitListText(title, 20)
 			end
 			lib:_attachTip(row, shown, sub and (shown .. "\n" .. sub) or shown)
 
@@ -3263,6 +3294,7 @@ function Library:_BuildSettingsTab()
 		{ "Window", "Background" },
 		{ "Panel", "Panel" },
 		{ "Element", "Element" },
+		{ "List", "List background" },
 		{ "Border", "Border" },
 		{ "Text", "Text" },
 		{ "SubText", "Muted text" },
@@ -3342,7 +3374,7 @@ function Library:_BuildSettingsTab()
 		Callback = function()
 			self:SetTheme({ Accent = rgb(79,124,245), Window = rgb(21,21,27), Panel = rgb(27,27,34),
 				Element = rgb(36,36,45), Border = rgb(45,45,56), Text = rgb(240,240,246),
-				SubText = rgb(122,122,140), Hover = rgb(72,76,92), Danger = rgb(255,92,92), Warning = rgb(255,190,92) })
+				SubText = rgb(122,122,140), Hover = rgb(72,76,92), Danger = rgb(255,92,92), Warning = rgb(255,190,92), List = rgb(21,21,27) })
 			self:SetPalette("Default")
 			self:SetTextScale(1)
 			--// The size and the font the window was built with: ROOT_W/ROOT_H
@@ -3824,6 +3856,12 @@ function Library:_MakeDraggable(handle, target, keepOnScreen)
 	self:_Connect(handle.InputBegan, function(input)
 		if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then
 			return
+		end
+		if target == self.Root then
+			if not self._open then return end
+			self:_cancelMenuAnimation(false)
+			self._menuHome = nil
+			self.Scale.Scale = self.BaseScale
 		end
 
 		dragging = true
