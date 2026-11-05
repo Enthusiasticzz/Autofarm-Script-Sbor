@@ -2508,7 +2508,15 @@ function Library:_updateWatermark(fps)
 	self.WatermarkLabel.Text = table.concat(parts, "  |  ")
 	local camera = workspace.CurrentCamera
 	local width = camera and camera.ViewportSize.X or 800
-	self.Watermark.Size = UDim2.fromOffset(math.max(100, math.min(600, width - 24)), 0)
+	local label = self.WatermarkLabel
+	local ok, bounds = pcall(function()
+		return TextService:GetTextSize(label.Text, label.TextSize, label.Font, Vector2.new(1000000, 4096))
+	end)
+	local textWidth = ok and typeof(bounds) == "Vector2" and bounds.X
+		or (utf8.len(label.Text) or #label.Text) * label.TextSize * 0.6
+	-- Match the enabled text plus the frame's left/right padding. Long status
+	-- lines wrap only when the strip reaches the available screen width.
+	self.Watermark.Size = UDim2.fromOffset(math.min(math.ceil(textWidth) + 21, math.max(1, width - 24)), 0)
 	self.Watermark.Visible = self._WatermarkEnabled == true and #parts > 0
 end
 
