@@ -4877,6 +4877,7 @@ return {
 
         UIRef.BossDuoNameBox = UIRef.BossSection:AddTextBox{
             Name = "Duo Username",
+            Inline = true,
             Default = TrimText(CONFIG.BOSS_DUO_NAME),
             Callback = function(Value)
                 CONFIG.BOSS_DUO_NAME = TrimText(Value)
@@ -4908,7 +4909,8 @@ return {
         UIRef.BossSection:AddNote("Blank uses the Duo Username from Utility -> Webhook")
 
         UIRef.BossDuoTimeoutBox = UIRef.BossSection:AddTextBox{
-            Name = "Duo Wait Timeout (s)",
+            Name = "Duo Wait (s)\n0 = forever",
+            Inline = true,
             Default = tostring(GetDuoWaitTimeout()),
             Description = "0 waits indefinitely. After this many seconds, fight the boss at this stop without the duo. Wait for Boss Spawn still applies.",
             Callback = function(Value)
