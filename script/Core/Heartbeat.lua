@@ -21,12 +21,9 @@ return {
 
         --// The first Update of a feature is where its one-time setup happens
         --// (finding a target, opening a table, starting a loop). Running all
-        --// of them in the frame the loop starts is the spike that froze the
-        --// client the moment the loader reached "STARTING". They are spread
-        --// over the first dozen frames instead; from then on every feature
-        --// updates every frame as before. Counted in frames, not seconds, so
-        --// the spread does not change with the frame rate.
-        local FIRST_TICK_SLOTS = 12
+        --// of them at the cinematic handoff can freeze the revealed menu.
+        --// Admit at most one new feature per frame; once admitted, it keeps
+        --// its normal update cadence. No modulo slots bunch first updates.
 
         function Heartbeat:Start(Features)
             local RunService =
@@ -39,7 +36,7 @@ return {
             end
 
             local Watch = { Since = os.clock(), Total = 0, Frames = 0, Worst = 0 }
-            local FirstFrame, Frame = {}, 0
+            local StartedFeatures = {}
 
             self.Connection = RunService.Heartbeat:Connect(function(DeltaTime)
                 --// A run that ended while this connection was still bound stops
@@ -51,19 +48,27 @@ return {
                     return
                 end
 
-                Frame += 1
+                -- The connection is prepared during loading, but no saved
+                -- toggle (especially Boss Route) may act underneath the intro.
+                local Startup = Context.Startup
+                if Startup and (Startup.Failed or not Startup.Ready or not Startup.IntroDone or not Startup.AutomationReady) then
+                    Watch.Since = os.clock()
+                    return
+                end
+                local FirstUpdates = 0
 
-                for Index, Feature in ipairs(Features or {}) do
+                for _, Feature in ipairs(Features or {}) do
                     if type(Feature.Update) == "function" then
                         --// Keyed by the feature itself when it carries no Name.
                         local Name = Feature.Name
                         local Key = Name or Feature
                         local Now = os.clock()
-                        local Ready = FirstFrame[Key]
-
-                        if Ready == nil then
-                            FirstFrame[Key] = 1 + (Index % FIRST_TICK_SLOTS)
-                        elseif Frame >= Ready then
+                        if not StartedFeatures[Key] then
+                            if FirstUpdates >= 1 then continue end
+                            StartedFeatures[Key] = true
+                            FirstUpdates += 1
+                        end
+                        do
                             local State = self.Failing[Key]
 
                             if not State or Now >= State.Until then

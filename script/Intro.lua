@@ -1,6 +1,6 @@
 -- GILDED ARCHIVE - CINEMATIC INTRO (v4 cinematic transitions)
 -- Refined from the original. Progress is cinematic timing, not asset loading.
--- Init.lua runs this alongside module loading and heartbeat startup.
+-- Init.lua loads the menu concurrently; gameplay stays parked until cleanup.
 -- No external images, asset IDs, or modules are needed.
 
 return {
@@ -571,7 +571,7 @@ if not alive() then return end
 if not pause(INTRO_HOLD_AFTER_LOAD) then return end
 
 -- Finish the cinematic timing, then hold until the actual startup is ready.
--- The feature heartbeat starts before Ready is set, behind this screen.
+-- The menu is built before Ready is set; feature updates remain parked.
 while Context and Context.Startup and not Context.Startup.Ready do
 	if Context.Startup.Failed or not pause(0.1) then return end
 end

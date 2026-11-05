@@ -353,7 +353,7 @@ print(string.format("[AIC] %s  (from %s)", TITLE, BASE))
 --// fetching takes the first half of the bar, starting modules the rest.
 local UI = nil
 local FETCH_SHARE = 0.5
-local Startup = { Ready = false, Failed = false, IntroDone = false }
+local Startup = { Ready = false, Failed = false, IntroDone = false, AutomationReady = false }
 Context.Startup = Startup
 function Startup.AttachIntro(Gui)
     Startup.IntroGui = Gui
@@ -798,7 +798,7 @@ local function loadRemote()
 end
 
 --// The cinematic and boot run concurrently. Keep the window hidden while
---// modules initialize and the heartbeat starts; Intro waits for Ready before
+--// modules initialize and the heartbeat connects in a parked state; Intro waits for Ready before
 --// its exit fade. Only a real boot error bypasses the cinematic for diagnostics.
 task.spawn(function()
     local Ok, Error = xpcall(function()
@@ -987,8 +987,8 @@ if not Lifetime.Alive then
     return nil
 end
 
---// The last unprotected step. Starting the loop is what turns a module's
---// stored state into action, so it is the most likely place for a throw.
+--// Prepare the heartbeat connection while the intro still covers the menu.
+--// Its startup gate parks all feature updates until the cinematic is gone.
 do
     local HeartbeatModule = Context.Heartbeat
 
@@ -1031,14 +1031,22 @@ if Context.UI then
     end
 end
 
--- The heartbeat is already running. Reveal only after the intro has removed
--- its screen and blur, including when the intro finished early or failed.
+-- The menu can lay out beneath the intro, but no feature Update may act yet.
+-- IntroDone is set only after Intro.Start has removed its screen and blur.
 Startup.Ready = true
 while not Startup.IntroDone and Lifetime.Alive do
     task.wait()
 end
 if Lifetime.Alive and Context.UI then
     Startup.RevealMenu()
+end
+if Lifetime.Alive and not Startup.Failed then
+    -- Let the revealed menu/removed intro render before the first gameplay
+    -- update. Nothing expensive is constructed at this handoff.
+    local RunService = Context.Services and Context.Services.RunService
+    if RunService and RunService.RenderStepped then RunService.RenderStepped:Wait()
+    else task.wait() end
+    if Lifetime.Alive and not Startup.Failed then Startup.AutomationReady = true end
 end
 
 return Context

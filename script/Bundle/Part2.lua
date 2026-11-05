@@ -2977,7 +2977,6 @@ Connection = nil,
 Failing = {},
 }
 local SLOW_FEATURE = 0.008
-local FIRST_TICK_SLOTS = 12
 function Heartbeat:Start(Features)
 local RunService =
 Context.Services
@@ -2987,23 +2986,30 @@ if self.Connection then
 self.Connection:Disconnect()
 end
 local Watch = { Since = os.clock(), Total = 0, Frames = 0, Worst = 0 }
-local FirstFrame, Frame = {}, 0
+local StartedFeatures = {}
 self.Connection = RunService.Heartbeat:Connect(function(DeltaTime)
 local Lifetime = Context.Lifetime
 if Lifetime and Lifetime.Alive == false then
 self:Destroy()
 return
 end
-Frame += 1
-for Index, Feature in ipairs(Features or {}) do
+local Startup = Context.Startup
+if Startup and (Startup.Failed or not Startup.Ready or not Startup.IntroDone or not Startup.AutomationReady) then
+Watch.Since = os.clock()
+return
+end
+local FirstUpdates = 0
+for _, Feature in ipairs(Features or {}) do
 if type(Feature.Update) == "function" then
 local Name = Feature.Name
 local Key = Name or Feature
 local Now = os.clock()
-local Ready = FirstFrame[Key]
-if Ready == nil then
-FirstFrame[Key] = 1 + (Index % FIRST_TICK_SLOTS)
-elseif Frame >= Ready then
+if not StartedFeatures[Key] then
+if FirstUpdates >= 1 then continue end
+StartedFeatures[Key] = true
+FirstUpdates += 1
+end
+do
 local State = self.Failing[Key]
 if not State or Now >= State.Until then
 local Started = os.clock()

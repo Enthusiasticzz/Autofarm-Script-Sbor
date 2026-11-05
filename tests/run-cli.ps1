@@ -234,7 +234,7 @@ Check("Heartbeat isolates a failing feature", function()
 
     Hb:Start(Features)
 
-    --// The first tick of every feature is spread over the first dozen frames
+    --// First updates are spread across frames, one new feature per frame,
     --// so the loop does not start all of them in one frame; get past that
     --// spread, then measure the steady state exactly.
     for _ = 1, 13 do
@@ -263,6 +263,47 @@ Check("Heartbeat isolates a failing feature", function()
     Hb:Start(Features)
     Handler(0.1)
     Equal(Hb.Connection, nil, "a stopped run unhooked its heartbeat")
+end)
+
+Check("Heartbeat waits for intro cleanup and staggers first updates", function()
+    local Handler
+    local Startup = { Ready = false, IntroDone = false, AutomationReady = false }
+    local Ctx = { Startup = Startup, Lifetime = { Alive = true }, Services = { RunService = {
+        Heartbeat = { Connect = function(_, fn) Handler = fn; return { Disconnect = function() end } end },
+    } } }
+    local Hb = assert(loadstring(HeartbeatSource, "@Heartbeat.lua"))().Start(Ctx)
+    local Calls, Firsts = 0, 0
+    local Features = {}
+    for Index = 1, 24 do
+        local Seen = false
+        Features[Index] = { Name = "Startup" .. Index, Update = function()
+            Calls += 1
+            if not Seen then Seen = true; Firsts += 1 end
+        end }
+    end
+    Hb:Start(Features)
+    for _ = 1, 20 do Handler(.016) end
+    Equal(Calls, 0, "features acted while modules loaded")
+    Startup.Ready = true
+    for _ = 1, 20 do Handler(.016) end
+    Equal(Calls, 0, "features acted while intro was fading out")
+    Startup.IntroDone = true
+    Handler(.016)
+    Equal(Calls, 0, "features acted before menu's first visible frame")
+    Startup.AutomationReady = true
+    for Frame = 1, 24 do
+        Handler(.016)
+        Equal(Firsts, Frame, "first updates bunched together or never started")
+    end
+    local Before = Calls
+    Handler(.016)
+    Equal(Calls - Before, 24, "staggering changed normal update cadence")
+    Startup.Failed = true
+    Handler(.016)
+    Equal(Calls - Before, 24, "failed startup allowed feature actions")
+    Ctx.Lifetime.Alive = false
+    Handler(.016)
+    Equal(Hb.Connection, nil, "parked heartbeat survived shutdown")
 end)
 
 Check("Logger gates debug output", function()
