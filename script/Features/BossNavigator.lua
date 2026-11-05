@@ -1399,6 +1399,12 @@ return {
             if UIRef.BossDeathFarmToggle then
                 UIRef.BossDeathFarmToggle:Set(CONFIG.BOSS_DEATH_FARM == true, true)
             end
+            if UIRef.BossWaitForSpawnToggle then
+                UIRef.BossWaitForSpawnToggle:Set(CONFIG.BOSS_WAIT_FOR_SPAWN == true, true)
+            end
+            if UIRef.BossDuoTimeoutBox then
+                UIRef.BossDuoTimeoutBox:Set(tostring(CONFIG.BOSS_DUO_WAIT_TIMEOUT or 0), true)
+            end
             AICUI.RefreshBossPathList()
         end
 
@@ -1580,6 +1586,9 @@ return {
 
             S.Phase = "Idle"
             S.ReturnKill = false
+            S.FightDuoCharacter, S.FightDuoName = nil, nil
+            S.AwaitDuoCharacter, S.AwaitDuoName = nil, nil
+            S.DuoWaitStartedAt, S.DuoWaitReleased, S.DuoWaitName = nil, false, nil
             S.ReturnMissAt = nil
             S.SeenTarget = false
             S.LastTarget = nil
@@ -1621,6 +1630,8 @@ return {
             end
 
             S.Phase = "Approach"
+            S.FightDuoCharacter, S.FightDuoName = nil, nil
+            S.DuoWaitStartedAt, S.DuoWaitReleased, S.DuoWaitName = nil, false, nil
             S.PhaseStart = Now
             S.WalkStart = Now
             S.WaitUntil = nil
@@ -1721,6 +1732,12 @@ return {
 
         local function BeginReset(Now, Reason)
             local _, Humanoid, RootPart = Runtime:GetCharacter()
+
+            -- Capture the partner from the fight, not from this delayed reset:
+            -- the fast account may have respawned while we protected our EXP.
+            if CONFIG.BOSS_WAIT_FOR_SPAWN == true and CONFIG.BOSS_DUO_SYNC == true then
+                S.AwaitDuoCharacter, S.AwaitDuoName = S.FightDuoCharacter, S.FightDuoName
+            end
 
             S.Resets += 1
 
@@ -3110,12 +3127,184 @@ return {
         local function IsDuoNear(RootPart)
             local DuoRoot = GetDuoRoot()
 
+            if S.AwaitDuoName ~= GetDuoName() then
+                S.AwaitDuoCharacter, S.AwaitDuoName = nil, nil
+            end
+
             if not DuoRoot then
                 return false
             end
 
-            return AICCombatUtils.GetHorizontalDistance(RootPart.Position, DuoRoot.Position)
-                <= GetDuoRange()
+            if CONFIG.BOSS_WAIT_FOR_SPAWN == true and DuoRoot.Parent == S.AwaitDuoCharacter then
+                return false
+            end
+            local Near = AICCombatUtils.GetHorizontalDistance(RootPart.Position, DuoRoot.Position) <= GetDuoRange()
+            if Near then S.AwaitDuoCharacter, S.AwaitDuoName = nil, nil end
+            return Near
+        end
+
+        local function RecordFightDuo()
+            if CONFIG.BOSS_DUO_SYNC == true then
+                local Root = GetDuoRoot()
+                if Root then S.FightDuoCharacter, S.FightDuoName = Root.Parent, GetDuoName() end
+            end
+        end
+
+        local function GetDuoWaitTimeout()
+            local Seconds = tonumber(CONFIG.BOSS_DUO_WAIT_TIMEOUT)
+            if not Seconds or Seconds ~= Seconds then return 0 end
+            return math.clamp(Seconds, 0, 86400)
+        end
+
+        local function IsWaitingForDuo(RootPart, Now)
+            local Name = GetDuoName()
+            if S.DuoWaitName ~= Name then
+                S.DuoWaitStartedAt, S.DuoWaitReleased, S.DuoWaitName = nil, false, Name
+            end
+            if CONFIG.BOSS_DUO_SYNC ~= true or IsDuoNear(RootPart) then
+                S.DuoWaitStartedAt, S.DuoWaitReleased = nil, false
+                return false
+            end
+            if S.DuoWaitReleased then return false end
+            S.DuoWaitStartedAt = S.DuoWaitStartedAt or Now
+            local Timeout = GetDuoWaitTimeout()
+            if Timeout > 0 and Now - S.DuoWaitStartedAt >= Timeout then
+                -- Release only this wait. The same stop still needs its boss;
+                -- there is no Advance here, and the next visit starts fresh.
+                S.DuoWaitReleased = true
+                return false
+            end
+            return true
+        end
+
+        local function HoldForBoss(Stop, Now, Humanoid, RootPart, DuoWaiting, BossWaiting, WaitTarget)
+            -- Waiting owns the frame and never expires as an unreachable walk.
+            S.LastProgressAt, S.WalkStart = Now, Now
+            AICCombat.S.ClosestTarget = nil
+            local DuoName = GetDuoName()
+            --// The wait is for the spawn, not for the character to
+            --// stand still and be killed in: the boss's dodge, the
+            --// heal and the guard all still run, only the fight
+            --// itself is held back until the wait is over.
+            --//
+            --// No evade code of its own: a boss that spawns early
+            --// and opens with a skill is dodged with the fight's
+            --// own DodgeStep, armed by the same IsSkillShowing /
+            --// IsHealthBurst checks and the same constants, so the
+            --// ring, the sprint and the release are the ones the
+            --// fight has already been tuned to.
+
+            if WaitTarget then
+                local WaitDodge = Stop.Dodge ~= false
+                    and WaitTarget:FindFirstChild("HumanoidRootPart") ~= nil
+                local WaitCasting = WaitDodge and IsSkillShowing(WaitTarget, Now) == true
+
+                --// Only a cast the boss is actually showing arms the
+                --// dodge while waiting. A health burst used to arm it
+                --// as well, and during a wait that burst is just a mob
+                --// landing on the guard: eight seconds of stepping out
+                --// of nothing, which is the wait fighting itself
+                --// instead of blocking. The burst stays the fight's
+                --// own backup, where it belongs.
+                --// The rising edge is the cast starting, the same
+                --// edge the fight uses. Arming on every frame the
+                --// effect stayed up cleared S.DodgeTarget each
+                --// time, so DodgeStep's staleness test was true
+                --// every frame and PickDodgePoint picked a fresh
+                --// candidate each frame: as IsPathClear flipped
+                --// between neighbouring candidates the character
+                --// was sent back and forth between them.
+                local WaitOpened = WaitCasting and not S.SkillWas
+                S.SkillWas = WaitCasting
+
+                if WaitOpened then
+                    local WaitRunning = (S.DodgeMaxUntil or 0) > Now
+
+                    S.DodgeMinUntil = Now + DODGE_MIN_TIME
+                    S.DodgeMaxUntil = Now + DODGE_MAX_TIME
+                    S.SkillSeenAt = Now
+                    S.SkillActive = true
+
+                    --// A dodge already running keeps its point: a
+                    --// fresh one would be measured from a
+                    --// character already sprinting.
+                    if not WaitRunning then
+                        S.DodgeTarget = nil
+                    end
+                end
+
+                if DodgeStep(WaitTarget, Humanoid, RootPart, Now, Stop) then
+                    --// DodgeStep writes its own STOP x/y DODGE line. The
+                    --// guard stays up through it: evading and blocking
+                    --// are one stance here, not a choice between them.
+                    SetBlocking(true)
+                    if DuoWaiting then
+                        SetStatus(string.format("STOP %d/%d  WAITING FOR DUO  %s  DODGE", S.Index, #GetStops(), DuoName))
+                    end
+                    --// Own the frame. A bare return made BossStep
+                    --// return nil, so Auto Farm's own Update kept
+                    --// moving the character on these same frames -
+                    --// the dodge went one way and Auto Farm pulled it
+                    --// back, which is the back-and-forth.
+                    return true
+                end
+            else
+                --// No boss to read a cast from. Forget the last one,
+                --// or a respawn's opening skill looks like a cast
+                --// that was already handled and is not dodged.
+                S.SkillWas = false
+            end
+
+            local WaitHealPercent = math.clamp(
+                tonumber(CONFIG.AUTO_HEAL_HEALTH_PERCENT) or 65,
+                30,
+                80
+            )
+            local WaitMaxHealth = tonumber(Humanoid.MaxHealth) or 0
+            local WaitHeal = WaitMaxHealth > 0
+                and (tonumber(Humanoid.Health) or 0) <= WaitMaxHealth * (WaitHealPercent / 100)
+                and AICFeature.TryHeal
+                and AICFeature.TryHeal(Now)
+
+            --// Standing at the stop either way: the sword stays
+            --// out and the guard goes up, and a remote drink on a
+            --// low bar is the only thing that happens besides it.
+            Humanoid:Move(Vector3.zero)
+            RequireWeapon(Now)
+            SetBlocking(true)
+
+            --// Only says BLOCK when the binding actually took it: a
+            --// game that names its block differently shows HEAL
+            --// alone rather than a guard that is not up.
+            local WaitMarker = S.Blocking and "  BLOCK" or ""
+
+            if WaitHeal then
+                WaitMarker = S.Blocking and "  HEAL  BLOCK" or "  HEAL"
+            end
+
+            if DuoWaiting then
+                SetStatus(string.format(
+                    "STOP %d/%d  WAITING FOR DUO  %s",
+                    S.Index,
+                    #GetStops(),
+                    DuoName ~= "" and DuoName or "SET A DUO NAME"
+                ))
+            elseif BossWaiting then
+                SetStatus(string.format("STOP %d/%d  WAITING FOR BOSS  %s%s", S.Index, #GetStops(), Stop.Label, WaitMarker))
+            else
+                SetStatus(string.format(
+                    "STOP %d/%d  WAIT %ds  %s%s",
+                    S.Index,
+                    #GetStops(),
+                    math.ceil((S.SpotWaitUntil or Now) - Now),
+                    Stop.Label,
+                    WaitMarker
+                ))
+            end
+            --// Same reason as the dodge frame: the wait is what
+            --// stands the character here, so Auto Farm must not
+            --// walk it somewhere else on the same frame.
+            return true
         end
 
         local function ApproachStep(Stop, Now)
@@ -3315,7 +3504,7 @@ return {
                     --// continues a stop the character died at: whatever is
                     --// there already killed the character, so there is no
                     --// spawn to wait for.
-                    local Wait = S.SkipSpotWait and 0 or (tonumber(Stop.Wait) or 0)
+                    local Wait = (S.SkipSpotWait or CONFIG.BOSS_WAIT_FOR_SPAWN == true) and 0 or (tonumber(Stop.Wait) or 0)
 
                     --// Duo Sync: nothing starts until the duo is beside the
                     --// character. Wait At Spot is not set while they are away,
@@ -3323,9 +3512,8 @@ return {
                     --// step out again the timer is cleared and starts over on
                     --// their return. With Wait 0 the gate still holds, so a
                     --// stop without a wait also waits for them.
-                    local DuoName = GetDuoName()
-                    local DuoWaiting = CONFIG.BOSS_DUO_SYNC == true
-                        and not IsDuoNear(RootPart)
+                    local DuoWaiting = IsWaitingForDuo(RootPart, Now)
+                    local BossWaiting = CONFIG.BOSS_WAIT_FOR_SPAWN == true and FindTarget(Stop, Now) == nil
 
                     if DuoWaiting then
                         S.SpotWaitUntil = nil
@@ -3335,126 +3523,8 @@ return {
                         S.SpotWaitUntil = Now + Wait
                     end
 
-                    if DuoWaiting or (S.SpotWaitUntil and Now < S.SpotWaitUntil) then
-                        --// The wait is for the spawn, not for the character to
-                        --// stand still and be killed in: the boss's dodge, the
-                        --// heal and the guard all still run, only the fight
-                        --// itself is held back until the wait is over.
-                        --//
-                        --// No evade code of its own: a boss that spawns early
-                        --// and opens with a skill is dodged with the fight's
-                        --// own DodgeStep, armed by the same IsSkillShowing /
-                        --// IsHealthBurst checks and the same constants, so the
-                        --// ring, the sprint and the release are the ones the
-                        --// fight has already been tuned to.
-                        local WaitTarget = FindTarget(Stop, Now)
-
-                        if WaitTarget then
-                            local WaitDodge = Stop.Dodge ~= false
-                                and WaitTarget:FindFirstChild("HumanoidRootPart") ~= nil
-                            local WaitCasting = WaitDodge and IsSkillShowing(WaitTarget, Now) == true
-
-                            --// Only a cast the boss is actually showing arms the
-                            --// dodge while waiting. A health burst used to arm it
-                            --// as well, and during a wait that burst is just a mob
-                            --// landing on the guard: eight seconds of stepping out
-                            --// of nothing, which is the wait fighting itself
-                            --// instead of blocking. The burst stays the fight's
-                            --// own backup, where it belongs.
-                            --// The rising edge is the cast starting, the same
-                            --// edge the fight uses. Arming on every frame the
-                            --// effect stayed up cleared S.DodgeTarget each
-                            --// time, so DodgeStep's staleness test was true
-                            --// every frame and PickDodgePoint picked a fresh
-                            --// candidate each frame: as IsPathClear flipped
-                            --// between neighbouring candidates the character
-                            --// was sent back and forth between them.
-                            local WaitOpened = WaitCasting and not S.SkillWas
-                            S.SkillWas = WaitCasting
-
-                            if WaitOpened then
-                                local WaitRunning = (S.DodgeMaxUntil or 0) > Now
-
-                                S.DodgeMinUntil = Now + DODGE_MIN_TIME
-                                S.DodgeMaxUntil = Now + DODGE_MAX_TIME
-                                S.SkillSeenAt = Now
-                                S.SkillActive = true
-
-                                --// A dodge already running keeps its point: a
-                                --// fresh one would be measured from a
-                                --// character already sprinting.
-                                if not WaitRunning then
-                                    S.DodgeTarget = nil
-                                end
-                            end
-
-                            if DodgeStep(WaitTarget, Humanoid, RootPart, Now, Stop) then
-                                --// DodgeStep writes its own STOP x/y DODGE line. The
-                                --// guard stays up through it: evading and blocking
-                                --// are one stance here, not a choice between them.
-                                SetBlocking(true)
-                                --// Own the frame. A bare return made BossStep
-                                --// return nil, so Auto Farm's own Update kept
-                                --// moving the character on these same frames -
-                                --// the dodge went one way and Auto Farm pulled it
-                                --// back, which is the back-and-forth.
-                                return true
-                            end
-                        else
-                            --// No boss to read a cast from. Forget the last one,
-                            --// or a respawn's opening skill looks like a cast
-                            --// that was already handled and is not dodged.
-                            S.SkillWas = false
-                        end
-
-                        local WaitHealPercent = math.clamp(
-                            tonumber(CONFIG.AUTO_HEAL_HEALTH_PERCENT) or 65,
-                            30,
-                            80
-                        )
-                        local WaitMaxHealth = tonumber(Humanoid.MaxHealth) or 0
-                        local WaitHeal = WaitMaxHealth > 0
-                            and (tonumber(Humanoid.Health) or 0) <= WaitMaxHealth * (WaitHealPercent / 100)
-                            and AICFeature.TryHeal
-                            and AICFeature.TryHeal(Now)
-
-                        --// Standing at the stop either way: the sword stays
-                        --// out and the guard goes up, and a remote drink on a
-                        --// low bar is the only thing that happens besides it.
-                        Humanoid:Move(Vector3.zero)
-                        RequireWeapon(Now)
-                        SetBlocking(true)
-
-                        --// Only says BLOCK when the binding actually took it: a
-                        --// game that names its block differently shows HEAL
-                        --// alone rather than a guard that is not up.
-                        local WaitMarker = S.Blocking and "  BLOCK" or ""
-
-                        if WaitHeal then
-                            WaitMarker = S.Blocking and "  HEAL  BLOCK" or "  HEAL"
-                        end
-
-                        if DuoWaiting then
-                            SetStatus(string.format(
-                                "STOP %d/%d  WAITING FOR DUO  %s",
-                                S.Index,
-                                #GetStops(),
-                                DuoName ~= "" and DuoName or "SET A DUO NAME"
-                            ))
-                        else
-                            SetStatus(string.format(
-                                "STOP %d/%d  WAIT %ds  %s%s",
-                                S.Index,
-                                #GetStops(),
-                                math.ceil((S.SpotWaitUntil or Now) - Now),
-                                Stop.Label,
-                                WaitMarker
-                            ))
-                        end
-                        --// Same reason as the dodge frame: the wait is what
-                        --// stands the character here, so Auto Farm must not
-                        --// walk it somewhere else on the same frame.
-                        return true
+                    if DuoWaiting or BossWaiting or (S.SpotWaitUntil and Now < S.SpotWaitUntil) then
+                        return HoldForBoss(Stop, Now, Humanoid, RootPart, DuoWaiting, BossWaiting, FindTarget(Stop, Now))
                     end
 
                     S.SpotWaitUntil = nil
@@ -3483,6 +3553,7 @@ return {
                     --// is still seen and counted as this stop's kill instead
                     --// of being walked past.
                     S.Phase = "Fight"
+                    RecordFightDuo()
                     S.FightStart = Now
                     S.SeenTarget = false
                     S.LastTarget = nil
@@ -3528,6 +3599,8 @@ return {
 
             local Target = FindTarget(Stop, Now)
             local Scanned = Target ~= nil
+            local FinishingKill = CONFIG.BOSS_WAIT_FOR_SPAWN == true and S.KillAt ~= nil
+            if FinishingKill then Target, Scanned = nil, false end
 
             --// The scan is a snapshot of the room, not the game's health: a
             --// boss that steps out of the engage radius, has its model swapped
@@ -3541,7 +3614,7 @@ return {
             --// of the Mobs folder), not a boss still standing: holding it cost
             --// nothing while it was alive and frozen the stop in FIGHT when it
             --// was not, so the keep lapses after TARGET_KEEP_TIME.
-            if not Target
+            if not Target and not FinishingKill
                 and IsMobAlive(S.LastTarget)
                 and IsWantedTarget(S.LastTarget, Stop)
                 and Now - (S.TargetSeenAt or 0) <= TARGET_KEEP_TIME
@@ -3550,6 +3623,13 @@ return {
             end
 
             if Target then
+                -- Re-check readiness before every attack, not just arrival.
+                -- A spawned boss never releases a missing/dead/resetting duo.
+                if IsWaitingForDuo(RootPart, Now) then
+                    return HoldForBoss(Stop, Now, Humanoid, RootPart, true, false, Target)
+                end
+                RecordFightDuo()
+                SetBlocking(false)
                 S.SeenTarget = true
                 S.FoughtThisVisit = true
                 S.LastTarget = Target
@@ -3573,6 +3653,16 @@ return {
             --// rising edge instead of inheriting this one.
             S.SkillWas = false
 
+            -- A visit without a live boss has no kill to reset for. Stay here
+            -- through spawn delays and old corpses instead of taking the normal
+            -- no-target timeout. An actual observed kill still uses its EXP wait.
+            if not S.SeenTarget then
+                local DuoWaiting = IsWaitingForDuo(RootPart, Now)
+                if DuoWaiting or CONFIG.BOSS_WAIT_FOR_SPAWN == true then
+                    return HoldForBoss(Stop, Now, Humanoid, RootPart, DuoWaiting, true, nil)
+                end
+            end
+
             --// The boss went down: a grace period covers a second mob of the
             --// same stop still standing up, then the stop's own Reset After
             --// pause is held before the character is reset.
@@ -3583,7 +3673,7 @@ return {
                 --// stop: it is not standing at the spot any more. The name was
                 --// taken off this stop's list: the route simply moves on, with
                 --// no reset and no EXP lost.
-                local LastAlive = IsMobAlive(S.LastTarget)
+                local LastAlive = not FinishingKill and IsMobAlive(S.LastTarget)
                 --// A body the game took away stops existing for us; a boss that
                 --// is merely outside the scan radius is still in the workspace.
                 local StillHere = LastAlive
@@ -4148,6 +4238,18 @@ return {
                     or (CONFIG.BOSS_RESET_ALWAYS_WAIT
                         and "ALWAYS WAIT AFTER KILL"
                         or "INSTANT RESET WHEN NOTHING IS AT RISK"))
+            end,
+        }
+
+        UIRef.BossWaitForSpawnToggle = UIRef.BossSection:AddToggle{
+            Name = "Wait for Boss Spawn",
+            Default = CONFIG.BOSS_WAIT_FOR_SPAWN == true,
+            Description = "Wait for a living boss instead of Wait At Spot seconds. Duo Sync takes priority and, after a kill/reset, waits for the duo's new character to return.",
+            Callback = function(Value)
+                CONFIG.BOSS_WAIT_FOR_SPAWN = Value == true
+                S.SpotWaitUntil = nil
+                if not CONFIG.BOSS_WAIT_FOR_SPAWN then S.AwaitDuoCharacter, S.AwaitDuoName = nil, nil end
+                if AICProfile.S.ActiveProfileName then AICProfile.SaveActiveProfile() end
             end,
         }
 
@@ -4763,6 +4865,9 @@ return {
             Default = CONFIG.BOSS_DUO_SYNC == true,
             Callback = function(Value)
                 CONFIG.BOSS_DUO_SYNC = Value == true
+                S.FightDuoCharacter, S.FightDuoName = nil, nil
+                S.AwaitDuoCharacter, S.AwaitDuoName = nil, nil
+                S.DuoWaitStartedAt, S.DuoWaitReleased, S.DuoWaitName = nil, false, nil
                 AICProfile.WriteGlobalStore()
                 SetStatus(CONFIG.BOSS_DUO_SYNC
                     and "DUO SYNC  STOPS WAIT FOR THE DUO"
@@ -4801,6 +4906,24 @@ return {
             end,
         }
         UIRef.BossSection:AddNote("Blank uses the Duo Username from Utility -> Webhook")
+
+        UIRef.BossDuoTimeoutBox = UIRef.BossSection:AddTextBox{
+            Name = "Duo Wait Timeout (s)",
+            Default = tostring(GetDuoWaitTimeout()),
+            Description = "0 waits indefinitely. After this many seconds, fight the boss at this stop without the duo. Wait for Boss Spawn still applies.",
+            Callback = function(Value)
+                local Seconds = tonumber(Value)
+                if not Seconds or Seconds ~= Seconds or math.abs(Seconds) == math.huge then
+                    UIRef.BossDuoTimeoutBox:Set(tostring(GetDuoWaitTimeout()), true)
+                    return
+                end
+                CONFIG.BOSS_DUO_WAIT_TIMEOUT = math.clamp(Seconds, 0, 86400)
+                S.DuoWaitStartedAt, S.DuoWaitReleased = nil, false
+                UIRef.BossDuoTimeoutBox:Set(tostring(CONFIG.BOSS_DUO_WAIT_TIMEOUT), true)
+                AICProfile.WriteGlobalStore()
+                if AICProfile.S.ActiveProfileName then AICProfile.SaveActiveProfile() end
+            end,
+        }
 
         UIRef.BossLoopToggle = UIRef.BossSection:AddToggle{
             Name = "Loop Route",

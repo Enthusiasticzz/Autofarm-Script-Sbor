@@ -949,4 +949,216 @@ assert(Context.AICFeature.GetExpProgress() == Needed(1357) + Needed(1358) - 2346
 LevelStat.Value, ExpStat.Value = 1358, 1367827
 assert(Context.AICFeature.GetExpProgress() == 4558220, "backwards correction inflated the session")
 print("EXP regression passed: both replication orders, recovery, multi-level correction, report/status agreement")
+do
+    -- Exercise the real approach/fight/reset code: a spawn is not a release
+    -- signal until a living duo has returned from this cycle's reset.
+    local nav = Context.AICFeature.BossNav
+    local state = nav.S
+    local function pos(x)
+        return setmetatable({X=x or 0,Y=0,Z=0}, {
+            __typename="Vector3",
+            __sub=function(a,b) return {X=a.X-b.X,Y=0,Z=0,Magnitude=math.abs(a.X-b.X)} end,
+        })
+    end
+    local character=Instance.new("Model",workspace)
+    local root=Instance.new("Part",character); root.Name="HumanoidRootPart"; root.Position=pos(0)
+    local hum=Instance.new("Humanoid",character); hum.Health=100; hum.MaxHealth=100
+    rawset(hum,"Move",noop); rawset(hum,"MoveTo",noop)
+    Context.Runtime.GetCharacter=function() return character,hum,root end
+    Context.Runtime.GetInputBindableFunction=function() return nil end
+    Context.Services.Replicated.FindFirstChild=function() return nil end
+    Context.AICFeature.EnsureWeaponDrawn=function() return false end
+    Context.AICFeature.TryHeal=function() return false end
+    Context.AICCombatUtils.GetHorizontalDistance=function(a,b) return math.abs(a.X-b.X) end
+    Context.AICCombatUtils.IsStandingOnTarget=function() return false end
+    Context.AICCombat.GetCombatDistance=function() return 0 end
+    Context.AICCombat.GetNearestThreat=function() return nil end
+    Context.AICCombat.FaceCombatTarget=noop
+    local attacks=0
+    Context.AICCombat.AttackTarget=function() attacks+=1 end
+    local duo={Name="DuoWaitTest",DisplayName="Duo Wait Test"}
+    local function respawnDuo(x)
+        local model=Instance.new("Model",workspace)
+        local r=Instance.new("Part",model); r.Name="HumanoidRootPart"; r.Position=pos(x)
+        local h=Instance.new("Humanoid",model); h.Health=100
+        duo.Character=model
+        return model,r,h
+    end
+    local duoCharacter,duoRoot,duoHum=respawnDuo(200)
+    players.GetPlayers=function() return {Context.Player,duo} end
+    local mobs=Instance.new("Folder",workspace); mobs.Name="Mobs"
+    local mob=Instance.new("Model"); mob.Name="WaitTestBoss"
+    local mobRoot=Instance.new("Part",mob); mobRoot.Name="HumanoidRootPart"; mobRoot.Position=pos(0)
+    local mobHum=Instance.new("Humanoid",mob); mobHum.Health=100
+    rawset(mob,"IsDescendantOf",function() return mob.Parent==mobs end)
+    local stop={Label="Wait test",Position=pos(0),Radius=100,Targets={"WaitTestBoss"},Path={},
+        Wait=500,ResetWait=0,ResetAfterKill=true,Dodge=false,Waypoint=0}
+    local place=Context.Runtime:GetPlaceConfig()
+    place.BOSS_ROUTE={stop}
+    Context.CONFIG.BOSS_WAIT_FOR_SPAWN=true
+    Context.CONFIG.BOSS_DUO_SYNC=true
+    Context.CONFIG.BOSS_DUO_NAME=duo.Name
+    Context.CONFIG.BOSS_DUO_RANGE=35
+    Context.CONFIG.BOSS_DEATH_FARM=true
+    assert(boss.BossWaitForSpawnToggle, "dynamic spawn wait toggle missing")
+    nav.StopRoute(); state.Index=1; nav.BeginStop(100)
+    assert(nav.ApproachStep(stop,100)==true and state.Phase=="Approach", "missing duo didn't hold approach")
+    assert(boss.BossStatusLabel.Instance.Text:find("WAITING FOR DUO",1,true), "duo didn't take status priority")
+    duoRoot.Position=pos(0)
+    nav.ApproachStep(stop,101)
+    assert(state.Phase=="Approach" and boss.BossStatusLabel.Instance.Text:find("WAITING FOR BOSS",1,true), "ready duo didn't wait for spawn")
+    for t=102,260 do nav.ApproachStep(stop,t) end
+    assert(state.Phase=="Approach" and state.Index==1, "long spawn wait expired as an unreachable stop")
+    mob.Parent=mobs
+    duoRoot.Position=pos(200)
+    nav.ApproachStep(stop,261)
+    assert(state.Phase=="Approach" and attacks==0, "boss spawn released a missing duo")
+    duoRoot.Position=pos(0)
+    nav.ApproachStep(stop,262)
+    assert(state.Phase=="Fight", "living boss + duo didn't release immediately instead of fixed wait")
+    nav.FightStep(stop,263)
+    assert(attacks==1, "ready duo couldn't attack")
+    duoHum.Health=0
+    assert(nav.FightStep(stop,264)==true and attacks==1, "duo dying didn't stop attacks")
+    duoHum.Health=100; duoRoot.Position=pos(200)
+    nav.FightStep(stop,265)
+    assert(attacks==1, "duo leaving didn't stop attacks")
+    duoRoot.Position=pos(0); nav.FightStep(stop,266)
+    assert(attacks==2, "duo returning didn't resume the fight")
+    -- The old character was recorded during combat, before any slow EXP wait.
+    assert(state.FightDuoCharacter==duoCharacter, "duo cycle wasn't recorded")
+    mobHum.Health=0
+    LevelStat.Value,ExpStat.Value=1358,0
+    nav.FightStep(stop,267)
+    assert(state.Phase=="Recover" and hum.Health==0, "dynamic spawn wait blocked the post-kill reset")
+    assert(state.AwaitDuoCharacter==duoCharacter, "reset didn't require a new duo character")
+    hum.Health=100
+    nav.BeginStop(268)
+    mobHum.Health=100
+    nav.ApproachStep(stop,269)
+    assert(state.Phase=="Approach" and attacks==2, "nearby duo still waiting to reset released next boss")
+    assert(boss.BossStatusLabel.Instance.Text:find("WAITING FOR DUO",1,true), "resetting duo lost status priority")
+    respawnDuo(200); nav.ApproachStep(stop,270)
+    assert(state.Phase=="Approach", "duo respawned far away but counted as ready")
+    duoCharacter,duoRoot,duoHum=respawnDuo(0)
+    nav.ApproachStep(stop,271); nav.FightStep(stop,272)
+    assert(state.Phase=="Fight" and attacks==3, "returned duo didn't release next boss")
+    -- Fast partner can already have reset by the time our own slow reset ends.
+    local foughtCharacter=duoCharacter
+    respawnDuo(0)
+    mobHum.Health=0; nav.FightStep(stop,273)
+    assert(state.AwaitDuoCharacter==foughtCharacter, "slow reset captured the partner's new character and would deadlock")
+    hum.Health=100; nav.BeginStop(274); mobHum.Health=100
+    nav.ApproachStep(stop,275)
+    assert(state.Phase=="Fight", "already respawned/returned duo was asked to reset again")
+    -- In-flight fight with no first target also waits beyond normal timeouts
+    -- and does not mistake an earlier corpse for this visit's kill.
+    nav.StopRoute(); nav.BeginStop(276)
+    state.Phase="Fight"; state.FightStart=276; mobHum.Health=0
+    nav.FightStep(stop,500)
+    assert(state.Phase=="Fight" and not state.SeenTarget and hum.Health==100, "old corpse or no-target timeout escaped dynamic wait")
+    Context.CONFIG.BOSS_DUO_SYNC=false
+    mobHum.Health=100; nav.FightStep(stop,501)
+    assert(attacks==4, "solo dynamic wait couldn't attack spawned boss")
+    nav.StopRoute()
+    assert(state.AwaitDuoCharacter==nil and state.FightDuoCharacter==nil, "stopping route retained stale duo readiness")
+    Context.CONFIG.BOSS_DUO_SYNC=true
+    duoRoot=duo.Character:FindFirstChild("HumanoidRootPart"); duoRoot.Position=pos(200)
+    assert(boss.BossDuoTimeoutBox and boss.BossDuoTimeoutBox:Get()=="0", "duo timeout textbox missing or doesn't default to unlimited")
+    boss.BossDuoTimeoutBox:Set("5")
+    assert(Context.CONFIG.BOSS_DUO_WAIT_TIMEOUT==5, "duo timeout wasn't saved")
+    boss.BossDuoTimeoutBox:Set("invalid")
+    assert(Context.CONFIG.BOSS_DUO_WAIT_TIMEOUT==5 and boss.BossDuoTimeoutBox:Get()=="5", "invalid timeout corrupted config")
+    nav.BeginStop(600)
+    nav.ApproachStep(stop,600); nav.ApproachStep(stop,604)
+    assert(state.Phase=="Approach" and attacks==4, "duo wait expired early")
+    nav.ApproachStep(stop,605); nav.FightStep(stop,606); nav.FightStep(stop,607)
+    assert(state.Phase=="Fight" and state.Index==1 and attacks==6, "duo timeout skipped stop or failed to keep attacking")
+    nav.BeginStop(608); nav.ApproachStep(stop,608)
+    assert(state.Phase=="Approach", "duo timeout release leaked into next visit")
+    mob.Parent=nil; nav.BeginStop(610)
+    nav.ApproachStep(stop,610); nav.ApproachStep(stop,615)
+    assert(state.Phase=="Approach" and state.Index==1 and attacks==6, "duo timeout bypassed missing boss or advanced stop")
+    assert(boss.BossStatusLabel.Instance.Text:find("WAITING FOR BOSS",1,true), "expired duo wait didn't become a spawn wait")
+    mob.Parent=mobs; nav.ApproachStep(stop,620); nav.FightStep(stop,621)
+    assert(state.Phase=="Fight" and state.Index==1 and attacks==7, "boss spawning after duo timeout didn't release current stop")
+    nav.StopRoute(); boss.BossDuoTimeoutBox:Set("0"); nav.BeginStop(700)
+    for t=700,900 do nav.ApproachStep(stop,t) end
+    assert(state.Phase=="Approach" and state.Index==1 and attacks==7, "zero timeout didn't wait indefinitely at the current boss")
+    -- The configurable release works with legacy fixed waits as well.
+    nav.StopRoute(); Context.CONFIG.BOSS_WAIT_FOR_SPAWN=false; stop.Wait=0
+    boss.BossDuoTimeoutBox:Set("2"); nav.BeginStop(910)
+    nav.ApproachStep(stop,910); nav.ApproachStep(stop,912); nav.FightStep(stop,913)
+    assert(state.Phase=="Fight" and state.Index==1 and attacks==8, "legacy duo timeout advanced instead of attacking")
+    nav.StopRoute()
+    -- A new boss during the slow account's EXP hold cannot cancel its owed
+    -- reset or replace the duo identity captured before the previous kill.
+    Context.CONFIG.BOSS_WAIT_FOR_SPAWN=true
+    boss.BossDuoTimeoutBox:Set("0"); stop.ResetWait=5
+    ExpStat.Value=Context.AICUI.neededExp(LevelStat.Value)
+    duoCharacter,duoRoot,duoHum=respawnDuo(0)
+    nav.BeginStop(930); nav.ApproachStep(stop,930); nav.FightStep(stop,931)
+    local attacksBeforeHold=attacks
+    mobHum.Health=0; nav.FightStep(stop,932)
+    assert(state.Phase=="Fight" and hum.Health==100 and state.KillAt, "EXP-protecting reset hold was lost")
+    local previousDuo=duoCharacter
+    respawnDuo(0); mobRoot.Position=pos(90); mobHum.Health=100; nav.FightStep(stop,933)
+    assert(attacks==attacksBeforeHold and hum.Health==100, "new spawn interrupted EXP hold")
+    nav.FightStep(stop,937)
+    assert(state.Phase=="Recover" and hum.Health==0 and state.AwaitDuoCharacter==previousDuo, "slow reset lost the prior duo cycle")
+    nav.StopRoute()
+    -- Verify the complete requested loop through the real teleport, recovery
+    -- and stop-advance paths, including wrapping from stop #2 back to #1.
+    local second=table.clone(stop)
+    stop.Position,stop.Waypoint,stop.ResetWait=pos(0),1,0
+    second.Position,second.Waypoint,second.ResetWait=pos(1000),2,0
+    place.BOSS_ROUTE={stop,second}
+    Context.CONFIG.BOSS_ROUTE_LOOP=true
+    ExpStat.Value=0
+    RaycastParams={new=function() return {} end}
+    rawset(workspace,"Raycast",function() return nil end)
+    local teleports={}
+    Context.Services.Replicated.FindFirstChild=function(_,name)
+        if name=="TeleportEvent" then return {FireServer=function(_,waypoint)
+            teleports[#teleports+1]=waypoint
+            root.Position=pos(waypoint==1 and 0 or 1000)
+        end} end
+    end
+    local function respawnSelf()
+        character:Destroy()
+        character=Instance.new("Model",workspace)
+        root=Instance.new("Part",character); root.Name="HumanoidRootPart"
+        root.Position,root.Size=pos(-500),Vector3.new(2,2,1)
+        hum=Instance.new("Humanoid",character); hum.Health,hum.MaxHealth=100,100
+        rawset(hum,"Move",noop); rawset(hum,"MoveTo",noop)
+    end
+    respawnSelf(); respawnDuo(-1000); state.Index=1; nav.BeginStop(1000)
+    local attacksAtLoopStart=attacks
+    for cycle=1,3 do
+        local t=1000+(cycle-1)*20
+        local index=cycle==2 and 2 or 1
+        local current=place.BOSS_ROUTE[index]
+        mob.Parent=nil
+        nav.ApproachStep(current,t+2)
+        nav.ApproachStep(current,t+3)
+        nav.ApproachStep(current,t+4)
+        assert(teleports[cycle]==index and state.Index==index, "cycle teleported to the wrong stop")
+        assert(state.Phase=="Approach" and boss.BossStatusLabel.Instance.Text:find("WAITING FOR DUO",1,true), "cycle didn't wait for duo after travel")
+        duoCharacter,duoRoot,duoHum=respawnDuo(current.Position.X)
+        nav.ApproachStep(current,t+5)
+        assert(state.Phase=="Approach" and boss.BossStatusLabel.Instance.Text:find("WAITING FOR BOSS",1,true), "cycle didn't wait for boss after duo arrived")
+        mob.Parent=mobs; mobRoot.Position=current.Position; mobHum.Health=100
+        nav.ApproachStep(current,t+6); nav.FightStep(current,t+7)
+        assert(attacks==attacksAtLoopStart+cycle, "cycle didn't attack once both gates were ready")
+        mobHum.Health=0; nav.FightStep(current,t+8)
+        assert(state.Phase=="Recover" and hum.Health==0, "cycle didn't reset after the kill")
+        respawnSelf(); nav.RecoverStep(t+9)
+        assert(state.Phase=="Approach" and state.Index==(index==1 and 2 or 1), "post-kill recovery didn't advance/loop to the next stop")
+    end
+    nav.StopRoute()
+    print("BOSS CYCLE passed: kill -> reset -> teleport next -> duo -> spawn -> repeat (1, 2, 1)")
+    mobs:Destroy(); character:Destroy()
+    players.GetPlayers=realGetPlayers
+    print("BOSS WAIT regression passed: spawn/duo priority, reset cycles, indefinite waits, timeout attacks current stop")
+end
 print("BOOT PROBE PASSED")

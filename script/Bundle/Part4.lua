@@ -781,6 +781,12 @@ end
 if UIRef.BossDeathFarmToggle then
 UIRef.BossDeathFarmToggle:Set(CONFIG.BOSS_DEATH_FARM == true, true)
 end
+if UIRef.BossWaitForSpawnToggle then
+UIRef.BossWaitForSpawnToggle:Set(CONFIG.BOSS_WAIT_FOR_SPAWN == true, true)
+end
+if UIRef.BossDuoTimeoutBox then
+UIRef.BossDuoTimeoutBox:Set(tostring(CONFIG.BOSS_DUO_WAIT_TIMEOUT or 0), true)
+end
 AICUI.RefreshBossPathList()
 end
 function AICUI.RefreshBossRoutePickers()
@@ -902,6 +908,9 @@ EndEvade(os.clock(), false)
 end
 S.Phase = "Idle"
 S.ReturnKill = false
+S.FightDuoCharacter, S.FightDuoName = nil, nil
+S.AwaitDuoCharacter, S.AwaitDuoName = nil, nil
+S.DuoWaitStartedAt, S.DuoWaitReleased, S.DuoWaitName = nil, false, nil
 S.ReturnMissAt = nil
 S.SeenTarget = false
 S.LastTarget = nil
@@ -938,6 +947,8 @@ SetStatus("ADD A BOSS STOP")
 return
 end
 S.Phase = "Approach"
+S.FightDuoCharacter, S.FightDuoName = nil, nil
+S.DuoWaitStartedAt, S.DuoWaitReleased, S.DuoWaitName = nil, false, nil
 S.PhaseStart = Now
 S.WalkStart = Now
 S.WaitUntil = nil
@@ -1027,6 +1038,9 @@ SetStatus(string.format("STOP %d/%d  %s", S.Index, #GetStops(), Reason))
 end
 local function BeginReset(Now, Reason)
 local _, Humanoid, RootPart = Runtime:GetCharacter()
+if CONFIG.BOSS_WAIT_FOR_SPAWN == true and CONFIG.BOSS_DUO_SYNC == true then
+S.AwaitDuoCharacter, S.AwaitDuoName = S.FightDuoCharacter, S.FightDuoName
+end
 S.Resets += 1
 if Humanoid and Humanoid.Health > 0 then
 Humanoid:Move(Vector3.zero)
@@ -1894,11 +1908,115 @@ return nil
 end
 local function IsDuoNear(RootPart)
 local DuoRoot = GetDuoRoot()
+if S.AwaitDuoName ~= GetDuoName() then
+S.AwaitDuoCharacter, S.AwaitDuoName = nil, nil
+end
 if not DuoRoot then
 return false
 end
-return AICCombatUtils.GetHorizontalDistance(RootPart.Position, DuoRoot.Position)
-<= GetDuoRange()
+if CONFIG.BOSS_WAIT_FOR_SPAWN == true and DuoRoot.Parent == S.AwaitDuoCharacter then
+return false
+end
+local Near = AICCombatUtils.GetHorizontalDistance(RootPart.Position, DuoRoot.Position) <= GetDuoRange()
+if Near then S.AwaitDuoCharacter, S.AwaitDuoName = nil, nil end
+return Near
+end
+local function RecordFightDuo()
+if CONFIG.BOSS_DUO_SYNC == true then
+local Root = GetDuoRoot()
+if Root then S.FightDuoCharacter, S.FightDuoName = Root.Parent, GetDuoName() end
+end
+end
+local function GetDuoWaitTimeout()
+local Seconds = tonumber(CONFIG.BOSS_DUO_WAIT_TIMEOUT)
+if not Seconds or Seconds ~= Seconds then return 0 end
+return math.clamp(Seconds, 0, 86400)
+end
+local function IsWaitingForDuo(RootPart, Now)
+local Name = GetDuoName()
+if S.DuoWaitName ~= Name then
+S.DuoWaitStartedAt, S.DuoWaitReleased, S.DuoWaitName = nil, false, Name
+end
+if CONFIG.BOSS_DUO_SYNC ~= true or IsDuoNear(RootPart) then
+S.DuoWaitStartedAt, S.DuoWaitReleased = nil, false
+return false
+end
+if S.DuoWaitReleased then return false end
+S.DuoWaitStartedAt = S.DuoWaitStartedAt or Now
+local Timeout = GetDuoWaitTimeout()
+if Timeout > 0 and Now - S.DuoWaitStartedAt >= Timeout then
+S.DuoWaitReleased = true
+return false
+end
+return true
+end
+local function HoldForBoss(Stop, Now, Humanoid, RootPart, DuoWaiting, BossWaiting, WaitTarget)
+S.LastProgressAt, S.WalkStart = Now, Now
+AICCombat.S.ClosestTarget = nil
+local DuoName = GetDuoName()
+if WaitTarget then
+local WaitDodge = Stop.Dodge ~= false
+and WaitTarget:FindFirstChild("HumanoidRootPart") ~= nil
+local WaitCasting = WaitDodge and IsSkillShowing(WaitTarget, Now) == true
+local WaitOpened = WaitCasting and not S.SkillWas
+S.SkillWas = WaitCasting
+if WaitOpened then
+local WaitRunning = (S.DodgeMaxUntil or 0) > Now
+S.DodgeMinUntil = Now + DODGE_MIN_TIME
+S.DodgeMaxUntil = Now + DODGE_MAX_TIME
+S.SkillSeenAt = Now
+S.SkillActive = true
+if not WaitRunning then
+S.DodgeTarget = nil
+end
+end
+if DodgeStep(WaitTarget, Humanoid, RootPart, Now, Stop) then
+SetBlocking(true)
+if DuoWaiting then
+SetStatus(string.format("STOP %d/%d  WAITING FOR DUO  %s  DODGE", S.Index, #GetStops(), DuoName))
+end
+return true
+end
+else
+S.SkillWas = false
+end
+local WaitHealPercent = math.clamp(
+tonumber(CONFIG.AUTO_HEAL_HEALTH_PERCENT) or 65,
+30,
+80
+)
+local WaitMaxHealth = tonumber(Humanoid.MaxHealth) or 0
+local WaitHeal = WaitMaxHealth > 0
+and (tonumber(Humanoid.Health) or 0) <= WaitMaxHealth * (WaitHealPercent / 100)
+and AICFeature.TryHeal
+and AICFeature.TryHeal(Now)
+Humanoid:Move(Vector3.zero)
+RequireWeapon(Now)
+SetBlocking(true)
+local WaitMarker = S.Blocking and "  BLOCK" or ""
+if WaitHeal then
+WaitMarker = S.Blocking and "  HEAL  BLOCK" or "  HEAL"
+end
+if DuoWaiting then
+SetStatus(string.format(
+"STOP %d/%d  WAITING FOR DUO  %s",
+S.Index,
+#GetStops(),
+DuoName ~= "" and DuoName or "SET A DUO NAME"
+))
+elseif BossWaiting then
+SetStatus(string.format("STOP %d/%d  WAITING FOR BOSS  %s%s", S.Index, #GetStops(), Stop.Label, WaitMarker))
+else
+SetStatus(string.format(
+"STOP %d/%d  WAIT %ds  %s%s",
+S.Index,
+#GetStops(),
+math.ceil((S.SpotWaitUntil or Now) - Now),
+Stop.Label,
+WaitMarker
+))
+end
+return true
 end
 local function ApproachStep(Stop, Now)
 local _, Humanoid, RootPart = Runtime:GetCharacter()
@@ -2015,76 +2133,17 @@ math.min(S.PathIndex - 1, #Path),
 #Path
 ))
 else
-local Wait = S.SkipSpotWait and 0 or (tonumber(Stop.Wait) or 0)
-local DuoName = GetDuoName()
-local DuoWaiting = CONFIG.BOSS_DUO_SYNC == true
-and not IsDuoNear(RootPart)
+local Wait = (S.SkipSpotWait or CONFIG.BOSS_WAIT_FOR_SPAWN == true) and 0 or (tonumber(Stop.Wait) or 0)
+local DuoWaiting = IsWaitingForDuo(RootPart, Now)
+local BossWaiting = CONFIG.BOSS_WAIT_FOR_SPAWN == true and FindTarget(Stop, Now) == nil
 if DuoWaiting then
 S.SpotWaitUntil = nil
 end
 if not DuoWaiting and Wait > 0 and not S.SpotWaitUntil then
 S.SpotWaitUntil = Now + Wait
 end
-if DuoWaiting or (S.SpotWaitUntil and Now < S.SpotWaitUntil) then
-local WaitTarget = FindTarget(Stop, Now)
-if WaitTarget then
-local WaitDodge = Stop.Dodge ~= false
-and WaitTarget:FindFirstChild("HumanoidRootPart") ~= nil
-local WaitCasting = WaitDodge and IsSkillShowing(WaitTarget, Now) == true
-local WaitOpened = WaitCasting and not S.SkillWas
-S.SkillWas = WaitCasting
-if WaitOpened then
-local WaitRunning = (S.DodgeMaxUntil or 0) > Now
-S.DodgeMinUntil = Now + DODGE_MIN_TIME
-S.DodgeMaxUntil = Now + DODGE_MAX_TIME
-S.SkillSeenAt = Now
-S.SkillActive = true
-if not WaitRunning then
-S.DodgeTarget = nil
-end
-end
-if DodgeStep(WaitTarget, Humanoid, RootPart, Now, Stop) then
-SetBlocking(true)
-return true
-end
-else
-S.SkillWas = false
-end
-local WaitHealPercent = math.clamp(
-tonumber(CONFIG.AUTO_HEAL_HEALTH_PERCENT) or 65,
-30,
-80
-)
-local WaitMaxHealth = tonumber(Humanoid.MaxHealth) or 0
-local WaitHeal = WaitMaxHealth > 0
-and (tonumber(Humanoid.Health) or 0) <= WaitMaxHealth * (WaitHealPercent / 100)
-and AICFeature.TryHeal
-and AICFeature.TryHeal(Now)
-Humanoid:Move(Vector3.zero)
-RequireWeapon(Now)
-SetBlocking(true)
-local WaitMarker = S.Blocking and "  BLOCK" or ""
-if WaitHeal then
-WaitMarker = S.Blocking and "  HEAL  BLOCK" or "  HEAL"
-end
-if DuoWaiting then
-SetStatus(string.format(
-"STOP %d/%d  WAITING FOR DUO  %s",
-S.Index,
-#GetStops(),
-DuoName ~= "" and DuoName or "SET A DUO NAME"
-))
-else
-SetStatus(string.format(
-"STOP %d/%d  WAIT %ds  %s%s",
-S.Index,
-#GetStops(),
-math.ceil((S.SpotWaitUntil or Now) - Now),
-Stop.Label,
-WaitMarker
-))
-end
-return true
+if DuoWaiting or BossWaiting or (S.SpotWaitUntil and Now < S.SpotWaitUntil) then
+return HoldForBoss(Stop, Now, Humanoid, RootPart, DuoWaiting, BossWaiting, FindTarget(Stop, Now))
 end
 S.SpotWaitUntil = nil
 SetBlocking(false)
@@ -2096,6 +2155,7 @@ S.DodgeTarget = nil
 S.HpAt = nil
 S.HpBase = nil
 S.Phase = "Fight"
+RecordFightDuo()
 S.FightStart = Now
 S.SeenTarget = false
 S.LastTarget = nil
@@ -2133,7 +2193,9 @@ return
 end
 local Target = FindTarget(Stop, Now)
 local Scanned = Target ~= nil
-if not Target
+local FinishingKill = CONFIG.BOSS_WAIT_FOR_SPAWN == true and S.KillAt ~= nil
+if FinishingKill then Target, Scanned = nil, false end
+if not Target and not FinishingKill
 and IsMobAlive(S.LastTarget)
 and IsWantedTarget(S.LastTarget, Stop)
 and Now - (S.TargetSeenAt or 0) <= TARGET_KEEP_TIME
@@ -2141,6 +2203,11 @@ then
 Target = S.LastTarget
 end
 if Target then
+if IsWaitingForDuo(RootPart, Now) then
+return HoldForBoss(Stop, Now, Humanoid, RootPart, true, false, Target)
+end
+RecordFightDuo()
+SetBlocking(false)
 S.SeenTarget = true
 S.FoughtThisVisit = true
 S.LastTarget = Target
@@ -2157,8 +2224,14 @@ AICCombat.S.ClosestTarget = nil
 Humanoid:Move(Vector3.zero)
 EndDodge(Humanoid)
 S.SkillWas = false
+if not S.SeenTarget then
+local DuoWaiting = IsWaitingForDuo(RootPart, Now)
+if DuoWaiting or CONFIG.BOSS_WAIT_FOR_SPAWN == true then
+return HoldForBoss(Stop, Now, Humanoid, RootPart, DuoWaiting, true, nil)
+end
+end
 if S.SeenTarget then
-local LastAlive = IsMobAlive(S.LastTarget)
+local LastAlive = not FinishingKill and IsMobAlive(S.LastTarget)
 local StillHere = LastAlive
 and S.LastTarget ~= nil
 and S.LastTarget:IsDescendantOf(workspace)
@@ -2521,6 +2594,17 @@ and "DEATH FARM  INSTANT RESET UNLESS EXP IS AT RISK"
 or (CONFIG.BOSS_RESET_ALWAYS_WAIT
 and "ALWAYS WAIT AFTER KILL"
 or "INSTANT RESET WHEN NOTHING IS AT RISK"))
+end,
+}
+UIRef.BossWaitForSpawnToggle = UIRef.BossSection:AddToggle{
+Name = "Wait for Boss Spawn",
+Default = CONFIG.BOSS_WAIT_FOR_SPAWN == true,
+Description = "Wait for a living boss instead of Wait At Spot seconds. Duo Sync takes priority and, after a kill/reset, waits for the duo's new character to return.",
+Callback = function(Value)
+CONFIG.BOSS_WAIT_FOR_SPAWN = Value == true
+S.SpotWaitUntil = nil
+if not CONFIG.BOSS_WAIT_FOR_SPAWN then S.AwaitDuoCharacter, S.AwaitDuoName = nil, nil end
+if AICProfile.S.ActiveProfileName then AICProfile.SaveActiveProfile() end
 end,
 }
 UIRef.BossStopsSection:AddButton{
@@ -2985,6 +3069,9 @@ Name = "Duo Sync",
 Default = CONFIG.BOSS_DUO_SYNC == true,
 Callback = function(Value)
 CONFIG.BOSS_DUO_SYNC = Value == true
+S.FightDuoCharacter, S.FightDuoName = nil, nil
+S.AwaitDuoCharacter, S.AwaitDuoName = nil, nil
+S.DuoWaitStartedAt, S.DuoWaitReleased, S.DuoWaitName = nil, false, nil
 AICProfile.WriteGlobalStore()
 SetStatus(CONFIG.BOSS_DUO_SYNC
 and "DUO SYNC  STOPS WAIT FOR THE DUO"
@@ -3019,6 +3106,23 @@ UIRef.BossDuoRangeBox:Set(tostring(CONFIG.BOSS_DUO_RANGE), true)
 end,
 }
 UIRef.BossSection:AddNote("Blank uses the Duo Username from Utility -> Webhook")
+UIRef.BossDuoTimeoutBox = UIRef.BossSection:AddTextBox{
+Name = "Duo Wait Timeout (s)",
+Default = tostring(GetDuoWaitTimeout()),
+Description = "0 waits indefinitely. After this many seconds, fight the boss at this stop without the duo. Wait for Boss Spawn still applies.",
+Callback = function(Value)
+local Seconds = tonumber(Value)
+if not Seconds or Seconds ~= Seconds or math.abs(Seconds) == math.huge then
+UIRef.BossDuoTimeoutBox:Set(tostring(GetDuoWaitTimeout()), true)
+return
+end
+CONFIG.BOSS_DUO_WAIT_TIMEOUT = math.clamp(Seconds, 0, 86400)
+S.DuoWaitStartedAt, S.DuoWaitReleased = nil, false
+UIRef.BossDuoTimeoutBox:Set(tostring(CONFIG.BOSS_DUO_WAIT_TIMEOUT), true)
+AICProfile.WriteGlobalStore()
+if AICProfile.S.ActiveProfileName then AICProfile.SaveActiveProfile() end
+end,
+}
 UIRef.BossLoopToggle = UIRef.BossSection:AddToggle{
 Name = "Loop Route",
 Default = CONFIG.BOSS_ROUTE_LOOP ~= false,
@@ -6885,315 +6989,6 @@ AICUI.SetProfileStatus("FARM ZONE REMOVED #" .. tostring(Index))
 end
 end
 return Module
-end,
-}
-]======],
-	["Features/FollowerGuard.lua"] = [======[
-return {
-Name = "FollowerGuard",
-IsFeature = true,
-Dependencies = {"Runtime", "SaveConfig", "Components", "ProfileManager", "AutoBlock"},
-Start = function(Context)
-local Services = Context.Services
-local Players = Services.Players
-local HttpService = Services.HttpService
-local Player = Context.Player
-local Feature = Context.Feature
-local CONFIG = Context.CONFIG
-local AICFeature = Context.AICFeature
-local AICUI = Context.AICUI
-local AICProfile = Context.AICProfile
-local NotifyAction = Context.NotifyAction
-local UIRef = Context.UIRef
-local FOLLOWER_WINDOW = 30 * 60
-local FOLLOWER_TRIP_SIGHTINGS = 2
-local FOLLOWER_RETRIP_COOLDOWN = 60
-local SIGHTING_DEDUPE = 60
-local FOLLOWER_KEEP = 24 * 60 * 60
-local FOLLOWER_FILE = Context.PROFILE_FOLDER .. "/FollowerLog.json"
-local FOLLOWER_FILE_VERSION = 1
-local FollowerGuard = {
-Name = "FollowerGuard",
-IsFeature = true,
-S = {
-Sightings = {},
-Latched = false,
-LatchedAt = 0,
-LatchedBy = {},
-CountFrom = 0,
-Tripped = {},
-Scanned = false,
-WasEnabled = nil,
-SaveQueued = false,
-NoticeAt = 0,
-},
-}
-local S = FollowerGuard.S
-local function IsExempt(OtherPlayer)
-if OtherPlayer == Player then
-return true
-end
-if AICFeature.IsWhitelisted ~= nil and AICFeature.IsWhitelisted(OtherPlayer.UserId) == true then
-return true
-end
-local Leader = CONFIG.PARTY_LEADER
-return type(Leader) == "table" and tonumber(Leader.UserId) == OtherPlayer.UserId
-end
-local function NormalizeSightings(Value)
-local Result = {}
-for _, Entry in ipairs(type(Value) == "table" and Value or {}) do
-local UserId = type(Entry.UserId) == "string" and Entry.UserId or nil
-local Time = tonumber(Entry.Time)
-local JobId = type(Entry.JobId) == "string" and Entry.JobId or nil
-local Kind = Entry.Kind
-if UserId and Time and JobId and (Kind == "present" or Kind == "joined") then
-table.insert(Result, {
-UserId = UserId,
-Name = type(Entry.Name) == "string" and Entry.Name or UserId,
-Time = Time,
-JobId = JobId,
-Kind = Kind,
-})
-end
-end
-return Result
-end
-local function WriteLog()
-if not AICProfile.CanUseFileStorage() then
-return false
-end
-AICProfile.EnsureProfileFolder()
-local Now = os.time()
-local Kept = {}
-for _, Entry in ipairs(S.Sightings) do
-if Now - Entry.Time <= FOLLOWER_KEEP then
-table.insert(Kept, Entry)
-end
-end
-S.Sightings = Kept
-local Success, Raw = pcall(function()
-return HttpService:JSONEncode({
-Version = FOLLOWER_FILE_VERSION,
-Latched = S.Latched,
-LatchedAt = S.LatchedAt,
-LatchedBy = S.LatchedBy,
-CountFrom = S.CountFrom,
-Sightings = S.Sightings,
-})
-end)
-if not Success then
-warn("AutoFarm follower log encode failed:", Raw)
-return false
-end
-local WriteSuccess, WriteError = pcall(writefile, FOLLOWER_FILE, Raw)
-if not WriteSuccess then
-warn("AutoFarm follower log save failed:", WriteError)
-return false
-end
-S.SaveQueued = false
-return true
-end
-local function QueueLog()
-S.SaveQueued = true
-end
-Context.Lifetime.OnEnd(function()
-if S.SaveQueued then
-WriteLog()
-end
-end)
-local function LoadLog()
-if not AICProfile.CanUseFileStorage() then
-return
-end
-local CheckSuccess, Exists = pcall(isfile, FOLLOWER_FILE)
-if not CheckSuccess or not Exists then
-return
-end
-local Success, Decoded = pcall(function()
-return HttpService:JSONDecode(readfile(FOLLOWER_FILE))
-end)
-if not Success or type(Decoded) ~= "table" then
-warn("AutoFarm follower log read failed:", Decoded)
-return
-end
-S.Sightings = NormalizeSightings(Decoded.Sightings)
-S.Latched = Decoded.Latched == true
-S.LatchedAt = tonumber(Decoded.LatchedAt) or 0
-S.LatchedBy = type(Decoded.LatchedBy) == "table" and Decoded.LatchedBy or {}
-S.CountFrom = tonumber(Decoded.CountFrom) or 0
-end
-local function CountSightings(UserId, Now)
-local Count = 0
-for _, Entry in ipairs(S.Sightings) do
-if Entry.UserId == UserId
-and Entry.Time >= math.max(S.CountFrom, Now - FOLLOWER_WINDOW)
-and Entry.Time <= Now
-then
-Count += 1
-end
-end
-return Count
-end
-local function StopFarm()
-if AICFeature.S.Enabled then
-AICFeature.S.Enabled = false
-AICUI.updateButton()
-AICProfile.SaveActiveProfile()
-end
-end
-local function HoldInstead(OtherPlayer, Reason)
-S.Latched = true
-S.LatchedAt = os.time()
-S.LatchedBy = { UserId = tostring(OtherPlayer.UserId), Name = OtherPlayer.Name }
-QueueLog()
-StopFarm()
-NotifyAction(
-"FOLLOWER GUARD",
-string.format(
-"@%s is following you and the game could not be left (%s) - Auto Farm is off until you turn it on",
-OtherPlayer.Name,
-Reason or "unavailable"
-),
-8
-)
-end
-local function LeaveGame(OtherPlayer)
-if AICFeature.ReportBeforeLeave then
-AICFeature.ReportBeforeLeave(OtherPlayer)
-end
-local Text = "Follower Guard: someone keeps joining your servers"
-if OtherPlayer and OtherPlayer.Name then
-Text = "Follower Guard: @" .. OtherPlayer.Name .. " keeps joining your servers"
-end
-local Success, Error = pcall(function()
-Player:Kick(Text)
-end)
-return Success, Error
-end
-local function Trip(OtherPlayer, Count, Now)
-S.Tripped[tostring(OtherPlayer.UserId)] = Now
-if Now - S.NoticeAt >= 8 then
-S.NoticeAt = Now
-NotifyAction(
-"FOLLOWER GUARD",
-string.format(
-"@%s has joined your servers %d times in %d minutes - leaving the game",
-OtherPlayer.Name,
-Count,
-FOLLOWER_WINDOW / 60
-),
-8
-)
-end
-local function KickFor()
-local Left, Error = LeaveGame(OtherPlayer)
-if not Left then
-HoldInstead(OtherPlayer, "kick failed: " .. tostring(Error))
-end
-end
-local Wait = AICFeature.LeaveDelay and AICFeature.LeaveDelay() or 0
-if Wait > 0 then
-task.spawn(function()
-task.wait(Wait)
-if Feature.FollowerGuard.Enabled ~= true then
-return
-end
-KickFor()
-end)
-return
-end
-KickFor()
-end
-local function Evaluate(OtherPlayer, Now)
-if not Feature.FollowerGuard.Enabled then
-return
-end
-local UserId = tostring(OtherPlayer.UserId)
-local LastTrip = S.Tripped[UserId]
-if LastTrip and Now - LastTrip < FOLLOWER_RETRIP_COOLDOWN then
-return
-end
-local Count = CountSightings(UserId, Now)
-if Count >= FOLLOWER_TRIP_SIGHTINGS then
-Trip(OtherPlayer, Count, Now)
-end
-end
-local function Observe(OtherPlayer, Kind)
-if not Feature.FollowerGuard.Enabled or IsExempt(OtherPlayer) then
-return
-end
-local Now = os.time()
-local UserId = tostring(OtherPlayer.UserId)
-local JobId = tostring(game.JobId or "")
-local LastPair
-for _, Entry in ipairs(S.Sightings) do
-if Entry.UserId == UserId and Entry.JobId == JobId then
-if Kind == "present" then
-return
-end
-LastPair = Entry
-end
-end
-if Kind == "joined" and LastPair and Now - LastPair.Time <= SIGHTING_DEDUPE then
-return
-end
-table.insert(S.Sightings, {
-UserId = UserId,
-Name = OtherPlayer.Name,
-Time = Now,
-JobId = JobId,
-Kind = Kind,
-})
-QueueLog()
-Evaluate(OtherPlayer, Now)
-end
-local function ScanRoster()
-for _, OtherPlayer in ipairs(Players:GetPlayers()) do
-Observe(OtherPlayer, "present")
-end
-end
-Context.Connect(Players.PlayerAdded, function(OtherPlayer)
-if S.Scanned then
-Observe(OtherPlayer, "joined")
-end
-end)
-AICFeature.NotifyManualAutoFarmToggle = function(Value)
-if not Value then
-return
-end
-S.Latched = false
-S.LatchedAt = 0
-S.LatchedBy = {}
-S.CountFrom = os.time()
-table.clear(S.Tripped)
-QueueLog()
-end
-function FollowerGuard:Update()
-if not S.Scanned then
-S.Scanned = true
-end
-local Enabled = Feature.FollowerGuard.Enabled == true
-if Enabled and S.WasEnabled ~= true then
-ScanRoster()
-end
-S.WasEnabled = Enabled
-if S.Latched and AICFeature.S.Enabled then
-StopFarm()
-end
-if S.SaveQueued then
-WriteLog()
-end
-end
-LoadLog()
-AICUI.BindFeatureToggle("FollowerGuard", "Follower Guard", function(Enabled)
-if Enabled then
-ScanRoster()
-end
-end, UIRef.ServerSafetySection)
-if UIRef.ServerSafetySection then
-UIRef.ServerSafetySection:AddNote("Kicks you out of the game when one player keeps joining yours")
-end
-return FollowerGuard
 end,
 }
 ]======],

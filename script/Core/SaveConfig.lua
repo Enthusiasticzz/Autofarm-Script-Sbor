@@ -207,6 +207,7 @@ return {
             --// whatever Reset (s) says, except the ones that would cost EXP -
             --// those still wait the stop's own Reset (s).
             { Key = "BOSS_DEATH_FARM", Default = false },
+            { Key = "BOSS_WAIT_FOR_SPAWN", Default = false },
             --// Holds every boss stop until the duo is beside the character,
             --// then starts that stop's Wait At Spot (0 included).
             { Key = "BOSS_DUO_SYNC", Default = false },
@@ -216,6 +217,8 @@ return {
             end },
             --// How close the duo must be for Duo Sync, in studs.
             { Key = "BOSS_DUO_RANGE", Default = 35, Min = 1, Max = 500 },
+            --// 0 never releases a missing duo; expiry fights at this stop.
+            { Key = "BOSS_DUO_WAIT_TIMEOUT", Default = 0, Min = 0, Max = 86400 },
             --// Draws a saved stop's fight box as four translucent walls.
             --// Display only; off removes them without touching the box.
             { Key = "BOSS_BOUNDS_VISIBLE", Default = true },
