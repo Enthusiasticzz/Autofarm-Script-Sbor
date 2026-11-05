@@ -1587,6 +1587,7 @@ return {
             S.Phase = "Idle"
             S.ReturnKill = false
             S.FightDuoCharacter, S.FightDuoName = nil, nil
+            S.DuoReadyThisVisit = false
             S.AwaitDuoCharacter, S.AwaitDuoName = nil, nil
             S.DuoWaitStartedAt, S.DuoWaitReleased, S.DuoWaitName = nil, false, nil
             S.ReturnMissAt = nil
@@ -1631,6 +1632,7 @@ return {
 
             S.Phase = "Approach"
             S.FightDuoCharacter, S.FightDuoName = nil, nil
+            S.DuoReadyThisVisit = false
             S.DuoWaitStartedAt, S.DuoWaitReleased, S.DuoWaitName = nil, false, nil
             S.PhaseStart = Now
             S.WalkStart = Now
@@ -3157,6 +3159,7 @@ return {
         end
 
         local function RecordFightDuo()
+            if S.DuoReadyThisVisit then return end
             if CONFIG.BOSS_DUO_SYNC == true then
                 local Root = GetDuoRoot()
                 if Root then S.FightDuoCharacter, S.FightDuoName = Root.Parent, GetDuoName() end
@@ -3170,11 +3173,18 @@ return {
         end
 
         local function IsWaitingForDuo(RootPart, Now)
+            -- Duo Sync gates arrival, not the fight. Once admitted, the duo
+            -- may dodge, leave range, die or disconnect without pausing combat.
+            if S.DuoReadyThisVisit then return false end
             local Name = GetDuoName()
             if S.DuoWaitName ~= Name then
                 S.DuoWaitStartedAt, S.DuoWaitReleased, S.DuoWaitName = nil, false, Name
             end
             if CONFIG.BOSS_DUO_SYNC ~= true or IsDuoNear(RootPart) then
+                if CONFIG.BOSS_DUO_SYNC == true then
+                    RecordFightDuo()
+                    S.DuoReadyThisVisit = true
+                end
                 S.DuoWaitStartedAt, S.DuoWaitReleased = nil, false
                 return false
             end
@@ -3563,10 +3573,9 @@ return {
 
                     --// Duo Sync: nothing starts until the duo is beside the
                     --// character. Wait At Spot is not set while they are away,
-                    --// so its timer starts on the frame they arrive; if they
-                    --// step out again the timer is cleared and starts over on
-                    --// their return. With Wait 0 the gate still holds, so a
-                    --// stop without a wait also waits for them.
+                    --// so its timer starts on the frame they arrive. Arrival
+                    --// stays confirmed for this visit even if they move away.
+                    --// With Wait 0, the initial arrival gate still applies.
                     local DuoWaiting = IsWaitingForDuo(RootPart, Now)
                     local BossWaiting = CONFIG.BOSS_WAIT_FOR_SPAWN == true and FindTarget(Stop, Now) == nil
 
@@ -3609,6 +3618,7 @@ return {
                     --// of being walked past.
                     S.Phase = "Fight"
                     RecordFightDuo()
+                    S.DuoReadyThisVisit = true
                     S.FightStart = Now
                     S.SeenTarget = false
                     S.LastTarget = nil
@@ -3678,12 +3688,13 @@ return {
             end
 
             if Target then
-                -- Re-check readiness before every attack, not just arrival.
-                -- A spawned boss never releases a missing/dead/resetting duo.
+                -- Alternate fight entry paths still require initial readiness;
+                -- an admitted visit never checks the duo's range again.
                 if IsWaitingForDuo(RootPart, Now) then
                     return HoldForBoss(Stop, Now, Humanoid, RootPart, true, false, Target)
                 end
                 RecordFightDuo()
+                S.DuoReadyThisVisit = true
                 SetBlocking(false)
                 S.SeenTarget = true
                 S.FoughtThisVisit = true
@@ -4917,6 +4928,7 @@ return {
         UIRef.BossDuoSyncToggle = UIRef.BossSection:AddToggle{
             Name = "Duo Sync",
             Default = CONFIG.BOSS_DUO_SYNC == true,
+            Description = "Wait for the duo to arrive once per stop visit. Moving away after arrival does not pause the fight or restart its wait timer.",
             Callback = function(Value)
                 CONFIG.BOSS_DUO_SYNC = Value == true
                 S.FightDuoCharacter, S.FightDuoName = nil, nil

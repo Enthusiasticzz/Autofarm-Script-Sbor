@@ -909,6 +909,7 @@ end
 S.Phase = "Idle"
 S.ReturnKill = false
 S.FightDuoCharacter, S.FightDuoName = nil, nil
+S.DuoReadyThisVisit = false
 S.AwaitDuoCharacter, S.AwaitDuoName = nil, nil
 S.DuoWaitStartedAt, S.DuoWaitReleased, S.DuoWaitName = nil, false, nil
 S.ReturnMissAt = nil
@@ -948,6 +949,7 @@ return
 end
 S.Phase = "Approach"
 S.FightDuoCharacter, S.FightDuoName = nil, nil
+S.DuoReadyThisVisit = false
 S.DuoWaitStartedAt, S.DuoWaitReleased, S.DuoWaitName = nil, false, nil
 S.PhaseStart = Now
 S.WalkStart = Now
@@ -1932,6 +1934,7 @@ if Near then S.AwaitDuoCharacter, S.AwaitDuoName = nil, nil end
 return Near
 end
 local function RecordFightDuo()
+if S.DuoReadyThisVisit then return end
 if CONFIG.BOSS_DUO_SYNC == true then
 local Root = GetDuoRoot()
 if Root then S.FightDuoCharacter, S.FightDuoName = Root.Parent, GetDuoName() end
@@ -1943,11 +1946,16 @@ if not Seconds or Seconds ~= Seconds then return 0 end
 return math.clamp(Seconds, 0, 86400)
 end
 local function IsWaitingForDuo(RootPart, Now)
+if S.DuoReadyThisVisit then return false end
 local Name = GetDuoName()
 if S.DuoWaitName ~= Name then
 S.DuoWaitStartedAt, S.DuoWaitReleased, S.DuoWaitName = nil, false, Name
 end
 if CONFIG.BOSS_DUO_SYNC ~= true or IsDuoNear(RootPart) then
+if CONFIG.BOSS_DUO_SYNC == true then
+RecordFightDuo()
+S.DuoReadyThisVisit = true
+end
 S.DuoWaitStartedAt, S.DuoWaitReleased = nil, false
 return false
 end
@@ -2204,6 +2212,7 @@ S.HpAt = nil
 S.HpBase = nil
 S.Phase = "Fight"
 RecordFightDuo()
+S.DuoReadyThisVisit = true
 S.FightStart = Now
 S.SeenTarget = false
 S.LastTarget = nil
@@ -2255,6 +2264,7 @@ if IsWaitingForDuo(RootPart, Now) then
 return HoldForBoss(Stop, Now, Humanoid, RootPart, true, false, Target)
 end
 RecordFightDuo()
+S.DuoReadyThisVisit = true
 SetBlocking(false)
 S.SeenTarget = true
 S.FoughtThisVisit = true
@@ -3114,6 +3124,7 @@ end,
 UIRef.BossDuoSyncToggle = UIRef.BossSection:AddToggle{
 Name = "Duo Sync",
 Default = CONFIG.BOSS_DUO_SYNC == true,
+Description = "Wait for the duo to arrive once per stop visit. Moving away after arrival does not pause the fight or restart its wait timer.",
 Callback = function(Value)
 CONFIG.BOSS_DUO_SYNC = Value == true
 S.FightDuoCharacter, S.FightDuoName = nil, nil

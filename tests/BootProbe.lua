@@ -1012,19 +1012,24 @@ do
     mob.Parent=mobs
     duoRoot.Position=pos(200)
     nav.ApproachStep(stop,261)
-    assert(state.Phase=="Approach" and attacks==0, "boss spawn released a missing duo")
+    assert(state.Phase=="Fight" and attacks==0, "boss spawn didn't release a duo that had already arrived")
     duoRoot.Position=pos(0)
     nav.ApproachStep(stop,262)
     assert(state.Phase=="Fight", "living boss + duo didn't release a zero-wait stop")
     nav.FightStep(stop,263)
     assert(attacks==1, "ready duo couldn't attack")
+    local savedRoster=players.GetPlayers
+    local duoReads=0
+    players.GetPlayers=function() duoReads+=1; return {Context.Player} end
     duoHum.Health=0
-    assert(nav.FightStep(stop,264)==true and attacks==1, "duo dying didn't stop attacks")
+    nav.FightStep(stop,264)
+    assert(attacks==2 and duoReads==0, "duo death/disconnect paused combat or triggered another presence check")
+    players.GetPlayers=savedRoster
     duoHum.Health=100; duoRoot.Position=pos(200)
     nav.FightStep(stop,265)
-    assert(attacks==1, "duo leaving didn't stop attacks")
+    assert(attacks==3, "duo leaving range paused an admitted fight")
     duoRoot.Position=pos(0); nav.FightStep(stop,266)
-    assert(attacks==2, "duo returning didn't resume the fight")
+    assert(attacks==4, "fight stopped after duo arrival")
     -- The old character was recorded during combat, before any slow EXP wait.
     assert(state.FightDuoCharacter==duoCharacter, "duo cycle wasn't recorded")
     mobHum.Health=0
@@ -1036,13 +1041,13 @@ do
     nav.BeginStop(268)
     mobHum.Health=100
     nav.ApproachStep(stop,269)
-    assert(state.Phase=="Approach" and attacks==2, "nearby duo still waiting to reset released next boss")
+    assert(state.Phase=="Approach" and attacks==4 and not state.DuoReadyThisVisit, "nearby duo still waiting to reset released next boss")
     assert(boss.BossStatusLabel.Instance.Text:find("WAITING FOR DUO",1,true), "resetting duo lost status priority")
     respawnDuo(200); nav.ApproachStep(stop,270)
     assert(state.Phase=="Approach", "duo respawned far away but counted as ready")
     duoCharacter,duoRoot,duoHum=respawnDuo(0)
     nav.ApproachStep(stop,271); nav.FightStep(stop,272)
-    assert(state.Phase=="Fight" and attacks==3, "returned duo didn't release next boss")
+    assert(state.Phase=="Fight" and attacks==5, "returned duo didn't release next boss")
     -- Fast partner can already have reset by the time our own slow reset ends.
     local foughtCharacter=duoCharacter
     respawnDuo(0)
@@ -1059,7 +1064,7 @@ do
     assert(state.Phase=="Fight" and not state.SeenTarget and hum.Health==100, "old corpse or no-target timeout escaped dynamic wait")
     Context.CONFIG.BOSS_DUO_SYNC=false
     mobHum.Health=100; nav.FightStep(stop,501)
-    assert(attacks==4, "solo dynamic wait couldn't attack spawned boss")
+    assert(attacks==6, "solo dynamic wait couldn't attack spawned boss")
     nav.StopRoute()
     assert(state.AwaitDuoCharacter==nil and state.FightDuoCharacter==nil, "stopping route retained stale duo readiness")
     Context.CONFIG.BOSS_DUO_SYNC=true
@@ -1071,25 +1076,25 @@ do
     assert(Context.CONFIG.BOSS_DUO_WAIT_TIMEOUT==5 and boss.BossDuoTimeoutBox:Get()=="5", "invalid timeout corrupted config")
     nav.BeginStop(600)
     nav.ApproachStep(stop,600); nav.ApproachStep(stop,604)
-    assert(state.Phase=="Approach" and attacks==4, "duo wait expired early")
+    assert(state.Phase=="Approach" and attacks==6, "duo wait expired early")
     nav.ApproachStep(stop,605); nav.FightStep(stop,606); nav.FightStep(stop,607)
-    assert(state.Phase=="Fight" and state.Index==1 and attacks==6, "duo timeout skipped stop or failed to keep attacking")
+    assert(state.Phase=="Fight" and state.Index==1 and attacks==8, "duo timeout skipped stop or failed to keep attacking")
     nav.BeginStop(608); nav.ApproachStep(stop,608)
     assert(state.Phase=="Approach", "duo timeout release leaked into next visit")
     mob.Parent=nil; nav.BeginStop(610)
     nav.ApproachStep(stop,610); nav.ApproachStep(stop,615)
-    assert(state.Phase=="Approach" and state.Index==1 and attacks==6, "duo timeout bypassed missing boss or advanced stop")
+    assert(state.Phase=="Approach" and state.Index==1 and attacks==8, "duo timeout bypassed missing boss or advanced stop")
     assert(boss.BossStatusLabel.Instance.Text:find("WAITING FOR BOSS",1,true), "expired duo wait didn't become a spawn wait")
     mob.Parent=mobs; nav.ApproachStep(stop,620); nav.FightStep(stop,621)
-    assert(state.Phase=="Fight" and state.Index==1 and attacks==7, "boss spawning after duo timeout didn't release current stop")
+    assert(state.Phase=="Fight" and state.Index==1 and attacks==9, "boss spawning after duo timeout didn't release current stop")
     nav.StopRoute(); boss.BossDuoTimeoutBox:Set("0"); nav.BeginStop(700)
     for t=700,900 do nav.ApproachStep(stop,t) end
-    assert(state.Phase=="Approach" and state.Index==1 and attacks==7, "zero timeout didn't wait indefinitely at the current boss")
+    assert(state.Phase=="Approach" and state.Index==1 and attacks==9, "zero timeout didn't wait indefinitely at the current boss")
     -- The configurable release works with legacy fixed waits as well.
     nav.StopRoute(); Context.CONFIG.BOSS_WAIT_FOR_SPAWN=false; stop.Wait=0
     boss.BossDuoTimeoutBox:Set("2"); nav.BeginStop(910)
     nav.ApproachStep(stop,910); nav.ApproachStep(stop,912); nav.FightStep(stop,913)
-    assert(state.Phase=="Fight" and state.Index==1 and attacks==8, "legacy duo timeout advanced instead of attacking")
+    assert(state.Phase=="Fight" and state.Index==1 and attacks==10, "legacy duo timeout advanced instead of attacking")
     nav.StopRoute()
     -- A new boss during the slow account's EXP hold cannot cancel its owed
     -- reset or replace the duo identity captured before the previous kill.
@@ -1214,6 +1219,7 @@ do
     nav.FightStep(stop,1220); bounded(moves[#moves]) -- dodge expired: chase still bounded
     Context.CONFIG.BOSS_DUO_SYNC=true
     respawnDuo(200); root.Position=vec(25,0,25)
+    nav.BeginStop(1221)
     beforeCorrection=attacks
     nav.FightStep(stop,1221); bounded(moves[#moves])
     assert(attacks==beforeCorrection and boss.BossStatusLabel.Instance.Text:find("WAITING FOR DUO",1,true),"duo wait allowed combat or lost its priority while returning inside")
@@ -1267,6 +1273,9 @@ do
     assert(state.SpotWaitUntil==nil,"spot timer started while waiting for duo")
     respawnDuo(0); nav.ApproachStep(stop,1322)
     assert(state.Phase=="Approach" and state.SpotWaitUntil==1327,"duo arrival didn't start full spot wait")
+    duo.Character:FindFirstChild("HumanoidRootPart").Position=pos(200)
+    nav.ApproachStep(stop,1323)
+    assert(state.DuoReadyThisVisit and state.SpotWaitUntil==1327,"duo leaving after arrival restarted the spot wait")
     nav.ApproachStep(stop,1326)
     assert(state.Phase=="Approach","boss/duo readiness skipped spot timer")
     nav.ApproachStep(stop,1327)
