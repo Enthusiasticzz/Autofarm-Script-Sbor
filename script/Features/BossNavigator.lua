@@ -2529,6 +2529,16 @@ return {
                 return
             end
 
+            -- The live fight must obey the same walls as the dodge and the
+            -- post-kill flee. Recover from knockback before resuming combat.
+            if not InsideBounds(Stop, RootPart.Position, 0) then
+                local Back = ClampToBounds(Stop, RootPart.Position, BOUNDS_INSET)
+                AICCombatUtils.DoJumpIfObstacle(Back)
+                Humanoid:MoveTo(Back)
+                SetStatus(string.format("STOP %d/%d  RETURNING TO FIGHT BOUNDS", S.Index, #GetStops()))
+                return
+            end
+
             --// Per stop: a boss whose effects never go out can be fought with
             --// the dodge off instead of being run away from forever.
             local Dodge = not Stop or Stop.Dodge ~= false
@@ -2613,6 +2623,7 @@ return {
                 local StepOff = AICCombatUtils.GetStepOffPosition(TargetRoot, FIGHT_STANDOFF + 2)
 
                 if StepOff then
+                    StepOff = ClampToBounds(Stop, StepOff, BOUNDS_INSET)
                     Humanoid.AutoRotate = false
                     Humanoid:MoveTo(StepOff)
                     AICCombat.FaceCombatTarget(Target)
@@ -2628,6 +2639,7 @@ return {
                 local Direction = Flat.Magnitude > 0.01 and Flat.Unit or Vector3.xAxis
                 --// Stop just short of the body, not inside it.
                 local Destination = TargetRoot.Position - Direction * math.max(FIGHT_STANDOFF - 1, 2)
+                Destination = ClampToBounds(Stop, Destination, BOUNDS_INSET)
 
                 --// Not right against the body: a hop there lands on the boss,
                 --// and the fight carries on from its head.
@@ -3182,6 +3194,15 @@ return {
             S.LastProgressAt, S.WalkStart = Now, Now
             AICCombat.S.ClosestTarget = nil
             local DuoName = GetDuoName()
+            if WaitTarget and not InsideBounds(Stop, RootPart.Position, 0) then
+                local Back = ClampToBounds(Stop, RootPart.Position, BOUNDS_INSET)
+                AICCombatUtils.DoJumpIfObstacle(Back)
+                Humanoid:MoveTo(Back)
+                SetBlocking(true)
+                local Reason = DuoWaiting and "WAITING FOR DUO  RETURNING TO FIGHT BOUNDS" or "RETURNING TO FIGHT BOUNDS"
+                SetStatus(string.format("STOP %d/%d  %s", S.Index, #GetStops(), Reason))
+                return true
+            end
             --// The wait is for the spawn, not for the character to
             --// stand still and be killed in: the boss's dodge, the
             --// heal and the guard all still run, only the fight
@@ -3504,7 +3525,7 @@ return {
                     --// continues a stop the character died at: whatever is
                     --// there already killed the character, so there is no
                     --// spawn to wait for.
-                    local Wait = (S.SkipSpotWait or CONFIG.BOSS_WAIT_FOR_SPAWN == true) and 0 or (tonumber(Stop.Wait) or 0)
+                    local Wait = S.SkipSpotWait and 0 or (tonumber(Stop.Wait) or 0)
 
                     --// Duo Sync: nothing starts until the duo is beside the
                     --// character. Wait At Spot is not set while they are away,
@@ -4244,10 +4265,9 @@ return {
         UIRef.BossWaitForSpawnToggle = UIRef.BossSection:AddToggle{
             Name = "Wait for Boss Spawn",
             Default = CONFIG.BOSS_WAIT_FOR_SPAWN == true,
-            Description = "Wait for a living boss instead of Wait At Spot seconds. Duo Sync takes priority and, after a kill/reset, waits for the duo's new character to return.",
+            Description = "Wait for a living boss as well as Wait At Spot seconds. Duo Sync takes priority and, after a kill/reset, waits for the duo's new character to return.",
             Callback = function(Value)
                 CONFIG.BOSS_WAIT_FOR_SPAWN = Value == true
-                S.SpotWaitUntil = nil
                 if not CONFIG.BOSS_WAIT_FOR_SPAWN then S.AwaitDuoCharacter, S.AwaitDuoName = nil, nil end
                 if AICProfile.S.ActiveProfileName then AICProfile.SaveActiveProfile() end
             end,

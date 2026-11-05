@@ -1521,6 +1521,13 @@ local TargetRoot = Target:FindFirstChild("HumanoidRootPart")
 if not Humanoid or not RootPart or not TargetRoot then
 return
 end
+if not InsideBounds(Stop, RootPart.Position, 0) then
+local Back = ClampToBounds(Stop, RootPart.Position, BOUNDS_INSET)
+AICCombatUtils.DoJumpIfObstacle(Back)
+Humanoid:MoveTo(Back)
+SetStatus(string.format("STOP %d/%d  RETURNING TO FIGHT BOUNDS", S.Index, #GetStops()))
+return
+end
 local Dodge = not Stop or Stop.Dodge ~= false
 local Casting = Dodge and IsSkillShowing(Target, Now) == true
 local Opened = Casting and not S.SkillWas
@@ -1571,6 +1578,7 @@ end
 if AICCombatUtils.IsStandingOnTarget(TargetRoot) then
 local StepOff = AICCombatUtils.GetStepOffPosition(TargetRoot, FIGHT_STANDOFF + 2)
 if StepOff then
+StepOff = ClampToBounds(Stop, StepOff, BOUNDS_INSET)
 Humanoid.AutoRotate = false
 Humanoid:MoveTo(StepOff)
 AICCombat.FaceCombatTarget(Target)
@@ -1583,6 +1591,7 @@ if Distance > FIGHT_STANDOFF then
 local Flat = Vector3.new(Offset.X, 0, Offset.Z)
 local Direction = Flat.Magnitude > 0.01 and Flat.Unit or Vector3.xAxis
 local Destination = TargetRoot.Position - Direction * math.max(FIGHT_STANDOFF - 1, 2)
+Destination = ClampToBounds(Stop, Destination, BOUNDS_INSET)
 if not AICCombatUtils.IsPressedAgainstBody(TargetRoot) then
 AICCombatUtils.DoJumpIfObstacle(Destination)
 end
@@ -1954,6 +1963,15 @@ local function HoldForBoss(Stop, Now, Humanoid, RootPart, DuoWaiting, BossWaitin
 S.LastProgressAt, S.WalkStart = Now, Now
 AICCombat.S.ClosestTarget = nil
 local DuoName = GetDuoName()
+if WaitTarget and not InsideBounds(Stop, RootPart.Position, 0) then
+local Back = ClampToBounds(Stop, RootPart.Position, BOUNDS_INSET)
+AICCombatUtils.DoJumpIfObstacle(Back)
+Humanoid:MoveTo(Back)
+SetBlocking(true)
+local Reason = DuoWaiting and "WAITING FOR DUO  RETURNING TO FIGHT BOUNDS" or "RETURNING TO FIGHT BOUNDS"
+SetStatus(string.format("STOP %d/%d  %s", S.Index, #GetStops(), Reason))
+return true
+end
 if WaitTarget then
 local WaitDodge = Stop.Dodge ~= false
 and WaitTarget:FindFirstChild("HumanoidRootPart") ~= nil
@@ -2133,7 +2151,7 @@ math.min(S.PathIndex - 1, #Path),
 #Path
 ))
 else
-local Wait = (S.SkipSpotWait or CONFIG.BOSS_WAIT_FOR_SPAWN == true) and 0 or (tonumber(Stop.Wait) or 0)
+local Wait = S.SkipSpotWait and 0 or (tonumber(Stop.Wait) or 0)
 local DuoWaiting = IsWaitingForDuo(RootPart, Now)
 local BossWaiting = CONFIG.BOSS_WAIT_FOR_SPAWN == true and FindTarget(Stop, Now) == nil
 if DuoWaiting then
@@ -2599,10 +2617,9 @@ end,
 UIRef.BossWaitForSpawnToggle = UIRef.BossSection:AddToggle{
 Name = "Wait for Boss Spawn",
 Default = CONFIG.BOSS_WAIT_FOR_SPAWN == true,
-Description = "Wait for a living boss instead of Wait At Spot seconds. Duo Sync takes priority and, after a kill/reset, waits for the duo's new character to return.",
+Description = "Wait for a living boss as well as Wait At Spot seconds. Duo Sync takes priority and, after a kill/reset, waits for the duo's new character to return.",
 Callback = function(Value)
 CONFIG.BOSS_WAIT_FOR_SPAWN = Value == true
-S.SpotWaitUntil = nil
 if not CONFIG.BOSS_WAIT_FOR_SPAWN then S.AwaitDuoCharacter, S.AwaitDuoName = nil, nil end
 if AICProfile.S.ActiveProfileName then AICProfile.SaveActiveProfile() end
 end,

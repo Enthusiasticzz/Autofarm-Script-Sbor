@@ -992,7 +992,7 @@ do
     local mobHum=Instance.new("Humanoid",mob); mobHum.Health=100
     rawset(mob,"IsDescendantOf",function() return mob.Parent==mobs end)
     local stop={Label="Wait test",Position=pos(0),Radius=100,Targets={"WaitTestBoss"},Path={},
-        Wait=500,ResetWait=0,ResetAfterKill=true,Dodge=false,Waypoint=0}
+        Wait=0,ResetWait=0,ResetAfterKill=true,Dodge=false,Waypoint=0}
     local place=Context.Runtime:GetPlaceConfig()
     place.BOSS_ROUTE={stop}
     Context.CONFIG.BOSS_WAIT_FOR_SPAWN=true
@@ -1015,7 +1015,7 @@ do
     assert(state.Phase=="Approach" and attacks==0, "boss spawn released a missing duo")
     duoRoot.Position=pos(0)
     nav.ApproachStep(stop,262)
-    assert(state.Phase=="Fight", "living boss + duo didn't release immediately instead of fixed wait")
+    assert(state.Phase=="Fight", "living boss + duo didn't release a zero-wait stop")
     nav.FightStep(stop,263)
     assert(attacks==1, "ready duo couldn't attack")
     duoHum.Health=0
@@ -1157,6 +1157,97 @@ do
     end
     nav.StopRoute()
     print("BOSS CYCLE passed: kill -> reset -> teleport next -> duo -> spawn -> repeat (1, 2, 1)")
+    -- Live evasion must remain bounded when the dodge ends and combat closes
+    -- in again, steps off a body, or recovers from knockback.
+    local originalVectorNew,originalXAxis=Vector3.new,Vector3.xAxis
+    local vmt={__typename="Vector3"}
+    Vector3.new=function(x,y,z) return setmetatable({X=x or 0,Y=y or 0,Z=z or 0},vmt) end
+    vmt.__index=function(v,key)
+        if key=="Magnitude" then return math.sqrt(v.X*v.X+v.Y*v.Y+v.Z*v.Z) end
+        if key=="Unit" then return Vector3.new(v.X/v.Magnitude,v.Y/v.Magnitude,v.Z/v.Magnitude) end
+    end
+    vmt.__add=function(a,b) return Vector3.new(a.X+b.X,a.Y+b.Y,a.Z+b.Z) end
+    vmt.__sub=function(a,b) return Vector3.new(a.X-b.X,a.Y-b.Y,a.Z-b.Z) end
+    vmt.__mul=function(a,b) return Vector3.new(a.X*b,a.Y*b,a.Z*b) end
+    Vector3.xAxis=Vector3.new(1,0,0)
+    local vec=Vector3.new
+    local bounds={vec(-20,0,-20),vec(20,0,-20),vec(20,0,20),vec(-20,0,20)}
+    stop.Position,stop.Waypoint,stop.Bounds,stop.Radius,stop.Dodge=vec(0,0,0),0,bounds,1000,false
+    place.BOSS_ROUTE={stop}
+    Context.CONFIG.BOSS_DUO_SYNC=false
+    root.Position,mobRoot.Position,hum.Health,mobHum.Health=vec(18,0,0),vec(100,0,0),100,100
+    local moves={}
+    rawset(hum,"MoveTo",function(_,point) moves[#moves+1]=point end)
+    Context.AICCombatUtils.GetHorizontalDistance=function(a,b) return math.sqrt((a.X-b.X)^2+(a.Z-b.Z)^2) end
+    Context.AICCombatUtils.DoJumpIfObstacle=noop
+    Context.AICCombatUtils.IsPressedAgainstBody=function() return false end
+    Context.AICCombatUtils.IsHoleAhead=function() return false end
+    Context.AICCombatUtils.IsPathClear=function() return true end
+    Context.AICCombat.GetCombatDistance=function(_,offset) return offset.Magnitude end
+    local function bounded(point)
+        assert(point and math.abs(point.X)<=18 and math.abs(point.Z)<=18,"live combat navigated outside the inset fight bounds")
+    end
+    state.Index=1; nav.BeginStop(1200); nav.FightStep(stop,1201)
+    bounded(moves[#moves]) -- boss outside the wall: don't follow it out
+    Context.AICCombatUtils.IsStandingOnTarget=function() return true end
+    Context.AICCombatUtils.GetStepOffPosition=function() return vec(100,0,100) end
+    nav.FightStep(stop,1202); bounded(moves[#moves])
+    stop.Bounds=nil; nav.FightStep(stop,1203)
+    assert(moves[#moves].X==100 and moves[#moves].Z==100,"no-bounds movement was restricted")
+    stop.Bounds={bounds[1],bounds[2],bounds[3]}; nav.FightStep(stop,1204)
+    assert(moves[#moves].X==100,"incomplete fight bounds restricted movement")
+    stop.Bounds=bounds
+    root.Position=vec(25,0,-30)
+    local beforeCorrection=attacks
+    nav.FightStep(stop,1205); bounded(moves[#moves])
+    assert(attacks==beforeCorrection and moves[#moves].X==18 and moves[#moves].Z==-18,"knockback wasn't corrected before attacking")
+    Context.AICCombatUtils.IsStandingOnTarget=function() return false end
+    root.Position,mobRoot.Position=vec(16,0,0),vec(18,0,0)
+    stop.Dodge=true
+    state.DodgeMaxUntil,state.DodgeMinUntil,state.SkillSeenAt=1218,1212,1210
+    state.DodgeTarget=vec(100,0,100) -- target cached before bounds were set
+    for t=1210,1211,.25 do
+        nav.FightStep(stop,t)
+        bounded(moves[#moves])
+    end
+    mobRoot.Position=vec(100,0,0)
+    nav.FightStep(stop,1220); bounded(moves[#moves]) -- dodge expired: chase still bounded
+    Context.CONFIG.BOSS_DUO_SYNC=true
+    respawnDuo(200); root.Position=vec(25,0,25)
+    beforeCorrection=attacks
+    nav.FightStep(stop,1221); bounded(moves[#moves])
+    assert(attacks==beforeCorrection and boss.BossStatusLabel.Instance.Text:find("WAITING FOR DUO",1,true),"duo wait allowed combat or lost its priority while returning inside")
+    nav.StopRoute()
+    Vector3.new,Vector3.xAxis=originalVectorNew,originalXAxis
+    print("BOSS BOUNDS passed: live dodge, chase, step-off, knockback, duo wait, and no/partial bounds")
+    -- Spawn readiness is an additional condition, never a replacement for the
+    -- configured spot wait. Duo readiness starts that timer, as before.
+    Context.CONFIG.BOSS_DUO_SYNC=false
+    stop.Bounds,stop.Dodge,stop.Wait,stop.Position=nil,false,5,pos(0)
+    root.Position,mobRoot.Position=pos(0),pos(0)
+    mobHum.Health=100
+    nav.BeginStop(1300); nav.ApproachStep(stop,1300)
+    assert(state.Phase=="Approach" and state.SpotWaitUntil==1305,"spawn mode skipped Wait At Spot")
+    nav.ApproachStep(stop,1304)
+    assert(state.Phase=="Approach","spawned boss bypassed the remaining spot wait")
+    nav.ApproachStep(stop,1305)
+    assert(state.Phase=="Fight","elapsed spot timer plus living boss didn't release")
+    nav.StopRoute(); mob.Parent=nil; nav.BeginStop(1310)
+    nav.ApproachStep(stop,1310); nav.ApproachStep(stop,1315)
+    assert(state.Phase=="Approach","elapsed spot timer bypassed missing boss")
+    mob.Parent=mobs; nav.ApproachStep(stop,1316)
+    assert(state.Phase=="Fight","late boss spawn restarted an already elapsed spot timer")
+    nav.StopRoute(); Context.CONFIG.BOSS_DUO_SYNC=true; respawnDuo(200)
+    nav.BeginStop(1320); nav.ApproachStep(stop,1320)
+    assert(state.SpotWaitUntil==nil,"spot timer started while waiting for duo")
+    respawnDuo(0); nav.ApproachStep(stop,1322)
+    assert(state.Phase=="Approach" and state.SpotWaitUntil==1327,"duo arrival didn't start full spot wait")
+    nav.ApproachStep(stop,1326)
+    assert(state.Phase=="Approach","boss/duo readiness skipped spot timer")
+    nav.ApproachStep(stop,1327)
+    assert(state.Phase=="Fight","all three readiness conditions didn't release")
+    nav.StopRoute()
+    print("BOSS SPOT WAIT passed: boss spawn and duo readiness never bypass the configured spot timer")
     mobs:Destroy(); character:Destroy()
     players.GetPlayers=realGetPlayers
     print("BOSS WAIT regression passed: spawn/duo priority, reset cycles, indefinite waits, timeout attacks current stop")
