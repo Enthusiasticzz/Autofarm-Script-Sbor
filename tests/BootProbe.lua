@@ -445,6 +445,19 @@ assert(boss.BossDuoSyncToggle, "duo sync toggle missing")
 assert(boss.BossDuoNameBox, "duo sync name box missing")
 assert(boss.BossDuoRangeBox, "duo range box missing")
 assert(boss.BossDuoSyncToggle:Get() == false, "duo sync started on")
+assert(boss.BossResetModeDropdown and not boss.BossAlwaysWaitToggle and not boss.BossDeathFarmToggle, "reset modes still use overlapping toggles")
+boss.BossResetModeDropdown:Set("Always wait after kill")
+assert(Context.CONFIG.BOSS_RESET_ALWAYS_WAIT and not Context.CONFIG.BOSS_DEATH_FARM, "always-wait mode didn't select exclusive flags")
+boss.BossResetModeDropdown:Set("Death farm")
+assert(Context.CONFIG.BOSS_DEATH_FARM and not Context.CONFIG.BOSS_RESET_ALWAYS_WAIT, "death farm mode didn't select exclusive flags")
+Context.CONFIG.BOSS_DEATH_FARM,Context.CONFIG.BOSS_RESET_ALWAYS_WAIT=false,true
+Context.AICUI.RefreshBossRoutePickers()
+assert(boss.BossResetModeDropdown:Get()=="Always wait after kill","legacy always-wait profile didn't restore mode")
+Context.CONFIG.BOSS_DEATH_FARM=true
+Context.AICUI.RefreshBossRoutePickers()
+assert(boss.BossResetModeDropdown:Get()=="Death farm","legacy conflicting flags lost Death Farm precedence")
+boss.BossResetModeDropdown:Set("Wait if EXP at risk")
+assert(not Context.CONFIG.BOSS_DEATH_FARM and not Context.CONFIG.BOSS_RESET_ALWAYS_WAIT, "EXP-safe mode retained another mode")
 assert(boss.WhitelistSection.Tab == boss.ServerTab, "the whitelist is not on the server tab")
 assert(boss.EvadePauseToggle, "pause for strangers toggle missing")
 assert(boss.EvadeListComponent, "hiding-spot list missing")
@@ -1324,6 +1337,33 @@ do
     assert(state.Phase=="Fight","all three readiness conditions didn't release")
     nav.StopRoute()
     print("BOSS SPOT WAIT passed: boss spawn and duo readiness never bypass the configured spot timer")
+    -- The single mode control retains the distinct free-reset behavior:
+    -- always-wait holds Reset (s), death farm is immediate, EXP-safe keeps
+    -- the existing short settlement grace. EXP-at-risk Death Farm is tested above.
+    Context.CONFIG.BOSS_DUO_SYNC=false
+    stop.Wait,stop.ResetWait=0,5
+    ExpStat.Value=0
+    root.Position,mobRoot.Position=pos(0),pos(0)
+    for index,mode in ipairs({"Always wait after kill","Death farm","Wait if EXP at risk"}) do
+        local t=1400+index*10
+        boss.BossResetModeDropdown:Set(mode)
+        hum.Health,mobHum.Health=100,100
+        nav.BeginStop(t); nav.ApproachStep(stop,t); nav.FightStep(stop,t+1)
+        mobHum.Health=0; nav.FightStep(stop,t+2)
+        if mode=="Death farm" then
+            assert(state.Phase=="Recover" and hum.Health==0,"Death farm didn't reset immediately with safe EXP")
+        else
+            assert(state.Phase=="Fight" and hum.Health==100,"reset mode skipped its configured delay/grace")
+            nav.FightStep(stop,t+2.3)
+            if mode=="Always wait after kill" then
+                assert(state.Phase=="Fight" and hum.Health==100,"always-wait mode ignored Reset (s) with safe EXP")
+                nav.FightStep(stop,t+7)
+            end
+            assert(state.Phase=="Recover" and hum.Health==0,"reset mode didn't finish its wait")
+        end
+        nav.StopRoute()
+    end
+    print("BOSS RESET MODES passed: exclusive UI choices preserve always-wait, death farm, and EXP-safe reset timing")
     mobs:Destroy(); character:Destroy()
     players.GetPlayers=realGetPlayers
     print("BOSS WAIT regression passed: spawn/duo priority, reset cycles, indefinite waits, timeout attacks current stop")

@@ -925,6 +925,12 @@ return {
         --// have called the reset free. Otherwise nothing is held when the
         --// character's EXP sits inside the part of the bar a reset keeps, and a
         --// cost that cannot be read is a loss and is waited out.
+        local RESET_MODES = { "Wait if EXP at risk", "Always wait after kill", "Death farm" }
+        local function GetResetMode()
+            if CONFIG.BOSS_DEATH_FARM == true then return "Death farm" end
+            return CONFIG.BOSS_RESET_ALWAYS_WAIT == true and "Always wait after kill" or "Wait if EXP at risk"
+        end
+
         local function GetResetHold(Stop)
             local Wait = tonumber(Stop and Stop.ResetWait)
 
@@ -1336,6 +1342,7 @@ return {
             --// Draw every box before the selected-stop check: the panels are
             --// not tied to which stop is being edited.
             RefreshBoundsVisuals(GetStops())
+            if UIRef.BossResetModeDropdown then UIRef.BossResetModeDropdown:Set(GetResetMode(), true) end
 
             if not Stop then
                 return
@@ -1397,12 +1404,6 @@ return {
                 )
             end
             if UIRef.BossLoopToggle then UIRef.BossLoopToggle:Set(CONFIG.BOSS_ROUTE_LOOP ~= false, true) end
-            if UIRef.BossAlwaysWaitToggle then
-                UIRef.BossAlwaysWaitToggle:Set(CONFIG.BOSS_RESET_ALWAYS_WAIT == true, true)
-            end
-            if UIRef.BossDeathFarmToggle then
-                UIRef.BossDeathFarmToggle:Set(CONFIG.BOSS_DEATH_FARM == true, true)
-            end
             if UIRef.BossWaitForSpawnToggle then
                 UIRef.BossWaitForSpawnToggle:Set(CONFIG.BOSS_WAIT_FOR_SPAWN == true, true)
             end
@@ -4308,45 +4309,21 @@ return {
             end,
         }
 
-        --// Turns the EXP check off: with it on, every stop waits its Reset (s)
-        --// after the kill before resetting, even when the character's EXP is
-        --// inside the part of the bar a reset keeps and nothing would be lost.
-        UIRef.BossAlwaysWaitToggle = UIRef.BossSection:AddToggle{
-            Name = "Always Wait After Kill",
-            Default = CONFIG.BOSS_RESET_ALWAYS_WAIT == true,
+        -- One mutually exclusive control; the existing saved keys remain
+        -- compatible with older profiles, including Death Farm's precedence.
+        UIRef.BossResetModeDropdown = UIRef.BossSection:AddDropdown{
+            Name = "Reset Mode",
+            Options = RESET_MODES,
+            Default = GetResetMode(),
+            Description = "Uses each stop's Reset (s). Wait if EXP at risk protects EXP; Always wait applies the delay every time; Death farm also skips grace and damage-tag delays when EXP is safe.",
             Callback = function(Value)
-                CONFIG.BOSS_RESET_ALWAYS_WAIT = Value == true
-
+                if not table.find(RESET_MODES, Value) then return end
+                CONFIG.BOSS_DEATH_FARM = Value == "Death farm"
+                CONFIG.BOSS_RESET_ALWAYS_WAIT = Value == "Always wait after kill"
                 if AICProfile.S.ActiveProfileName then
                     AICProfile.SaveActiveProfile()
                 end
-
-                SetStatus(CONFIG.BOSS_RESET_ALWAYS_WAIT
-                    and "ALWAYS WAIT AFTER KILL"
-                    or "INSTANT RESET WHEN NOTHING IS AT RISK")
-            end,
-        }
-
-        --// One press, and the route resets the instant a kill is in: no Reset
-        --// (s), no grace, no waiting for the game's damage tag. The one thing
-        --// still waited for is EXP - a reset that would take some holds the
-        --// stop's own Reset (s), which is what makes a farm that dies on the
-        --// spot safe.
-        UIRef.BossDeathFarmToggle = UIRef.BossSection:AddToggle{
-            Name = "Death Farm",
-            Default = CONFIG.BOSS_DEATH_FARM == true,
-            Callback = function(Value)
-                CONFIG.BOSS_DEATH_FARM = Value == true
-
-                if AICProfile.S.ActiveProfileName then
-                    AICProfile.SaveActiveProfile()
-                end
-
-                SetStatus(CONFIG.BOSS_DEATH_FARM
-                    and "DEATH FARM  INSTANT RESET UNLESS EXP IS AT RISK"
-                    or (CONFIG.BOSS_RESET_ALWAYS_WAIT
-                        and "ALWAYS WAIT AFTER KILL"
-                        or "INSTANT RESET WHEN NOTHING IS AT RISK"))
+                SetStatus("RESET MODE  " .. string.upper(Value))
             end,
         }
 

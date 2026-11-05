@@ -199,6 +199,8 @@ return {
             --// Boss Route loops back to its first stop after the last one;
             --// off, it plays the route once and switches itself off.
             { Key = "BOSS_ROUTE_LOOP", Default = true },
+            --// Reset Mode uses these existing keys so older profiles retain
+            --// their behavior. Its dropdown writes them mutually exclusively.
             --// Boss Route takes its Reset (s) before every reset, including one
             --// the EXP check would have fired at once; off, a reset that costs
             --// no EXP still happens immediately.
