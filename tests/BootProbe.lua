@@ -1435,4 +1435,84 @@ do
     place.BOSS_ROUTE=oldStops
     print("DUO PERSISTENCE passed: actual control edits -> saved profile -> reconnect/apply -> matching controls, without callback rewrites")
 end
+do
+    local nav=Context.AICFeature.BossNav
+    local state=nav.S
+    local hum={Health=100,MaxHealth=100,WalkSpeed=16,Move=noop,MoveTo=noop}
+    local root={Position=Vector3.new(0,0,0)}
+    Context.Runtime.GetCharacter=function() return {},hum,root end
+    local calls,guard,throwBegin,throwEnd,reject={},false,true,false,false
+    local function input(name)
+        return {Invoke=function(_,action,phase)
+            assert(action=="BlockButton","wrong guard binding")
+            calls[#calls+1]={Input=name,Phase=phase}
+            if phase==Enum.UserInputState.Begin and throwBegin then error("binding not ready") end
+            if phase==Enum.UserInputState.End and throwEnd then error("release temporarily failed") end
+            if reject then return false end
+            guard=phase==Enum.UserInputState.Begin
+        end}
+    end
+    local binding=input("first")
+    local fallback
+    Context.Runtime.GetInputBindableFunction=function() return binding end
+    Context.Runtime.SetInputBindableFunction=function(_,value) binding=value end
+    Context.PlayerGui={FindFirstChild=function() return fallback end}
+    nav.StopRoute()
+    calls={}
+    assert(nav.SetBlocking(true,2000)==false and not state.Blocking,"failed block was latched as successful")
+    nav.SetBlocking(true,2000.1); assert(#calls==1,"failed block retried every frame")
+    throwBegin=false; nav.SetBlocking(true,2000.5)
+    assert(#calls==2 and guard and state.Blocking,"failed block didn't retry after the binding became ready")
+    guard=false; nav.SetBlocking(true,2000.75)
+    assert(#calls==2,"guard refresh ignored its rate limit")
+    nav.SetBlocking(true,2001)
+    assert(#calls==3 and guard,"game-cleared guard wasn't reasserted")
+    nav.SetBlocking(false,2001.1)
+    assert(#calls==4 and not guard and not state.Blocking,"leaving a wait didn't release block immediately")
+    nav.SetBlocking(true,2002); throwEnd=true
+    assert(nav.SetBlocking(false,2002.1)==false,"release error was treated as success")
+    local beforeReleaseRetry=#calls
+    nav.SetBlocking(false,2002.2)
+    assert(#calls==beforeReleaseRetry,"failed release retried every frame")
+    throwEnd=false; nav.SetBlocking(false,2002.7)
+    assert(not guard and not state.Blocking,"failed guard release never recovered")
+    reject=true
+    assert(nav.SetBlocking(true,2004)==false and not state.Blocking,"explicitly rejected guard was marked successful")
+    reject=false; nav.SetBlocking(true,2004.5)
+    binding=input("replacement"); nav.SetBlocking(true,2004.6)
+    assert(calls[#calls].Input=="replacement" and guard,"new input binding inherited stale guard state")
+    local beforeRespawn=#calls
+    hum={Health=100,MaxHealth=100,WalkSpeed=16,Move=noop,MoveTo=noop}
+    nav.SetBlocking(true,2004.7)
+    assert(#calls==beforeRespawn+1,"respawn didn't reapply guard on the new character")
+    binding=Instance.new("BindableFunction") -- Cached handle was destroyed/unparented.
+    fallback=input("late PlayerGui binding")
+    nav.SetBlocking(true,2004.8)
+    assert(binding==fallback and calls[#calls].Input=="late PlayerGui binding","standalone boss route didn't recover its stale input handle")
+    binding,fallback=nil,nil
+    assert(nav.SetBlocking(true,2005)==false and not state.Blocking,"missing binding kept a stale BLOCK indicator")
+    fallback=input("loaded later")
+    nav.SetBlocking(true,2005.1)
+    assert(guard and binding==fallback,"late-loaded input never enabled blocking")
+    nav.StopRoute()
+
+    local stop={Label="Guard wait",Position=Vector3.new(0,0,0),Path={},Targets={},Radius=100,Wait=10,Waypoint=0,Dodge=false}
+    Context.Runtime:GetPlaceConfig().BOSS_ROUTE={stop}
+    Context.CONFIG.BOSS_DUO_SYNC=false
+    Context.CONFIG.BOSS_WAIT_FOR_SPAWN=true
+    Context.AICFeature.EnsureWeaponDrawn=function() return false end
+    Context.AICFeature.TryHeal=function() return false end
+    state.Index=1; calls={}
+    nav.BeginStop(2010); nav.ApproachStep(stop,2010)
+    assert(#calls==1 and guard,"waiting at an empty boss stop didn't block")
+    guard=false; nav.ApproachStep(stop,2010.1); nav.ApproachStep(stop,2010.6)
+    assert(#calls==2 and guard,"boss-stop wait didn't maintain guard after the game cleared it")
+    stop.Bounds={Vector3.new(-20,0,-20),Vector3.new(20,0,-20),Vector3.new(20,0,20),Vector3.new(-20,0,20)}
+    Context.Feature.BossRoute.Enabled=true; hum.Health=25
+    guard=false
+    assert(Context.AICFeature.BossRetreatStep(2011.2)==true and guard,"low-HP healing bypassed guard maintenance during a wait")
+    nav.StopRoute()
+    assert(not guard,"stopping the route left the block input held")
+    print("BOSS GUARD passed: failed/dropped input recovery, refresh rate limit, release retry, respawn/rebind, wait/heal integration")
+end
 print("BOOT PROBE PASSED")

@@ -888,23 +888,43 @@ Humanoid.WalkSpeed = S.FleeFromSpeed
 end
 S.FleeFromSpeed = nil
 end
-local function SetBlocking(On)
+local BLOCK_REFRESH_INTERVAL = 0.5
+local function SetBlocking(On, Now)
 On = On == true
-if S.Blocking == On then
-return
-end
+Now = Now or os.clock()
 local GetInput = Runtime.GetInputBindableFunction
 local InputBindableFunction = GetInput and GetInput(Runtime)
-if not InputBindableFunction then
-return
+if InputBindableFunction and typeof(InputBindableFunction) == "Instance" and not InputBindableFunction.Parent then
+InputBindableFunction = nil
 end
-S.Blocking = On
-pcall(function()
-InputBindableFunction:Invoke(
+if not InputBindableFunction and Context.PlayerGui then
+InputBindableFunction = Context.PlayerGui:FindFirstChild("InputBindableFunction", true)
+if InputBindableFunction and Runtime.SetInputBindableFunction then Runtime:SetInputBindableFunction(InputBindableFunction) end
+end
+local _, Humanoid = Runtime:GetCharacter()
+if not InputBindableFunction or not Humanoid or (tonumber(Humanoid.Health) or 0) <= 0 then
+S.Blocking, S.BlockInput, S.BlockHumanoid, S.BlockWanted = false, nil, nil, nil
+return false
+end
+local HadBlockRequest = S.Blocking == true or S.BlockWanted == true
+if S.BlockInput ~= InputBindableFunction or S.BlockHumanoid ~= Humanoid then
+S.Blocking, S.BlockWanted, S.BlockAttemptAt = false, nil, nil
+S.BlockInput, S.BlockHumanoid = InputBindableFunction, Humanoid
+end
+if not On and not S.Blocking and S.BlockWanted ~= true and not HadBlockRequest then return true end
+if S.BlockWanted == On and S.BlockAttemptAt and Now - S.BlockAttemptAt < BLOCK_REFRESH_INTERVAL then
+return S.Blocking == On
+end
+S.BlockWanted, S.BlockAttemptAt = On, Now
+local Ok, Result = pcall(function()
+return InputBindableFunction:Invoke(
 "BlockButton",
 On and Enum.UserInputState.Begin or Enum.UserInputState.End
 )
 end)
+if Ok and Result ~= false then S.Blocking = On
+elseif On then S.Blocking = false end
+return Ok and Result ~= false
 end
 local EndEvade
 local function StopRoute(StatusText)
@@ -1999,6 +2019,10 @@ MobRoot = nil
 end
 if not FleeStep(Humanoid, RootPart, Stop, MobRoot) then Humanoid:Move(Vector3.zero) end
 end
+if S.Phase == "Approach" then
+RequireWeapon(Now)
+SetBlocking(true, Now)
+end
 local DuoWaiting = IsWaitingForDuo(RootPart, Now)
 SetStatus(string.format("STOP %d/%d  %sHEALING INSIDE FIGHT BOUNDS", S.Index, #GetStops(), DuoWaiting and "WAITING FOR DUO  " or ""))
 return true
@@ -2015,7 +2039,7 @@ if WaitTarget and not InsideBounds(Stop, RootPart.Position, 0) then
 local Back = ClampToBounds(Stop, RootPart.Position, BOUNDS_INSET)
 AICCombatUtils.DoJumpIfObstacle(Back)
 Humanoid:MoveTo(Back)
-SetBlocking(true)
+SetBlocking(true, Now)
 local Reason = DuoWaiting and "WAITING FOR DUO  RETURNING TO FIGHT BOUNDS" or "RETURNING TO FIGHT BOUNDS"
 SetStatus(string.format("STOP %d/%d  %s", S.Index, #GetStops(), Reason))
 return true
@@ -2037,7 +2061,7 @@ S.DodgeTarget = nil
 end
 end
 if DodgeStep(WaitTarget, Humanoid, RootPart, Now, Stop) then
-SetBlocking(true)
+SetBlocking(true, Now)
 if DuoWaiting then
 SetStatus(string.format("STOP %d/%d  WAITING FOR DUO  %s  DODGE", S.Index, #GetStops(), DuoName))
 end
@@ -2058,7 +2082,7 @@ and AICFeature.TryHeal
 and AICFeature.TryHeal(Now)
 Humanoid:Move(Vector3.zero)
 RequireWeapon(Now)
-SetBlocking(true)
+SetBlocking(true, Now)
 local WaitMarker = S.Blocking and "  BLOCK" or ""
 if WaitHeal then
 WaitMarker = S.Blocking and "  HEAL  BLOCK" or "  HEAL"

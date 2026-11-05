@@ -1550,35 +1550,48 @@ return {
             S.FleeFromSpeed = nil
         end
 
-        --// The game's block button, held rather than pressed: Begin on the way
-        --// into a wait, End on the way out, so the sword is up for as long as
-        --// the stop is waited at and back down when the fight (or the next
-        --// step) starts. The name follows the game's own bindings
-        --// (AttackButton, EquipButton, InteractButton). A game without the
-        --// binding answers with an error through pcall and the wait carries on
-        --// without a guard, the same way a missing prompt binding is survived.
-        local function SetBlocking(On)
+        -- Reassert the held guard at a bounded rate: the game can clear it
+        -- after equipping, a potion, a stagger, or a respawn. A failed Begin
+        -- must never latch the UI into believing the input succeeded.
+        local BLOCK_REFRESH_INTERVAL = 0.5
+        local function SetBlocking(On, Now)
             On = On == true
-
-            if S.Blocking == On then
-                return
-            end
-
+            Now = Now or os.clock()
             local GetInput = Runtime.GetInputBindableFunction
             local InputBindableFunction = GetInput and GetInput(Runtime)
-
-            if not InputBindableFunction then
-                return
+            if InputBindableFunction and typeof(InputBindableFunction) == "Instance" and not InputBindableFunction.Parent then
+                InputBindableFunction = nil
             end
-
-            S.Blocking = On
-
-            pcall(function()
-                InputBindableFunction:Invoke(
+            -- Boss Route also runs with Auto Farm off, so it cannot rely on
+            -- Auto Farm's later input lookup to bind a newly loaded character.
+            if not InputBindableFunction and Context.PlayerGui then
+                InputBindableFunction = Context.PlayerGui:FindFirstChild("InputBindableFunction", true)
+                if InputBindableFunction and Runtime.SetInputBindableFunction then Runtime:SetInputBindableFunction(InputBindableFunction) end
+            end
+            local _, Humanoid = Runtime:GetCharacter()
+            if not InputBindableFunction or not Humanoid or (tonumber(Humanoid.Health) or 0) <= 0 then
+                S.Blocking, S.BlockInput, S.BlockHumanoid, S.BlockWanted = false, nil, nil, nil
+                return false
+            end
+            local HadBlockRequest = S.Blocking == true or S.BlockWanted == true
+            if S.BlockInput ~= InputBindableFunction or S.BlockHumanoid ~= Humanoid then
+                S.Blocking, S.BlockWanted, S.BlockAttemptAt = false, nil, nil
+                S.BlockInput, S.BlockHumanoid = InputBindableFunction, Humanoid
+            end
+            if not On and not S.Blocking and S.BlockWanted ~= true and not HadBlockRequest then return true end
+            if S.BlockWanted == On and S.BlockAttemptAt and Now - S.BlockAttemptAt < BLOCK_REFRESH_INTERVAL then
+                return S.Blocking == On
+            end
+            S.BlockWanted, S.BlockAttemptAt = On, Now
+            local Ok, Result = pcall(function()
+                return InputBindableFunction:Invoke(
                     "BlockButton",
                     On and Enum.UserInputState.Begin or Enum.UserInputState.End
                 )
             end)
+            if Ok and Result ~= false then S.Blocking = On
+            elseif On then S.Blocking = false end
+            return Ok and Result ~= false
         end
 
         --// Defined with the rest of the hold, further down: a stop of the route
@@ -3237,6 +3250,10 @@ return {
                 end
                 if not FleeStep(Humanoid, RootPart, Stop, MobRoot) then Humanoid:Move(Vector3.zero) end
             end
+            if S.Phase == "Approach" then
+                RequireWeapon(Now)
+                SetBlocking(true, Now)
+            end
             local DuoWaiting = IsWaitingForDuo(RootPart, Now)
             SetStatus(string.format("STOP %d/%d  %sHEALING INSIDE FIGHT BOUNDS", S.Index, #GetStops(), DuoWaiting and "WAITING FOR DUO  " or ""))
             return true
@@ -3255,7 +3272,7 @@ return {
                 local Back = ClampToBounds(Stop, RootPart.Position, BOUNDS_INSET)
                 AICCombatUtils.DoJumpIfObstacle(Back)
                 Humanoid:MoveTo(Back)
-                SetBlocking(true)
+                SetBlocking(true, Now)
                 local Reason = DuoWaiting and "WAITING FOR DUO  RETURNING TO FIGHT BOUNDS" or "RETURNING TO FIGHT BOUNDS"
                 SetStatus(string.format("STOP %d/%d  %s", S.Index, #GetStops(), Reason))
                 return true
@@ -3315,7 +3332,7 @@ return {
                     --// DodgeStep writes its own STOP x/y DODGE line. The
                     --// guard stays up through it: evading and blocking
                     --// are one stance here, not a choice between them.
-                    SetBlocking(true)
+                    SetBlocking(true, Now)
                     if DuoWaiting then
                         SetStatus(string.format("STOP %d/%d  WAITING FOR DUO  %s  DODGE", S.Index, #GetStops(), DuoName))
                     end
@@ -3349,7 +3366,7 @@ return {
             --// low bar is the only thing that happens besides it.
             Humanoid:Move(Vector3.zero)
             RequireWeapon(Now)
-            SetBlocking(true)
+            SetBlocking(true, Now)
 
             --// Only says BLOCK when the binding actually took it: a
             --// game that names its block differently shows HEAL
