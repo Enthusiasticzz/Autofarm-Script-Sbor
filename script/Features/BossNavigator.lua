@@ -1608,7 +1608,6 @@ return {
             S.ReturnKill = false
             S.FightDuoCharacter, S.FightDuoName = nil, nil
             S.DuoReadyThisVisit = false
-            S.AwaitDuoCharacter, S.AwaitDuoName = nil, nil
             S.DuoWaitStartedAt, S.DuoWaitReleased, S.DuoWaitName = nil, false, nil
             S.ReturnMissAt = nil
             S.SeenTarget = false
@@ -1756,12 +1755,6 @@ return {
 
         local function BeginReset(Now, Reason)
             local _, Humanoid, RootPart = Runtime:GetCharacter()
-
-            -- Capture the partner from the fight, not from this delayed reset:
-            -- the fast account may have respawned while we protected our EXP.
-            if CONFIG.BOSS_WAIT_FOR_SPAWN == true and CONFIG.BOSS_DUO_SYNC == true then
-                S.AwaitDuoCharacter, S.AwaitDuoName = S.FightDuoCharacter, S.FightDuoName
-            end
 
             S.Resets += 1
 
@@ -3140,47 +3133,57 @@ return {
             local Name = GetDuoName()
 
             if Name == "" then
-                return nil
+                return nil, "SET A DUO NAME"
             end
 
             local Lower = string.lower(Name)
 
+            local Match
+            local DisplayMatch
+            local DisplayMatches = 0
             for _, Other in ipairs(Players:GetPlayers()) do
                 if Other ~= Player then
                     local OtherName = string.lower(tostring(Other.Name or ""))
                     local DisplayName = string.lower(tostring(Other.DisplayName or ""))
 
-                    if OtherName == Lower or DisplayName == Lower then
-                        local Character = Other.Character
-                        local Root = Character and Character:FindFirstChild("HumanoidRootPart")
-                        local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
-
-                        if Root and Humanoid and (tonumber(Humanoid.Health) or 0) > 0 then
-                            return Root
-                        end
+                    if OtherName == Lower then
+                        Match = Other
+                        break
+                    elseif DisplayName == Lower then
+                        DisplayMatch = Other
+                        DisplayMatches += 1
                     end
                 end
             end
 
-            return nil
+            if not Match and DisplayMatches > 1 then
+                return nil, "AMBIGUOUS DISPLAY NAME - USE USERNAME"
+            end
+            Match = Match or DisplayMatch
+            if not Match then return nil, "PLAYER NOT IN SERVER" end
+            local Character = Match.Character
+            local Root = Character and Character:FindFirstChild("HumanoidRootPart")
+            local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
+            if Humanoid and (tonumber(Humanoid.Health) or 0) <= 0 then
+                return nil, "DUO IS DEAD / RESPAWNING"
+            end
+            if not Root or not Humanoid then return nil, "CHARACTER LOADING / NOT STREAMED" end
+            return Root
         end
 
         local function IsDuoNear(RootPart)
-            local DuoRoot = GetDuoRoot()
-
-            if S.AwaitDuoName ~= GetDuoName() then
-                S.AwaitDuoCharacter, S.AwaitDuoName = nil, nil
-            end
+            local DuoRoot, Reason = GetDuoRoot()
 
             if not DuoRoot then
+                S.DuoWaitReason = Reason
                 return false
             end
 
-            if CONFIG.BOSS_WAIT_FOR_SPAWN == true and DuoRoot.Parent == S.AwaitDuoCharacter then
-                return false
-            end
-            local Near = AICCombatUtils.GetHorizontalDistance(RootPart.Position, DuoRoot.Position) <= GetDuoRange()
-            if Near then S.AwaitDuoCharacter, S.AwaitDuoName = nil, nil end
+            -- A surviving partner is ready too; boss spawn waiting must not
+            -- require the partner to replace their character after every kill.
+            local Distance = AICCombatUtils.GetHorizontalDistance(RootPart.Position, DuoRoot.Position)
+            local Near = Distance <= GetDuoRange()
+            S.DuoWaitReason = string.format("%.0f / %.0f STUDS", Distance, GetDuoRange())
             return Near
         end
 
@@ -3267,13 +3270,13 @@ return {
             -- Waiting owns the frame and never expires as an unreachable walk.
             S.LastProgressAt, S.WalkStart = Now, Now
             AICCombat.S.ClosestTarget = nil
-            local DuoName = GetDuoName()
+            local DuoName = string.format("%s  %s", GetDuoName(), S.DuoWaitReason or "CHECKING DUO")
             if WaitTarget and not InsideBounds(Stop, RootPart.Position, 0) then
                 local Back = ClampToBounds(Stop, RootPart.Position, BOUNDS_INSET)
                 AICCombatUtils.DoJumpIfObstacle(Back)
                 Humanoid:MoveTo(Back)
                 SetBlocking(true, Now)
-                local Reason = DuoWaiting and "WAITING FOR DUO  RETURNING TO FIGHT BOUNDS" or "RETURNING TO FIGHT BOUNDS"
+                local Reason = DuoWaiting and ("WAITING FOR DUO  " .. DuoName .. "  RETURNING TO FIGHT BOUNDS") or "RETURNING TO FIGHT BOUNDS"
                 SetStatus(string.format("STOP %d/%d  %s", S.Index, #GetStops(), Reason))
                 return true
             end
@@ -4353,10 +4356,9 @@ return {
         UIRef.BossWaitForSpawnToggle = UIRef.BossSection:AddToggle{
             Name = "Wait for Boss Spawn",
             Default = CONFIG.BOSS_WAIT_FOR_SPAWN == true,
-            Description = "Wait for a living boss as well as Wait At Spot seconds. Duo Sync takes priority and, after a kill/reset, waits for the duo's new character to return.",
+            Description = "Wait for a living boss as well as Wait At Spot seconds. Duo Sync requires a living duo within range; the duo does not need to reset after a kill.",
             Callback = function(Value)
                 CONFIG.BOSS_WAIT_FOR_SPAWN = Value == true
-                if not CONFIG.BOSS_WAIT_FOR_SPAWN then S.AwaitDuoCharacter, S.AwaitDuoName = nil, nil end
                 if AICProfile.S.ActiveProfileName then AICProfile.SaveActiveProfile() end
             end,
         }
@@ -4988,7 +4990,6 @@ return {
             Callback = function(Value)
                 CONFIG.BOSS_DUO_SYNC = Value == true
                 S.FightDuoCharacter, S.FightDuoName = nil, nil
-                S.AwaitDuoCharacter, S.AwaitDuoName = nil, nil
                 S.DuoWaitStartedAt, S.DuoWaitReleased, S.DuoWaitName = nil, false, nil
                 SaveDuoSettings()
                 SetStatus(CONFIG.BOSS_DUO_SYNC
