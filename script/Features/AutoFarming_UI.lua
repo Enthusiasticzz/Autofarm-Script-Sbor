@@ -2,7 +2,7 @@
 -- Split from Features/AutoFarming.lua as part of Step 4b.
 return {
     Name = "AutoFarming_UI",
-    Dependencies = {"AutoFarming", "Logger"},
+    Dependencies = {"AutoFarming", "Logger", "Async"},
 
     Start = function(Context)
         local Runtime = Context.Runtime
@@ -46,27 +46,32 @@ return {
         AICFeature.CreateToggleContainer = function()
         end
 
+        local StaminaWorker = Context.Async:Worker()
+        local function DisconnectStamina()
+            if AICFeature.S.StaminaConnection then
+                AICFeature.S.StaminaConnection:Disconnect()
+                AICFeature.S.StaminaConnection = nil
+            end
+        end
+        Context.Lifetime.OnEnd(DisconnectStamina)
+
         AICFeature.RegenStamina = function()
-            task.spawn(function()
-                local PlayerStats = Player:FindFirstChild("PlayerStats")
-                if not PlayerStats then
-                    repeat task.wait(0.5) until Player:FindFirstChild("PlayerStats")
+            StaminaWorker:Cancel()
+            DisconnectStamina()
+            StaminaWorker:Start(function()
+                local PlayerStats, GameGui
+                repeat
                     PlayerStats = Player:FindFirstChild("PlayerStats")
-                end
-                local GameGui = PlayerGui:FindFirstChild("GameGui")
-                if not GameGui then
-                    repeat task.wait(0.5) until PlayerGui:FindFirstChild("GameGui")
                     GameGui = PlayerGui:FindFirstChild("GameGui")
-                end
+                    if not PlayerStats or not GameGui then task.wait(0.5) end
+                until PlayerStats and GameGui
                 local Stamina = GameGui:FindFirstChild("Stamina")
                 local MaxStamina = PlayerStats:FindFirstChild("MaxStamina")
-
-                if not Stamina or not MaxStamina then
-                    return
-                end
-
+                return Stamina, MaxStamina
+            end, 30, function(Ok, Stamina, MaxStamina)
+                if not Ok or not Stamina or not MaxStamina then return end
                 AICFeature.S.StaminaConnection = Stamina:GetPropertyChangedSignal("Value"):Connect(function()
-                    if Stamina.Value < MaxStamina.Value then
+                    if Context.Lifetime.Alive ~= false and Stamina.Value < MaxStamina.Value then
                         Stamina.Value = MaxStamina.Value
                     end
                 end)

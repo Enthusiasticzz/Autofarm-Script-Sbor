@@ -257,6 +257,7 @@ function Library.new(o)
 	self._DefaultTextScale = 1
 	self._DefaultWindowSize = Vector2.new(ROOT_W, ROOT_H)
 	self._binds, self.Flags, self._setters, self._flagListeners = {}, {}, {}, {}
+	self._owners = {}
 	self.Tabs, self.Keybinds, self.Configs, self.StatusIcons, self.ConfigSelectors = {}, {}, {}, {}, {}
 	self.AnimSpeed = 1
 	self.StatusPerRow = math.max(1, math.floor(o.StatusPerRow or 4))
@@ -431,10 +432,38 @@ function Library.new(o)
 	return self
 end
 
--- owner (optional): the instance this binding paints. Once it is destroyed the binding is dropped on the
--- next Refresh. Before, every popup / tooltip / notification left its bindings behind forever, so each
--- Refresh got slower the more you had opened things.
-function Library:Bind(fn, owner) table.insert(self._binds, { fn = fn, owner = owner }); pcall(fn); return fn end
+-- Widget-owned resources are released at destruction, not at the next theme
+-- change. Swap-removal keeps list redraw cleanup independent of window size.
+function Library:_Owner(owner)
+	local state = self._owners[owner]
+	if state then return state end
+	state = { Bindings = {}, Connections = {} }
+	self._owners[owner] = state
+	state.Destroying = owner.Destroying:Connect(function()
+		for _, connection in ipairs(state.Connections) do connection:Disconnect() end
+		for _, binding in ipairs(state.Bindings) do
+			local index = binding.Index
+			if index and self._binds[index] == binding then
+				local last = table.remove(self._binds)
+				if last ~= binding then self._binds[index] = last; last.Index = index end
+				binding.Index = nil
+			end
+		end
+		table.clear(state.Connections)
+		table.clear(state.Bindings)
+		state.Destroying:Disconnect()
+		self._owners[owner] = nil
+	end)
+	return state
+end
+
+function Library:Bind(fn, owner)
+	local binding = { fn = fn, owner = owner, Index = #self._binds + 1 }
+	table.insert(self._binds, binding)
+	if owner then table.insert(self:_Owner(owner).Bindings, binding) end
+	pcall(fn)
+	return fn
+end
 
 function Library:Themed(obj, map)
 	self:Bind(function() for p, k in pairs(map) do obj[p] = self.Theme[k] end end, obj)
@@ -449,7 +478,10 @@ function Library:Refresh()
 	for _, b in ipairs(self._binds) do
 		if not b.owner or b.owner.Parent then
 			alive[#alive + 1] = b
+			b.Index = #alive
 			pcall(b.fn)
+		else
+			b.Index = nil
 		end
 	end
 	self._binds = alive
@@ -993,7 +1025,10 @@ function Library:Toggle(state)
 	end
 end
 function Library:Destroy()
+	if self.Destroyed then return end
+	self.Destroyed = true
 	for _, c in ipairs(self._conns) do c:Disconnect() end
+	table.clear(self._conns)
 	pcall(function() RunService:UnbindFromRenderStep("UILibUnlock" .. self.Title) end)
 	if self._mouseUnlocked then
 		self._mouseUnlocked = false
@@ -2867,7 +2902,7 @@ function Section:AddPriority(name, values, options)
 				Stroke(check, checked and lib.Theme.Accent or lib.Theme.Border).Transparency = checked and 0 or .2
 				lib:_Connect(check.MouseButton1Click, function()
 					component:SetCheck(index, not component.Checks[index])
-				end)
+				end, check)
 				left = 40
 			end
 
@@ -2946,7 +2981,7 @@ function Section:AddPriority(name, values, options)
 					if component.OnValueChanged then
 						task.spawn(component.OnValueChanged, index, component.Values[index], component.Priority[index])
 					end
-				end)
+				end, box)
 			end
 
 			local up = IconButton(row, "↑", -28, false, 11, "Move up", index > 1)
@@ -2959,13 +2994,13 @@ function Section:AddPriority(name, values, options)
 
 			lib:_Connect(up.MouseButton1Click, function()
 				component:MoveUp(value)
-			end)
+			end, up)
 			lib:_Connect(down.MouseButton1Click, function()
 				component:MoveDown(value)
-			end)
+			end, down)
 			lib:_Connect(remove.MouseButton1Click, function()
 				component:Remove(value)
-			end)
+			end, remove)
 		end
 
 		--// The box is as tall as its rows, up to the cap; past that it scrolls.
@@ -3481,9 +3516,10 @@ end
 --------------------------------------------------------------------------------
 
 --// Connections made through this are dropped together with the window.
-function Library:_Connect(signal, callback)
+function Library:_Connect(signal, callback, owner)
 	local connection = signal:Connect(callback)
-	table.insert(self._conns, connection)
+	if owner then table.insert(self:_Owner(owner).Connections, connection)
+	else table.insert(self._conns, connection) end
 	return connection
 end
 

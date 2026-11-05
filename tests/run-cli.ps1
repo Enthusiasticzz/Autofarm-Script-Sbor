@@ -13,6 +13,7 @@ $stub = Get-Content (Join-Path $PSScriptRoot "StubRoblox.lua") -Raw
 $stub = [regex]::Replace($stub, '(?s)\s*return\s+Stub\s*$', '')
 
 $runtime = Get-Content (Join-Path $root "script/Core/Runtime.lua") -Raw
+$async = Get-Content (Join-Path $root "script/Core/Async.lua") -Raw
 $logger = Get-Content (Join-Path $root "script/Core/Logger.lua") -Raw
 $profileManager = Get-Content (Join-Path $root "script/Core/ProfileManager.lua") -Raw
 $profileManagerStorage = Get-Content (Join-Path $root "script/Core/ProfileManager_Storage.lua") -Raw
@@ -53,6 +54,7 @@ local Context = {
 }
 
 local Runtime = RuntimeModule.Start(Context)
+Context.Async = assert(loadstring(AsyncSource, "@Async.lua"))().Start(Context)
 
 Context.Runtime = Runtime
 Context.Logger = assert(loadstring(LoggerSource, "@Logger.lua"))().Start(Context)
@@ -292,6 +294,10 @@ $runtime
 
 local LoggerSource = [====[
 $logger
+]====]
+
+local AsyncSource = [====[
+$async
 ]====]
 
 local ProfileManagerSource = [====[

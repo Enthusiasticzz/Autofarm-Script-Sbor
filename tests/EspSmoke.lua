@@ -54,8 +54,9 @@ Players.GetPlayers=function() return {Players.LocalPlayer,owner} end
 Players.GetPlayerFromCharacter=function(_,model) return model==target and owner or nil end
 local stats=Instance.new("Folder",owner); stats.Name="PlayerStats"
 local level=Instance.new("IntValue",stats); level.Name,level.Value="Level",250
+local projections = 0
 workspace.CurrentCamera={CFrame=CFrame.new(Vector3.new(0,0,0)),ViewportSize=Vector2.new(800,600),
-    WorldToViewportPoint=function(_,p) return Vector3.new(400+p.X*10,300-p.Y*10,p.Z),true end}
+    WorldToViewportPoint=function(_,p) projections += 1; return Vector3.new(400+p.X*10,300-p.Y*10,p.Z),true end}
 
 local function render()
     RunService.RenderStepped:Fire()
@@ -114,6 +115,14 @@ for _,draw in ipairs({false,true}) do
         if style~="Outline" then assert(#lines==(style=="Corners" and 8 or 4),"wrong box edge count")
         else
             assert(#entry.BodyParts==2,"outline includes invisible hitboxes")
+            projections = 0; render()
+            local cached = projections
+            workspace.CurrentCamera.FieldOfView = (workspace.CurrentCamera.FieldOfView or 70) + 1
+            projections = 0; render()
+            assert(projections == cached + 16, "stationary limbs weren't cached or FOV didn't invalidate projection")
+            workspace.CurrentCamera.CFrame = CFrame.new(Vector3.new(0,0,0))
+            projections = 0; render()
+            assert(projections == cached + 16, "camera movement didn't invalidate body projections")
             if draw then
                 for _,line in ipairs(lines) do
                     local middle=(line.From+line.To)*.5

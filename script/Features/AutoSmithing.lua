@@ -21,10 +21,11 @@
 return {
     Name = "AutoSmithing",
     IsFeature = true,
-    Dependencies = {"Runtime", "SaveConfig", "ProfileManager", "Components", "CombatUtils", "Navigation", "Combat", "DebugVisualizer", "WalkController", "SmithingRecipes", "SmithingMinigame"},
+    Dependencies = {"Runtime", "SaveConfig", "ProfileManager", "Components", "CombatUtils", "Navigation", "Combat", "DebugVisualizer", "WalkController", "SmithingRecipes", "SmithingMinigame", "Async"},
 
     Start = function(Context)
         local Runtime = Context.Runtime
+        local CraftWorker = Context.Async:Worker()
         local Replicated = Context.Services.Replicated
         local FeatureState = Context.Feature
         local AICCombatUtils = Context.AICCombatUtils
@@ -121,6 +122,7 @@ return {
         end
 
         local function EndJob()
+            CraftWorker:Cancel()
             S.Token += 1
             S.State = "Idle"
             S.Recipe = nil
@@ -338,11 +340,9 @@ return {
             local TableId = Id.Value
 
             --// InvokeServer yields, which a heartbeat must never do.
-            task.spawn(function()
-                local Ok, Result = pcall(function()
-                    return Remote:InvokeServer(RecipeName, TableId)
-                end)
-
+            CraftWorker:Start(function()
+                return Remote:InvokeServer(RecipeName, TableId)
+            end, START_TIMEOUT, function(Ok, Result)
                 --// Superseded, or the minigame already opened and is now
                 --// what decides the craft.
                 if Token ~= S.Token or S.State ~= "Starting" then
@@ -358,6 +358,8 @@ return {
                 S.State = "Minigame"
                 S.StateStart = os.clock()
                 S.GameSeen = false
+            end, function()
+                if Token == S.Token and S.State == "Starting" then Fail(os.clock(), "NO ANSWER FROM CraftingStart") end
             end)
         end
 

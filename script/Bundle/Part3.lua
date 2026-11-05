@@ -2674,7 +2674,7 @@ end,
 	["Features/AutoFarming_Combat.lua"] = [======[
 return {
 Name = "AutoFarming_Combat",
-Dependencies = {"AutoFarming", "Logger"},
+Dependencies = {"AutoFarming", "Logger", "Async"},
 Start = function(Context)
 local Runtime = Context.Runtime
 local Player = Context.Player
@@ -2682,6 +2682,7 @@ local Replicated = Context.Services.Replicated
 local AICFeature = Context.AICFeature
 local Logger = Context.Logger
 local CONFIG = Context.CONFIG
+local PotionWorker = Context.Async:Worker()
 local function EnsureWeaponDrawn(now, InputBindableFunction, MainWeld)
 local Sheathed = not AICFeature.S.Equipped
 or (MainWeld.Part1 and MainWeld.Part1.Name == "UpperTorso")
@@ -2716,6 +2717,7 @@ local function TryConsumePotion(now, PlayerStats)
 local UseConsumable = Replicated:FindFirstChild("UseConsumable", true)
 local LastConsumed = PlayerStats and PlayerStats:FindFirstChild("LastConsumed")
 if not UseConsumable
+or PotionWorker:IsRunning()
 or not LastConsumed
 or LastConsumed.Value == ""
 or now - AICFeature.S.LAST_CONSUME_TIME < CONFIG.CONSUME_INTERVAL
@@ -2723,8 +2725,12 @@ then
 return false
 end
 AICFeature.S.LAST_CONSUME_TIME = now
-UseConsumable:InvokeServer(LastConsumed.Value)
-return true
+local Item = LastConsumed.Value
+return PotionWorker:Start(function()
+return UseConsumable:InvokeServer(Item)
+end, 10, function(Ok, Error)
+if not Ok then Logger.warn("Potion request failed: %s", tostring(Error)) end
+end)
 end
 AICFeature.TryConsumePotion = TryConsumePotion
 AICFeature.TryHeal = function(now)
@@ -2840,7 +2846,7 @@ end,
 	["Features/AutoFarming_UI.lua"] = [======[
 return {
 Name = "AutoFarming_UI",
-Dependencies = {"AutoFarming", "Logger"},
+Dependencies = {"AutoFarming", "Logger", "Async"},
 Start = function(Context)
 local Runtime = Context.Runtime
 local Player = Context.Player
@@ -2869,25 +2875,31 @@ return CachedLevel
 end
 AICFeature.CreateToggleContainer = function()
 end
+local StaminaWorker = Context.Async:Worker()
+local function DisconnectStamina()
+if AICFeature.S.StaminaConnection then
+AICFeature.S.StaminaConnection:Disconnect()
+AICFeature.S.StaminaConnection = nil
+end
+end
+Context.Lifetime.OnEnd(DisconnectStamina)
 AICFeature.RegenStamina = function()
-task.spawn(function()
-local PlayerStats = Player:FindFirstChild("PlayerStats")
-if not PlayerStats then
-repeat task.wait(0.5) until Player:FindFirstChild("PlayerStats")
+StaminaWorker:Cancel()
+DisconnectStamina()
+StaminaWorker:Start(function()
+local PlayerStats, GameGui
+repeat
 PlayerStats = Player:FindFirstChild("PlayerStats")
-end
-local GameGui = PlayerGui:FindFirstChild("GameGui")
-if not GameGui then
-repeat task.wait(0.5) until PlayerGui:FindFirstChild("GameGui")
 GameGui = PlayerGui:FindFirstChild("GameGui")
-end
+if not PlayerStats or not GameGui then task.wait(0.5) end
+until PlayerStats and GameGui
 local Stamina = GameGui:FindFirstChild("Stamina")
 local MaxStamina = PlayerStats:FindFirstChild("MaxStamina")
-if not Stamina or not MaxStamina then
-return
-end
+return Stamina, MaxStamina
+end, 30, function(Ok, Stamina, MaxStamina)
+if not Ok or not Stamina or not MaxStamina then return end
 AICFeature.S.StaminaConnection = Stamina:GetPropertyChangedSignal("Value"):Connect(function()
-if Stamina.Value < MaxStamina.Value then
+if Context.Lifetime.Alive ~= false and Stamina.Value < MaxStamina.Value then
 Stamina.Value = MaxStamina.Value
 end
 end)
@@ -2965,7 +2977,7 @@ end,
 return {
 Name = "AutoMining",
 IsFeature = true,
-Dependencies = {"Runtime", "SaveConfig", "ProfileManager", "Components", "CombatUtils", "Navigation", "Combat", "DebugVisualizer", "WalkController", "Minezone"},
+Dependencies = {"Runtime", "SaveConfig", "ProfileManager", "Components", "CombatUtils", "Navigation", "Combat", "DebugVisualizer", "WalkController", "Minezone", "Async"},
 Start = function(Context)
 local SaveConfig = Context.SaveConfig
 local Runtime = Context.Runtime
@@ -2982,6 +2994,7 @@ local UIRef = Context.UIRef
 local NotifyAction = Context.NotifyAction
 local DEBUG_COLORS = Context.DEBUG_COLORS
 local Movement = Context.WalkController
+local ClaimWorker = Context.Async:Worker()
 local MAX_STACK = SaveConfig.ITEM_MAX_STACK
 local SCAN_INTERVAL = 0.5
 local CLAIM_DISTANCE = 15
@@ -3177,6 +3190,7 @@ local Remote = Replicated:FindFirstChild("ClaimMaterial", true)
 return Remote and Remote:IsA("RemoteFunction") and Remote or nil
 end
 local function EndJob()
+ClaimWorker:Cancel()
 S.Token += 1
 S.State = "Idle"
 S.Ore = nil
@@ -3241,10 +3255,9 @@ S.ClaimStart = now
 local Token = S.Token
 local Ore = S.Ore
 local Id = S.Id.Value
-task.spawn(function()
-local Ok, Error = pcall(function()
+ClaimWorker:Start(function()
 return Remote:InvokeServer(Id)
-end)
+end, CLAIM_TIMEOUT, function(Ok, Error)
 if Token ~= S.Token then
 return
 end
@@ -3255,6 +3268,8 @@ return
 end
 S.State = "Mining"
 S.MineUntil = os.clock() + GetCooldown(Ore)
+end, function()
+if Token == S.Token then MarkUnreachable(Ore, os.clock()) end
 end)
 end
 local function IsMiningDone(now)
@@ -5758,6 +5773,7 @@ end
 function Feature.AutoRefillBooster()
 task.spawn(function()
 Player:WaitForChild("PlayerStats", 30)
+if Context.Lifetime.Alive == false then return end
 Feature.ScanBoosters(false)
 end)
 end
@@ -5807,9 +5823,10 @@ end,
 return {
 Name = "AutoSmithing",
 IsFeature = true,
-Dependencies = {"Runtime", "SaveConfig", "ProfileManager", "Components", "CombatUtils", "Navigation", "Combat", "DebugVisualizer", "WalkController", "SmithingRecipes", "SmithingMinigame"},
+Dependencies = {"Runtime", "SaveConfig", "ProfileManager", "Components", "CombatUtils", "Navigation", "Combat", "DebugVisualizer", "WalkController", "SmithingRecipes", "SmithingMinigame", "Async"},
 Start = function(Context)
 local Runtime = Context.Runtime
+local CraftWorker = Context.Async:Worker()
 local Replicated = Context.Services.Replicated
 local FeatureState = Context.Feature
 local AICCombatUtils = Context.AICCombatUtils
@@ -5885,6 +5902,7 @@ or S.State == "Finishing"
 or S.State == "Settling"
 end
 local function EndJob()
+CraftWorker:Cancel()
 S.Token += 1
 S.State = "Idle"
 S.Recipe = nil
@@ -6031,10 +6049,9 @@ Minigame:Start()
 local Token = S.Token
 local RecipeName = S.Recipe
 local TableId = Id.Value
-task.spawn(function()
-local Ok, Result = pcall(function()
+CraftWorker:Start(function()
 return Remote:InvokeServer(RecipeName, TableId)
-end)
+end, START_TIMEOUT, function(Ok, Result)
 if Token ~= S.Token or S.State ~= "Starting" then
 return
 end
@@ -6046,6 +6063,8 @@ end
 S.State = "Minigame"
 S.StateStart = os.clock()
 S.GameSeen = false
+end, function()
+if Token == S.Token and S.State == "Starting" then Fail(os.clock(), "NO ANSWER FROM CraftingStart") end
 end)
 end
 local function Advance(now)

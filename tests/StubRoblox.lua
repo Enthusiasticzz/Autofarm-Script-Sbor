@@ -29,6 +29,7 @@ end
 
 local function NewSection()
     return {
+        Frame = {},
         AddToggle = function() return { Set = function() end } end,
         AddSlider = function() return { Set = function() end } end,
         AddDropdown = function() return { Set = function() end } end,
@@ -45,6 +46,7 @@ local function NewTab()
 end
 
 local UI = {
+    Icon = function(_, _, fallback) return fallback end,
     AddTab = function() return NewTab() end,
     Notify = function() end,
     SetTheme = function() end,

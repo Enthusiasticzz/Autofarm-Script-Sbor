@@ -1630,7 +1630,7 @@ end,
 return {
 Name = "PartySystem",
 IsFeature = true,
-Dependencies = {"Runtime", "ProfileManager", "Components", "AutoBlock"},
+Dependencies = {"Runtime", "ProfileManager", "Components", "AutoBlock", "Async"},
 Start = function(Context)
 local Runtime = Context.Runtime
 local Services = Context.Services
@@ -1656,6 +1656,8 @@ LastCheck = 0,
 AttemptedToFindTeleporter = 0
 }
 local State = AICFeature.S.Party
+local FollowWorker = Context.Async:Worker()
+local TeleportWorker = Context.Async:Worker()
 local function GetLeader()
 local Leader = CONFIG.PARTY_LEADER
 if type(Leader) == "table" and type(Leader.Name) == "string" and Leader.Name ~= "" then
@@ -1664,7 +1666,11 @@ end
 return nil
 end
 local function IsActive()
-return FeatureState.PartySystem.Enabled == true and GetLeader() ~= nil
+return Context.Lifetime.Alive ~= false and FeatureState.PartySystem.Enabled == true and GetLeader() ~= nil
+end
+local function SameLeader(Leader)
+local Current = GetLeader()
+return Current and Leader and Current.Name == Leader.Name and Current.UserId == Leader.UserId
 end
 local function IsLeaderPlayer(OtherPlayer)
 local Leader = GetLeader()
@@ -1686,23 +1692,30 @@ return false
 end
 local function SetStatus(Text)
 State.Status = Text
+if Context.Lifetime.Alive == false then return end
 if UIRef.PartyStatusLabel then
 UIRef.PartyStatusLabel:Set("STATUS:  " .. tostring(Text))
 end
 end
-local function RequestTeleport(LeaderName)
+local function RequestTeleport(Leader)
 return pcall(function()
+if not IsActive() or not SameLeader(Leader) then return end
 local ChatEvent = Replicated:FindFirstChild("ChatEvent", true)
 local TeleportEvent = Replicated:FindFirstChild("TeleportEvent", true)
 assert(TeleportEvent, "no TeleportEvent remote")
-TeleportEvent:FireServer(0)
-task.delay(0.5, function()
 assert(ChatEvent, "no ChatEvent remote")
-ChatEvent:FireServer("Party", "tp friend " .. LeaderName)
+TeleportEvent:FireServer(0)
+TeleportWorker:Cancel()
+TeleportWorker:Start(function() task.wait(0.5) end, 2, function(Ok)
+if Ok and IsActive() and SameLeader(Leader) then
+local Sent, Error = pcall(function() ChatEvent:FireServer("Party", "tp friend " .. Leader.Name) end)
+if not Sent then warn("[AIC] Party teleport failed: " .. tostring(Error)) end
+end
 end)
 end)
 end
-local function ResetCharacter()
+local function ResetCharacter(Active)
+if not Active() then return end
 local _, Humanoid = Runtime:GetCharacter()
 if not Humanoid or Humanoid.Health <= 0 then
 return
@@ -1711,13 +1724,15 @@ local Respawned = false
 local Connection = Player.CharacterAdded:Connect(function()
 Respawned = true
 end)
+State.RespawnConnection = Connection
 Humanoid.Health = 0
 local Deadline = os.clock() + (tonumber(CONFIG.PARTY_RESPAWN_TIMEOUT) or 10)
 repeat
 task.wait(0.25)
-until Respawned or os.clock() > Deadline
+until Respawned or os.clock() > Deadline or not Active()
 Connection:Disconnect()
-task.wait(1)
+State.RespawnConnection = nil
+if Active() then task.wait(1) end
 end
 local function Release(StatusText)
 State.Holding = false
@@ -1725,29 +1740,33 @@ State.Busy = false
 SetStatus(StatusText)
 end
 local function RunFollow()
+local Leader = GetLeader()
+local function Active() return IsActive() and SameLeader(Leader) end
+if not Active() then return end
 State.Holding = true
 SetStatus("RESETTING")
-ResetCharacter()
+ResetCharacter(Active)
+if not Active() then return end
 if IsLeaderInServer() then
 Release("WITH LEADER")
 return
 end
-local Leader = GetLeader()
 local Attempts = math.max(1, tonumber(CONFIG.PARTY_TP_ATTEMPTS) or 3)
 local Timeout = tonumber(CONFIG.PARTY_TP_ATTEMPT_TIMEOUT) or 15
 for Attempt = 1, Attempts do
-if not IsActive() then
+if not Active() then
 Release("IDLE")
 return
 end
 SetStatus(string.format("TP FRIEND %s  (%d/%d)", Leader.Name, Attempt, Attempts))
-if not RequestTeleport(Leader.Name) then
+if not RequestTeleport(Leader) then
 NotifyAction("Party", "Could not fire ChatEvent")
 end
 local Deadline = os.clock() + Timeout
 repeat
 task.wait(1)
-until IsLeaderInServer() or os.clock() > Deadline or not IsActive()
+until IsLeaderInServer() or os.clock() > Deadline or not Active()
+if not Active() then return end
 if IsLeaderInServer() then
 Release("WITH LEADER")
 return
@@ -1757,6 +1776,16 @@ State.CooldownUntil = os.clock() + (tonumber(CONFIG.PARTY_FAILED_COOLDOWN) or 60
 NotifyAction("Party", "Tp to " .. Leader.Name .. " failed after " .. Attempts .. " tries")
 Release("TP FAILED, RETRY LATER")
 end
+local function StopFollow()
+FollowWorker:Cancel()
+TeleportWorker:Cancel()
+if State.RespawnConnection then
+State.RespawnConnection:Disconnect()
+State.RespawnConnection = nil
+end
+State.Holding, State.Busy, State.FollowLeader = false, false, nil
+end
+Context.Lifetime.OnEnd(StopFollow)
 function AICFeature.PartyHandlesIntruders()
 return IsActive() and os.clock() >= State.CooldownUntil
 end
@@ -1769,6 +1798,7 @@ if now - State.LastCheck < (tonumber(CONFIG.PARTY_CHECK_INTERVAL) or 1) then
 return
 end
 State.LastCheck = now
+if State.Busy and (not IsActive() or not SameLeader(State.FollowLeader)) then StopFollow() end
 if State.Busy then
 return
 end
@@ -1788,7 +1818,15 @@ if now < State.CooldownUntil then
 return
 end
 State.Busy = true
-task.spawn(RunFollow)
+State.FollowLeader = GetLeader()
+local Timeout = (tonumber(CONFIG.PARTY_RESPAWN_TIMEOUT) or 10) + 10
++ math.max(1, tonumber(CONFIG.PARTY_TP_ATTEMPTS) or 3) * ((tonumber(CONFIG.PARTY_TP_ATTEMPT_TIMEOUT) or 15) + 1)
+FollowWorker:Start(RunFollow, Timeout, function(Ok, Error)
+TeleportWorker:Cancel()
+if State.RespawnConnection then State.RespawnConnection:Disconnect(); State.RespawnConnection = nil end
+State.Holding, State.Busy = false, false
+if not Ok then SetStatus("ERROR"); warn("[AIC] Party follow failed: " .. tostring(Error)) end
+end, function() StopFollow(); SetStatus("TIMED OUT") end)
 end
 local Section = UIRef.PartySection
 local LeaderOptions = {}
@@ -1799,6 +1837,7 @@ UIRef.PartyLeaderLabel:Set("LEADER:  " .. (Leader and Leader.Name or "NONE"))
 end
 end
 local function SetLeader(OtherPlayer)
+StopFollow()
 if OtherPlayer then
 CONFIG.PARTY_LEADER = { Name = OtherPlayer.Name, UserId = OtherPlayer.UserId }
 NotifyAction("Party", "Leader set to " .. OtherPlayer.Name)
@@ -1834,6 +1873,7 @@ end
 end)
 end
 function AICUI.RefreshPartyUI()
+StopFollow()
 RefreshLeaderLabel()
 end
 if Section then
@@ -1841,6 +1881,7 @@ FeatureState.PartySystem.Button = Section:AddToggle{
 Name = "Party System",
 Default = FeatureState.PartySystem.Enabled,
 Callback = function(Value)
+StopFollow()
 FeatureState.PartySystem.Enabled = Value
 State.CooldownUntil = 0
 AICProfile.SaveActiveProfile()
@@ -3003,7 +3044,7 @@ end,
 return {
 Name = "SafeBoosterReset",
 IsFeature = true,
-Dependencies = {"Runtime", "SaveConfig", "ProfileManager", "Components"},
+Dependencies = {"Runtime", "SaveConfig", "ProfileManager", "Components", "Async"},
 Start = function(Context)
 local Runtime = Context.Runtime
 local Services = Context.Services
@@ -3014,12 +3055,18 @@ local AICFeature = Context.AICFeature
 local AICUI = Context.AICUI
 local UIRef = Context.UIRef
 local NotifyAction = Context.NotifyAction
+local SetupWorker = Context.Async:Worker()
+local BoostConnection
+local function DisconnectBoost()
+if BoostConnection then BoostConnection:Disconnect(); BoostConnection = nil end
+end
+Context.Lifetime.OnEnd(DisconnectBoost)
 local Feature = {
 Name = "SafeBoosterReset",
 IsFeature = true,
 }
 local function SafeBoosterReset(Boost)
-if not FeatureState.SafeBoosterReset.Enabled then
+if Context.Lifetime.Alive == false or not FeatureState.SafeBoosterReset.Enabled then
 return
 end
 if Boost.Value <= 0 then
@@ -3036,17 +3083,16 @@ Humanoid.Health = 0
 end
 end
 function Feature.SafeBoosterReset()
-task.spawn(function()
-local PlayerStats = Player:WaitForChild("PlayerStats")
-local ExpBoost = PlayerStats:FindFirstChild("Boost")
-if ExpBoost then
-table.insert(
-AICFeature.S.BoosterConnections,
-ExpBoost:GetPropertyChangedSignal("Value"):Connect(function()
+SetupWorker:Cancel()
+DisconnectBoost()
+SetupWorker:Start(function()
+local PlayerStats = Player:WaitForChild("PlayerStats", 30)
+return PlayerStats and PlayerStats:FindFirstChild("Boost")
+end, 30, function(Ok, ExpBoost)
+if not Ok or not ExpBoost then return end
+BoostConnection = ExpBoost:GetPropertyChangedSignal("Value"):Connect(function()
 SafeBoosterReset(ExpBoost)
 end)
-)
-end
 end)
 end
 AICFeature.SafeBoosterReset = Feature.SafeBoosterReset

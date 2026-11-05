@@ -790,6 +790,7 @@ return {
 START_ORDER = {
 "Core/SaveConfig.lua",
 "Core/GuiClick.lua",
+"Core/Async.lua",
 "Core/Runtime.lua",
 "Core/Logger.lua",
 "Core/TimeZones.lua",

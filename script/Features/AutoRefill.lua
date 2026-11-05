@@ -217,6 +217,7 @@ return {
             task.spawn(function()
                 --// PlayerStats does not exist at load time on every join.
                 Player:WaitForChild("PlayerStats", 30)
+                if Context.Lifetime.Alive == false then return end
                 Feature.ScanBoosters(false)
             end)
         end
@@ -244,7 +245,7 @@ return {
 
         Feature.AutoRefillBooster()
 
-        --// Also holds Safe Booster Reset's watcher; PlayerStats outlives this run.
+        --// PlayerStats outlives this run.
         Context.Lifetime.OnEnd(function()
             Context.Lifetime.Disconnect(AICFeature.S.BoosterConnections)
         end)

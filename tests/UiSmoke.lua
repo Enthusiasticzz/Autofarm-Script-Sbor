@@ -246,6 +246,23 @@ Check("AddPriority", function()
     Expect(type(priority:GetChecks()) == "table", "GetChecks")
 end)
 
+Check("priority redraws release connections and theme bindings", function()
+    priority:SetPriority({ "A", "B", "C" }, { 3, 4, 5 }, { true, false, true })
+    local connections, bindings = #win._conns, #win._binds
+    local function Owners()
+        local count = 0
+        for _ in pairs(win._owners) do count += 1 end
+        return count
+    end
+    local owners = Owners()
+    for _ = 1, 100 do
+        priority:SetPriority({ "A", "B", "C" }, { 3, 4, 5 }, { true, false, true })
+    end
+    Expect(#win._conns == connections, "row callbacks accumulated in window connections")
+    Expect(#win._binds == bindings, "destroyed rows retained theme bindings")
+    Expect(Owners() == owners, "destroyed rows retained resource owners")
+end)
+
 Check("a priority row can show a name and a second line", function()
     --// The whitelist shows a username with the id under it. The row used to
     --// squeeze both onto one line inside the width of one, which cut it off.

@@ -2,7 +2,7 @@
 -- Split from Features/AutoFarming.lua as part of Step 4b.
 return {
     Name = "AutoFarming_Combat",
-    Dependencies = {"AutoFarming", "Logger"},
+    Dependencies = {"AutoFarming", "Logger", "Async"},
 
     Start = function(Context)
         local Runtime = Context.Runtime
@@ -11,6 +11,7 @@ return {
         local AICFeature = Context.AICFeature
         local Logger = Context.Logger
         local CONFIG = Context.CONFIG
+        local PotionWorker = Context.Async:Worker()
 
         --// Draws the weapon when it is sheathed. True when the draw was just
         --// issued, so the caller should give it this frame.
@@ -66,6 +67,7 @@ return {
             local LastConsumed = PlayerStats and PlayerStats:FindFirstChild("LastConsumed")
 
             if not UseConsumable
+                or PotionWorker:IsRunning()
                 or not LastConsumed
                 or LastConsumed.Value == ""
                 or now - AICFeature.S.LAST_CONSUME_TIME < CONFIG.CONSUME_INTERVAL
@@ -74,9 +76,12 @@ return {
             end
 
             AICFeature.S.LAST_CONSUME_TIME = now
-            UseConsumable:InvokeServer(LastConsumed.Value)
-
-            return true
+            local Item = LastConsumed.Value
+            return PotionWorker:Start(function()
+                return UseConsumable:InvokeServer(Item)
+            end, 10, function(Ok, Error)
+                if not Ok then Logger.warn("Potion request failed: %s", tostring(Error)) end
+            end)
         end
 
         AICFeature.TryConsumePotion = TryConsumePotion

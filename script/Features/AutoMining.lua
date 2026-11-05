@@ -23,7 +23,7 @@
 return {
     Name = "AutoMining",
     IsFeature = true,
-    Dependencies = {"Runtime", "SaveConfig", "ProfileManager", "Components", "CombatUtils", "Navigation", "Combat", "DebugVisualizer", "WalkController", "Minezone"},
+    Dependencies = {"Runtime", "SaveConfig", "ProfileManager", "Components", "CombatUtils", "Navigation", "Combat", "DebugVisualizer", "WalkController", "Minezone", "Async"},
 
     Start = function(Context)
         local SaveConfig = Context.SaveConfig
@@ -41,6 +41,7 @@ return {
         local NotifyAction = Context.NotifyAction
         local DEBUG_COLORS = Context.DEBUG_COLORS
         local Movement = Context.WalkController
+        local ClaimWorker = Context.Async:Worker()
 
         local MAX_STACK = SaveConfig.ITEM_MAX_STACK
 
@@ -329,6 +330,7 @@ return {
         ------------------------------------------------------------------------
 
         local function EndJob()
+            ClaimWorker:Cancel()
             S.Token += 1
             S.State = "Idle"
             S.Ore = nil
@@ -419,11 +421,9 @@ return {
             local Id = S.Id.Value
 
             --// InvokeServer yields, which a heartbeat must never do.
-            task.spawn(function()
-                local Ok, Error = pcall(function()
-                    return Remote:InvokeServer(Id)
-                end)
-
+            ClaimWorker:Start(function()
+                return Remote:InvokeServer(Id)
+            end, CLAIM_TIMEOUT, function(Ok, Error)
                 if Token ~= S.Token then
                     return
                 end
@@ -436,6 +436,8 @@ return {
 
                 S.State = "Mining"
                 S.MineUntil = os.clock() + GetCooldown(Ore)
+            end, function()
+                if Token == S.Token then MarkUnreachable(Ore, os.clock()) end
             end)
         end
 

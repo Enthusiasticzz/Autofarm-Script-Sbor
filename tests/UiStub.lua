@@ -454,6 +454,8 @@ end
 function InstanceMethods:Destroy()
     if rawget(self, "_destroyed") then return end
     rawset(self, "_destroyed", true)
+    local destroying = PropTable(self).Destroying
+    if destroying then destroying:Fire() end
     local parent = PropTable(self).Parent
     if parent then
         local siblings = ChildList(parent)
@@ -467,6 +469,7 @@ function InstanceMethods:Destroy()
     for _, child in ipairs(self:GetChildren()) do
         child:Destroy()
     end
+    PropTable(self).Parent = nil
 end
 
 function InstanceMethods:ClearAllChildren()

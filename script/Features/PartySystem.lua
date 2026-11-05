@@ -10,7 +10,7 @@
 return {
     Name = "PartySystem",
     IsFeature = true,
-    Dependencies = {"Runtime", "ProfileManager", "Components", "AutoBlock"},
+    Dependencies = {"Runtime", "ProfileManager", "Components", "AutoBlock", "Async"},
 
     Start = function(Context)
         local Runtime = Context.Runtime
@@ -42,6 +42,8 @@ return {
         }
 
         local State = AICFeature.S.Party
+        local FollowWorker = Context.Async:Worker()
+        local TeleportWorker = Context.Async:Worker()
 
         local function GetLeader()
             local Leader = CONFIG.PARTY_LEADER
@@ -54,7 +56,12 @@ return {
         end
 
         local function IsActive()
-            return FeatureState.PartySystem.Enabled == true and GetLeader() ~= nil
+            return Context.Lifetime.Alive ~= false and FeatureState.PartySystem.Enabled == true and GetLeader() ~= nil
+        end
+
+        local function SameLeader(Leader)
+            local Current = GetLeader()
+            return Current and Leader and Current.Name == Leader.Name and Current.UserId == Leader.UserId
         end
 
         local function IsLeaderPlayer(OtherPlayer)
@@ -83,24 +90,29 @@ return {
 
         local function SetStatus(Text)
             State.Status = Text
-
+            if Context.Lifetime.Alive == false then return end
             if UIRef.PartyStatusLabel then
                 UIRef.PartyStatusLabel:Set("STATUS:  " .. tostring(Text))
             end
         end
 
         --// Asks the game to Tp us to the Leader through its ChatEvent remote.
-        local function RequestTeleport(LeaderName)
+        local function RequestTeleport(Leader)
             return pcall(function()
+                if not IsActive() or not SameLeader(Leader) then return end
                 local ChatEvent = Replicated:FindFirstChild("ChatEvent", true)
                 local TeleportEvent = Replicated:FindFirstChild("TeleportEvent", true)
 
                 assert(TeleportEvent, "no TeleportEvent remote")
+                assert(ChatEvent, "no ChatEvent remote")
                 TeleportEvent:FireServer(0)
-                task.delay(0.5, function()
-                    assert(ChatEvent, "no ChatEvent remote")
-                    ChatEvent:FireServer("Party", "tp friend " .. LeaderName)
-                end)    
+                TeleportWorker:Cancel()
+                TeleportWorker:Start(function() task.wait(0.5) end, 2, function(Ok)
+                    if Ok and IsActive() and SameLeader(Leader) then
+                        local Sent, Error = pcall(function() ChatEvent:FireServer("Party", "tp friend " .. Leader.Name) end)
+                        if not Sent then warn("[AIC] Party teleport failed: " .. tostring(Error)) end
+                    end
+                end)
                     
                 -- if workspace.GameLoader.Options.Floor.Value ~= 1 then
                 --     local UseConsumable = Replicated:FindFirstChild("UseConsumable", true)
@@ -123,7 +135,8 @@ return {
             end)
         end
 
-        local function ResetCharacter()
+        local function ResetCharacter(Active)
+            if not Active() then return end
             local _, Humanoid = Runtime:GetCharacter()
 
             if not Humanoid or Humanoid.Health <= 0 then
@@ -134,6 +147,7 @@ return {
             local Connection = Player.CharacterAdded:Connect(function()
                 Respawned = true
             end)
+            State.RespawnConnection = Connection
 
             Humanoid.Health = 0
 
@@ -141,12 +155,13 @@ return {
 
             repeat
                 task.wait(0.25)
-            until Respawned or os.clock() > Deadline
+            until Respawned or os.clock() > Deadline or not Active()
 
             Connection:Disconnect()
+            State.RespawnConnection = nil
 
             --// Give the new character a moment to finish loading.
-            task.wait(1)
+            if Active() then task.wait(1) end
         end
 
         local function Release(StatusText)
@@ -157,9 +172,13 @@ return {
 
         --// Runs only once the Leader has left the server.
         local function RunFollow()
+            local Leader = GetLeader()
+            local function Active() return IsActive() and SameLeader(Leader) end
+            if not Active() then return end
             State.Holding = true
             SetStatus("RESETTING")
-            ResetCharacter()
+            ResetCharacter(Active)
+            if not Active() then return end
 
             --// The Leader came back while we were respawning.
             if IsLeaderInServer() then
@@ -167,19 +186,18 @@ return {
                 return
             end
 
-            local Leader = GetLeader()
             local Attempts = math.max(1, tonumber(CONFIG.PARTY_TP_ATTEMPTS) or 3)
             local Timeout = tonumber(CONFIG.PARTY_TP_ATTEMPT_TIMEOUT) or 15
 
             for Attempt = 1, Attempts do
-                if not IsActive() then
+                if not Active() then
                     Release("IDLE")
                     return
                 end
 
                 SetStatus(string.format("TP FRIEND %s  (%d/%d)", Leader.Name, Attempt, Attempts))
 
-                if not RequestTeleport(Leader.Name) then
+                if not RequestTeleport(Leader) then
                     NotifyAction("Party", "Could not fire ChatEvent")
                 end
 
@@ -189,7 +207,8 @@ return {
 
                 repeat
                     task.wait(1)
-                until IsLeaderInServer() or os.clock() > Deadline or not IsActive()
+                until IsLeaderInServer() or os.clock() > Deadline or not Active()
+                if not Active() then return end
 
                 if IsLeaderInServer() then
                     Release("WITH LEADER")
@@ -201,6 +220,17 @@ return {
             NotifyAction("Party", "Tp to " .. Leader.Name .. " failed after " .. Attempts .. " tries")
             Release("TP FAILED, RETRY LATER")
         end
+
+        local function StopFollow()
+            FollowWorker:Cancel()
+            TeleportWorker:Cancel()
+            if State.RespawnConnection then
+                State.RespawnConnection:Disconnect()
+                State.RespawnConnection = nil
+            end
+            State.Holding, State.Busy, State.FollowLeader = false, false, nil
+        end
+        Context.Lifetime.OnEnd(StopFollow)
 
         --// Auto Block stays out of the way while a Leader is being followed,
         --// except during the cooldown after a failed Tp.
@@ -221,6 +251,7 @@ return {
 
             State.LastCheck = now
 
+            if State.Busy and (not IsActive() or not SameLeader(State.FollowLeader)) then StopFollow() end
             if State.Busy then
                 return
             end
@@ -248,7 +279,15 @@ return {
             end
 
             State.Busy = true
-            task.spawn(RunFollow)
+            State.FollowLeader = GetLeader()
+            local Timeout = (tonumber(CONFIG.PARTY_RESPAWN_TIMEOUT) or 10) + 10
+                + math.max(1, tonumber(CONFIG.PARTY_TP_ATTEMPTS) or 3) * ((tonumber(CONFIG.PARTY_TP_ATTEMPT_TIMEOUT) or 15) + 1)
+            FollowWorker:Start(RunFollow, Timeout, function(Ok, Error)
+                TeleportWorker:Cancel()
+                if State.RespawnConnection then State.RespawnConnection:Disconnect(); State.RespawnConnection = nil end
+                State.Holding, State.Busy = false, false
+                if not Ok then SetStatus("ERROR"); warn("[AIC] Party follow failed: " .. tostring(Error)) end
+            end, function() StopFollow(); SetStatus("TIMED OUT") end)
         end
 
         ------------------------------------------------------------------------
@@ -266,6 +305,7 @@ return {
         end
 
         local function SetLeader(OtherPlayer)
+            StopFollow()
             if OtherPlayer then
                 CONFIG.PARTY_LEADER = { Name = OtherPlayer.Name, UserId = OtherPlayer.UserId }
                 NotifyAction("Party", "Leader set to " .. OtherPlayer.Name)
@@ -312,6 +352,7 @@ return {
 
         --// Called after a profile loads, since the Leader is saved per profile.
         function AICUI.RefreshPartyUI()
+            StopFollow()
             RefreshLeaderLabel()
         end
 
@@ -320,6 +361,7 @@ return {
                 Name = "Party System",
                 Default = FeatureState.PartySystem.Enabled,
                 Callback = function(Value)
+                    StopFollow()
                     FeatureState.PartySystem.Enabled = Value
                     State.CooldownUntil = 0
                     AICProfile.SaveActiveProfile()

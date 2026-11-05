@@ -652,14 +652,15 @@ return {
         end
         local ActiveOccluders = {}
 
-        local function Subtract(Intervals, First, Last)
-            local Result = {}
-            for _, Interval in ipairs(Intervals) do
-                local A, B = Interval[1], Interval[2]
-                if Last <= A or First >= B then table.insert(Result, Interval)
+        local function Subtract(Intervals, First, Last, Result)
+            table.clear(Result)
+            for I = 1, #Intervals, 2 do
+                local A, B = Intervals[I], Intervals[I+1]
+                if Last <= A or First >= B then
+                    table.insert(Result, A); table.insert(Result, B)
                 else
-                    if First > A then table.insert(Result, { A, First }) end
-                    if Last < B then table.insert(Result, { Last, B }) end
+                    if First > A then table.insert(Result, A); table.insert(Result, First) end
+                    if Last < B then table.insert(Result, Last); table.insert(Result, B) end
                 end
             end
             return Result
@@ -695,7 +696,8 @@ return {
             local List = {}
             for Index = 1, Count do
                 if DrawingApi then
-                    local Data = { Color = Color, Thickness = Thickness, Objects = {} }
+                    local Data = { Color = Color, Thickness = Thickness, Objects = {},
+                        Intervals = {}, Scratch = {}, Polygon = { {}, {}, {}, {} } }
                     local function ObjectAt(I)
                         if not Data.Objects[I] then
                             local Object = DrawingApi.new("Line")
@@ -714,29 +716,34 @@ return {
                         __newindex = function(_, Key, Value)
                             Data[Key] = Value
                             if Key ~= "Visible" then return end
-                            local Intervals = {}
+                            local Intervals, Scratch = Data.Intervals, Data.Scratch
+                            table.clear(Intervals)
                             if Value and Data.From and Data.To then
-                                Intervals = { { 0, 1 } }
+                                Intervals[1], Intervals[2] = 0, 1
                                 for _, Rect in ipairs(ActiveOccluders) do
                                     local Pad = Data.Thickness * .5 + 1
-                                    local Polygon = {
-                                        Vector2.new(Rect[1]-Pad,Rect[2]-Pad), Vector2.new(Rect[3]+Pad,Rect[2]-Pad),
-                                        Vector2.new(Rect[3]+Pad,Rect[4]+Pad), Vector2.new(Rect[1]-Pad,Rect[4]+Pad),
-                                    }
+                                    local Polygon = Data.Polygon
+                                    Polygon[1].X, Polygon[1].Y = Rect[1]-Pad, Rect[2]-Pad
+                                    Polygon[2].X, Polygon[2].Y = Rect[3]+Pad, Rect[2]-Pad
+                                    Polygon[3].X, Polygon[3].Y = Rect[3]+Pad, Rect[4]+Pad
+                                    Polygon[4].X, Polygon[4].Y = Rect[1]-Pad, Rect[4]+Pad
                                     local First, Last = InsideInterval(Data.From, Data.To, Polygon)
-                                    if First then Intervals = Subtract(Intervals, First, Last) end
+                                    if First then
+                                        Subtract(Intervals, First, Last, Scratch)
+                                        Intervals, Scratch = Scratch, Intervals
+                                    end
                                     if #Intervals == 0 then break end
                                 end
                             end
-                            for I, Interval in ipairs(Intervals) do
-                                local Object = ObjectAt(I)
+                            for I = 1, #Intervals, 2 do
+                                local Object = ObjectAt((I+1)/2)
                                 local Delta = Data.To - Data.From
-                                Object.From = Data.From + Delta * Interval[1]
-                                Object.To = Data.From + Delta * Interval[2]
+                                Object.From = Data.From + Delta * Intervals[I]
+                                Object.To = Data.From + Delta * Intervals[I+1]
                                 Object.Color, Object.Thickness = Data.Color, Data.Thickness
                                 Object.Visible = true
                             end
-                            for I = #Intervals + 1, #Data.Objects do Data.Objects[I].Visible = false end
+                            for I = #Intervals/2 + 1, #Data.Objects do Data.Objects[I].Visible = false end
                         end,
                     })
                 else
@@ -800,6 +807,11 @@ return {
                 end
             end
             Entry.BodyParts = Parts
+            if Entry.HullCache then
+                for Part in pairs(Entry.HullCache) do
+                    if not table.find(Parts, Part) then Entry.HullCache[Part] = nil end
+                end
+            end
         end
 
         local function EnsureOutline(Entry, Target, C, Kind)
@@ -809,6 +821,7 @@ return {
                 and (not Entry.Humanoid or Entry.Humanoid.Health > 0)
             if not InRange then
                 Entry.BodyParts = nil
+                Entry.HullCache, Entry.Hulls = nil, nil
                 DisposeLines(Entry.ContourLines)
                 DisposeLines(Entry.ContourShadow)
                 Entry.ContourLines, Entry.ContourShadow = nil, nil
@@ -1061,15 +1074,25 @@ return {
             return (B.X-A.X)*(C.Y-A.Y) - (B.Y-A.Y)*(C.X-A.X)
         end
 
-        local function ProjectHull(Part, Camera)
-            local Points = {}
-            for _, Corner in ipairs(CORNERS) do
+        local function ProjectHull(Part, Camera, Cache)
+            if Cache.Camera == Camera and Cache.View == Camera.CFrame and Cache.Frame == Part.CFrame
+                and Cache.Size == Part.Size and Cache.Viewport == Camera.ViewportSize
+                and Cache.Fov == Camera.FieldOfView and Cache.FovMode == Camera.FieldOfViewMode then
+                return Cache.Valid and Cache.Hull or nil
+            end
+            Cache.Camera, Cache.View, Cache.Frame = Camera, Camera.CFrame, Part.CFrame
+            Cache.Size, Cache.Viewport = Part.Size, Camera.ViewportSize
+            Cache.Fov, Cache.FovMode, Cache.Valid = Camera.FieldOfView, Camera.FieldOfViewMode, false
+            local Points, Hull = Cache.Points, Cache.Hull
+            table.clear(Hull)
+            for I, Corner in ipairs(CORNERS) do
                 local P = Camera:WorldToViewportPoint(Part.CFrame:PointToWorldSpace(Corner * Part.Size))
                 if P.Z <= .05 then return nil end
-                table.insert(Points, Vector2.new(P.X, P.Y))
+                local Point = Points[I]
+                if not Point then Point = {}; Points[I] = Point end
+                Point.X, Point.Y = P.X, P.Y
             end
             table.sort(Points, function(A,B) return A.X < B.X or (A.X == B.X and A.Y < B.Y) end)
-            local Hull = {}
             for _, P in ipairs(Points) do
                 while #Hull >= 2 and Cross(Hull[#Hull-1], Hull[#Hull], P) <= 0 do table.remove(Hull) end
                 table.insert(Hull, P)
@@ -1081,17 +1104,25 @@ return {
                 table.insert(Hull, P)
             end
             table.remove(Hull)
-            return #Hull >= 3 and Hull or nil
+            Cache.Valid = #Hull >= 3
+            return Cache.Valid and Hull or nil
         end
 
         local function DrawContour(Entry, Camera, Show, Thickness)
             Entry.ContourLines = Entry.ContourLines or {}
             Entry.ContourShadow = Entry.ContourShadow or {}
-            local Hulls = {}
+            Entry.Hulls = Entry.Hulls or {}
+            Entry.HullCache = Entry.HullCache or {}
+            Entry.Intervals = Entry.Intervals or {}
+            Entry.IntervalScratch = Entry.IntervalScratch or {}
+            local Hulls = Entry.Hulls
+            table.clear(Hulls)
             if Show then
                 for _, Part in ipairs(Entry.BodyParts or {}) do
                     if Part.Parent then
-                        local Hull = ProjectHull(Part, Camera)
+                        local Cache = Entry.HullCache[Part]
+                        if not Cache then Cache = { Points = {}, Hull = {} }; Entry.HullCache[Part] = Cache end
+                        local Hull = ProjectHull(Part, Camera, Cache)
                         if Hull then
                             local X1,Y1,X2,Y2 = math.huge,math.huge,-math.huge,-math.huge
                             for _, P in ipairs(Hull) do
@@ -1111,18 +1142,24 @@ return {
             for Index, Hull in ipairs(Hulls) do
                 for I, A in ipairs(Hull) do
                     local B = Hull[I % #Hull + 1]
-                    local Intervals = { {0,1} }
+                    local Intervals, Scratch = Entry.Intervals, Entry.IntervalScratch
+                    table.clear(Intervals)
+                    Intervals[1], Intervals[2] = 0, 1
                     for OtherIndex, Other in ipairs(Hulls) do
                         if Index ~= OtherIndex then
                             local First, Last = InsideInterval(A, B, Other, .0001)
-                            if First then Intervals = Subtract(Intervals, First, Last) end
+                            if First then
+                                Subtract(Intervals, First, Last, Scratch)
+                                Intervals, Scratch = Scratch, Intervals
+                            end
                             if #Intervals == 0 then break end
                         end
                     end
-                    for _, Interval in ipairs(Intervals) do
-                        local Delta = B - A
-                        local P, Q = A + Delta * Interval[1], A + Delta * Interval[2]
-                        if (Q-P).Magnitude >= .5 then
+                    for J = 1, #Intervals, 2 do
+                        local DX, DY = B.X-A.X, B.Y-A.Y
+                        local PX, PY = A.X+DX*Intervals[J], A.Y+DY*Intervals[J]
+                        local QX, QY = A.X+DX*Intervals[J+1], A.Y+DY*Intervals[J+1]
+                        if (QX-PX)^2 + (QY-PY)^2 >= .25 then
                             Count += 1
                             if not Entry.ContourLines[Count] then
                                 Entry.ContourShadow[Count] = MakeLines(1, BLACK, Thickness+2)[1]
@@ -1130,8 +1167,8 @@ return {
                             end
                             local Back, Line = Entry.ContourShadow[Count], Entry.ContourLines[Count]
                             Back.Thickness, Line.Thickness, Line.Color = Thickness+2, Thickness, Color
-                            SetLine(Back, P.X, P.Y, Q.X, Q.Y)
-                            SetLine(Line, P.X, P.Y, Q.X, Q.Y)
+                            SetLine(Back, PX, PY, QX, QY)
+                            SetLine(Line, PX, PY, QX, QY)
                             Back.Visible, Line.Visible = true, true
                         end
                     end
