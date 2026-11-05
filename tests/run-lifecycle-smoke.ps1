@@ -10,6 +10,8 @@ $modules = @{
     MiningModule = "Features/AutoMining.lua"
     SmithingModule = "Features/AutoSmithing.lua"
     BoosterModule = "Features/SafeBoosterReset.lua"
+    FarmingModule = "Features/AutoFarming.lua"
+    AntiAfkModule = "Features/AntiAFK.lua"
 }
 $packed = ""
 if ($FromBundle) {

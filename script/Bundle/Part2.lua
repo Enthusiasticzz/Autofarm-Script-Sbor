@@ -4107,7 +4107,6 @@ ShowNotification(Action, Message, Duration)
 end
 local CONFIG = {
 CURRENT_WAYPOINT_TARGET = 1,
-MAX_SERVER_AGE = 7 * 60 * 60,
 VERBOSE_LOGGING = false,
 TARGET_ENTITY_PRIORITY = {
 [1] = "Goblin",

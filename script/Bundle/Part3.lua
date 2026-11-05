@@ -2335,11 +2335,6 @@ AICFeature.TeleportToPlace(nil, Intruder)
 return
 end
 end
-if workspace.DistributedGameTime >= CONFIG.MAX_SERVER_AGE then
-AICFeature.SetFarmState("SERVER TOO OLD, HOPPING")
-AICFeature.TeleportToPlace()
-return
-end
 if AICFeature.BossStep and AICFeature.BossStep(now) then
 AICFeature.SetFarmState("BOSS ROUTE")
 return

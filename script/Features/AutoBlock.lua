@@ -151,7 +151,7 @@ return {
             return false
         end
 
-        --// Every hop in the farm (block, server age) goes through here, so the
+        --// Every safety hop in the farm goes through here, so the
         --// Webhook report is posted before the client is moved and cannot be
         --// cut off by the teleport. A hop caused by a player names them in the
         --// report, so the log says who it was. Only the first hop of a session

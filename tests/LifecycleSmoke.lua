@@ -50,6 +50,8 @@ local function signal()
     return s
 end
 local workspace = { FindFirstChild = function() return nil end }
+local game
+local Vector2 = { new = function() return {} end }
 -- MODULES
 local function context()
     local callbacks = {}
@@ -253,5 +255,52 @@ do
         print("OK " .. (mining and "mining" or "crafting") .. " timeout, reset and shutdown")
     end
     assert(next(queue) == nil, "job timers leaked")
+end
+do
+    -- Simulate a full nine hours in the same server using the real farming
+    -- Update and anti-AFK timer, including the old exact seven-hour threshold.
+    local c = context()
+    local hops,bossTicks,nudges = 0,0,0
+    local idle = signal()
+    local virtualUser = { CaptureController = function() end, ClickButton2 = function() nudges += 1 end }
+    game = { GetService = function(_,name) if name == "VirtualUser" then return virtualUser end end }
+    local hum = { Health=100,MaxHealth=100,WalkSpeed=16,MoveDirection={Magnitude=0} }
+    local sword = { FindFirstChild = function() return {} end }
+    local character = { FindFirstChild = function(_,name) if name=="Sword" then return sword end end }
+    c.Runtime = {
+        GetCharacter = function() return character,hum,{} end,
+        GetInputBindableFunction = function() return {} end,
+        GetFaceOrientation = function() return nil end,
+        GetPlaceConfig = function() return {WAYPOINTS={}} end,
+    }
+    c.Services, c.UIRef, c.PatrolState, c.AICProfile = {}, {}, {}, {}
+    c.Player = {Idled=idle,FindFirstChild=function() return {} end}
+    c.CONFIG = {MAX_SERVER_AGE=25200,MAXIMUM_WALKSPEED=50,TEXT_UPDATE_INTERVAL=1,MOB_VALIDATION_INTERVAL=1,
+        RETREAT_HEALTH_PERCENT=0,EXECUTE_CHARGE_HP_PERCENT=0,ANTI_AFK_INTERVAL=480}
+    c.Feature = {DebugVisualizer={Enabled=false},AutoFind={Enabled=true}}
+    c.AICFeature = {S={Enabled=true},RenderUpdate=function() end,HandleDeadzoneEscape=function() return false end,
+        SetFarmState=function() end,BossStep=function() bossTicks += 1; return true end,
+        TeleportToPlace=function() hops += 1 end}
+    c.AICUI = {S={LAST_TEXT_UPDATE_TIME=now},updatePlayTime=function() end,updatePosition=function() end,updateEventCurrency=function() end}
+    c.AICCombatUtils = {UpdateStuckTracker=function() end}
+    c.AICCombat = {S={LAST_MOB_VALIDATION_TIME=now,RETREATING=false},UpdateValidMobs=function() end,UpdateSkillThreat=function() return false end}
+    local farming = FarmingModule.Start(c)
+    AntiAfkModule.Start(c)
+    local checked=0
+    for elapsed=0,9*3600,60 do
+        workspace.DistributedGameTime=elapsed
+        farming:Update(1/60)
+        checked += 1
+        advance(60)
+    end
+    assert(hops==0,"long session forced a teleport at the seven-hour server-age limit: " .. tostring(hops))
+    assert(bossTicks==checked,"boss route stopped updating in a long session")
+    assert(nudges>=67,"anti-AFK didn't survive nine hours of farming")
+    local beforeIdle=nudges
+    idle:Fire(); assert(nudges==beforeIdle+1,"Idled handler stopped working after nine hours")
+    c.stop(); local beforeStop=nudges; advance(480); idle:Fire()
+    assert(nudges==beforeStop,"anti-AFK acted after intentional shutdown")
+    assert(next(queue)==nil,"long-session test left background work behind")
+    print("OK nine-hour session: no age-forced hop, boss route continues, anti-AFK timer/Idled still work")
 end
 print("LIFECYCLE SMOKE PASSED")

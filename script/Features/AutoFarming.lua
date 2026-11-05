@@ -495,17 +495,10 @@ return {
                 end
             end
 
-            --// Play Time
-            if workspace.DistributedGameTime >= CONFIG.MAX_SERVER_AGE then
-                AICFeature.SetFarmState("SERVER TOO OLD, HOPPING")
-                AICFeature.TeleportToPlace()
-                return
-            end
-
             --// Boss Route: its own stops and timers, above the waypoint route
             --// and the combat below. Every safety check above still ran this
             --// frame, so a Boss Route run keeps Auto Block, the retreat and the
-            --// server-age hop.
+            --// player checks. Session age never forces an unattended teleport.
             if AICFeature.BossStep and AICFeature.BossStep(now) then
                 AICFeature.SetFarmState("BOSS ROUTE")
                 return
