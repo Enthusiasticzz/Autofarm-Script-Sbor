@@ -1249,6 +1249,48 @@ do
     assert(Context.AICFeature.BossRetreatStep(1228)==nil,"disabled boss route restricted normal farming")
     hum.Health=100
     nav.StopRoute()
+    -- Prompt spam is per stop, bounded to four half-second sends, and is
+    -- driven by route ticks so it cannot survive a stop/restart/respawn.
+    assert(boss.BossSpamPromptToggle,"per-stop prompt spam toggle missing")
+    local savedPrompt,savedSpam,savedPromptPosition,savedPromptName=stop.Prompt,stop.SpamTPPrompt,stop.PromptPosition,stop.PromptName
+    stop.Prompt,stop.SpamTPPrompt,stop.PromptPosition,stop.PromptName=true,true,vec(4,0,8),"Saved doorway"
+    local originalCFrameNew=CFrame.new
+    local promptSends={}
+    CFrame.new=function(point) promptSends[#promptSends+1]=point; return {Position=point} end
+    nav.BeginStop(1250); nav.ApproachStep(stop,1250)
+    assert(#promptSends==1 and state.PromptBurst,"prompt burst didn't start with one teleport")
+    nav.ApproachStep(stop,1250.25); assert(#promptSends==1,"prompt spam exceeded two sends per second")
+    nav.ApproachStep(stop,1250.5); nav.ApproachStep(stop,1251); nav.ApproachStep(stop,1251.5)
+    assert(#promptSends==4,"prompt spam didn't send four teleports")
+    nav.ApproachStep(stop,1251.9); assert(#promptSends==4,"prompt spam sent more than four teleports")
+    nav.ApproachStep(stop,1252)
+    assert(not state.PromptBurst and state.PromptCheckAt==1252.6,"prompt burst didn't hand off to normal landing check")
+    for _,point in ipairs(promptSends) do
+        assert(point.X==4 and point.Y==3 and point.Z==8,"burst didn't use saved prompt position/normal teleport offset")
+    end
+    nav.BeginStop(1260); nav.ApproachStep(stop,1260)
+    local beforeLag=#promptSends
+    nav.ApproachStep(stop,1261.8); nav.ApproachStep(stop,1262)
+    assert(#promptSends==beforeLag+1 and not state.PromptBurst,"slow frame caused a catch-up flood or extended the burst")
+    nav.BeginStop(1270); nav.ApproachStep(stop,1270)
+    nav.StopRoute(); assert(state.PromptBurst==nil,"route stop retained prompt spam")
+    stop.SpamTPPrompt=false
+    local beforeSingle=#promptSends
+    nav.BeginStop(1271); nav.ApproachStep(stop,1271)
+    assert(#promptSends==beforeSingle+1 and not state.PromptBurst and state.PromptCheckAt,"disabled spam changed ordinary prompt teleport")
+    stop.SpamTPPrompt=true
+    nav.BeginStop(1280); nav.ApproachStep(stop,1280)
+    local beforeDeath=#promptSends
+    hum.Health=0; nav.ApproachStep(stop,1280.5)
+    assert(#promptSends==beforeDeath and not state.PromptBurst,"prompt spam survived a dead character")
+    hum.Health=100; nav.StopRoute()
+    local normalized=Context.AICConfig.NormalizeBossStops({stop,{Label="Other stop",Position=vec(0,0,0)}})
+    local roundTrip=Context.AICProfile.DeserializeConfigValue(Context.AICProfile.SerializeConfigValue({BOSS_ROUTE=normalized}))
+    local restored=Context.AICConfig.NormalizeBossStops(roundTrip.BOSS_ROUTE)
+    assert(restored[1].SpamTPPrompt==true and restored[2].SpamTPPrompt==false,"per-stop prompt spam didn't round-trip or changed old-stop defaults")
+    CFrame.new=originalCFrameNew
+    stop.Prompt,stop.SpamTPPrompt,stop.PromptPosition,stop.PromptName=savedPrompt,savedSpam,savedPromptPosition,savedPromptName
+    print("BOSS PROMPT SPAM passed: per-stop persistence, four timed sends, bounded window, stop/death cancellation, normal off behavior")
     Vector3.new,Vector3.xAxis=originalVectorNew,originalXAxis
     print("BOSS BOUNDS passed: live dodge/chase, low-HP healing retreat, knockback, wait, and unbounded fallback")
     -- Spawn readiness is an additional condition, never a replacement for the

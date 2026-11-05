@@ -54,6 +54,9 @@ local HOLD_FLEE_RING = 45
 local FLEE_RANGE_MARGIN = 8
 local FLEE_RING_MAX = 120
 local PROMPT_WAIT = 0.6
+local PROMPT_BURST_INTERVAL = 0.5
+local PROMPT_BURST_DURATION = 2
+local PROMPT_BURST_SENDS = 4
 local PROMPT_ARRIVAL = 12
 local PROMPT_FALL_DEPTH = 12
 local PROMPT_RECHECK = 0.4
@@ -762,6 +765,7 @@ AICUI.RefreshBossBoundsList()
 if UIRef.BossPromptToggle then
 UIRef.BossPromptToggle:Set(Stop.Prompt == true, true)
 end
+if UIRef.BossSpamPromptToggle then UIRef.BossSpamPromptToggle:Set(Stop.SpamTPPrompt == true, true) end
 if UIRef.BossPromptLabel then
 UIRef.BossPromptLabel:Set(Stop.PromptPosition
 and string.format(
@@ -928,6 +932,7 @@ S.TeleportAt = nil
 S.TeleportFrom = nil
 S.TeleportLanded = false
 S.PromptCheckAt = nil
+S.PromptBurst = nil
 S.PromptTargetPosition = nil
 S.FloorLifts = 0
 S.OwnDeaths = 0
@@ -970,6 +975,7 @@ S.Teleports = 0
 S.TeleportLanded = false
 S.TeleportHold = nil
 S.PromptUsed = false
+S.PromptBurst = nil
 S.PromptCheckAt = nil
 S.PromptTargetPosition = nil
 S.FloorLifts = 0
@@ -2093,6 +2099,32 @@ if WatchTeleportLanding(Stop, Humanoid, RootPart, Now) then
 return
 end
 end
+local Burst = S.PromptBurst
+if Burst then
+if Burst.Humanoid ~= Humanoid or Humanoid.Health <= 0 then
+S.PromptBurst = nil
+return true
+end
+Humanoid:Move(Vector3.zero)
+if Now < Burst.Until and Stop.SpamTPPrompt == true and Stop.Prompt == true then
+if Now >= Burst.NextAt and Burst.Count < PROMPT_BURST_SENDS then
+if TeleportToPoint(Burst.Position) then
+Burst.Count += 1
+Burst.NextAt = Now + PROMPT_BURST_INTERVAL
+else
+Burst.Until = Now
+end
+end
+if Now < Burst.Until then
+SetStatus(string.format("STOP %d/%d  SPAM TP PROMPT  %d/%d", S.Index, #GetStops(), Burst.Count, PROMPT_BURST_SENDS))
+return true
+end
+end
+S.PromptBurst = nil
+S.PromptCheckAt, S.WaitUntil = Now + PROMPT_WAIT, Now + PROMPT_WAIT
+S.PromptTargetPosition = Burst.Position
+return true
+end
 if not S.PromptUsed then
 local PromptPosition = GetStopPromptPosition(Stop)
 if PromptPosition then
@@ -2103,6 +2135,13 @@ if Runtime.MuteInteract then
 Runtime:MuteInteract(PROMPT_INTERACT_MUTE)
 end
 if TeleportToPoint(PromptPosition) then
+if Stop.SpamTPPrompt == true and Stop.PromptPosition then
+S.PromptBurst = { Position = PromptPosition, Humanoid = Humanoid, Count = 1,
+NextAt = Now + PROMPT_BURST_INTERVAL, Until = Now + PROMPT_BURST_DURATION }
+Humanoid:Move(Vector3.zero)
+SetStatus(string.format("STOP %d/%d  SPAM TP PROMPT  1/%d", S.Index, #GetStops(), PROMPT_BURST_SENDS))
+return true
+end
 S.PromptCheckAt = Now + PROMPT_WAIT
 S.PromptTargetPosition = PromptPosition
 S.WaitUntil = Now + PROMPT_WAIT
@@ -2687,6 +2726,7 @@ ResetWait = AICConfig.DEFAULT_BOSS_RESET_WAIT,
 Dodge = true,
 DodgeDistance = AICConfig.DEFAULT_BOSS_DODGE_DISTANCE,
 Prompt = false,
+SpamTPPrompt = false,
 PromptPosition = nil,
 PromptName = "",
 Radius = AICConfig.DEFAULT_BOSS_RADIUS,
@@ -2985,6 +3025,17 @@ Stop.Prompt
 and "STOP TELEPORTS TO ITS PROMPT"
 or "STOP TRAVELS BY PATH / WAYPOINT"
 )
+end,
+}
+UIRef.BossSpamPromptToggle = UIRef.BossTravelSection:AddToggle{
+Name = "Spam TP Prompt",
+Default = false,
+Description = "With TP to Prompt enabled, teleport to the saved prompt twice per second for two seconds before continuing the route.",
+Callback = function(Value)
+local Stop = SelectedStop()
+if not Stop or not CanEdit() or not AICProfile.S.ActiveProfileName then RefreshEditor(); return end
+Stop.SpamTPPrompt = Value == true
+AICProfile.SaveActiveProfile()
 end,
 }
 UIRef.BossPromptLabel = UIRef.BossTravelSection:AddLabel(

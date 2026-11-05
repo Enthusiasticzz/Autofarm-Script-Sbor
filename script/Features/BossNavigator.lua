@@ -177,6 +177,9 @@ return {
         --// Waited after a prompt teleport, for the landing and the prompt's
         --// own range check, before Interact is pressed.
         local PROMPT_WAIT = 0.6
+        local PROMPT_BURST_INTERVAL = 0.5
+        local PROMPT_BURST_DURATION = 2
+        local PROMPT_BURST_SENDS = 4
         --// A prompt teleport that leaves the character further than this from
         --// the prompt did not take: the body was snapped back, and walking is
         --// the only way left.
@@ -1380,6 +1383,7 @@ return {
             if UIRef.BossPromptToggle then
                 UIRef.BossPromptToggle:Set(Stop.Prompt == true, true)
             end
+            if UIRef.BossSpamPromptToggle then UIRef.BossSpamPromptToggle:Set(Stop.SpamTPPrompt == true, true) end
             if UIRef.BossPromptLabel then
                 UIRef.BossPromptLabel:Set(Stop.PromptPosition
                     and string.format(
@@ -1608,6 +1612,7 @@ return {
             S.TeleportFrom = nil
             S.TeleportLanded = false
             S.PromptCheckAt = nil
+            S.PromptBurst = nil
             S.PromptTargetPosition = nil
             S.FloorLifts = 0
             S.OwnDeaths = 0
@@ -1653,6 +1658,7 @@ return {
             S.TeleportLanded = false
             S.TeleportHold = nil
             S.PromptUsed = false
+            S.PromptBurst = nil
             S.PromptCheckAt = nil
             S.PromptTargetPosition = nil
             S.FloorLifts = 0
@@ -3401,6 +3407,36 @@ return {
                 end
             end
 
+            -- Four sends at 0, .5, 1 and 1.5 seconds, then allow the landing
+            -- to settle after the two-second window. No background thread or
+            -- catch-up burst can outlive the visit or flood a slow frame.
+            local Burst = S.PromptBurst
+            if Burst then
+                if Burst.Humanoid ~= Humanoid or Humanoid.Health <= 0 then
+                    S.PromptBurst = nil
+                    return true
+                end
+                Humanoid:Move(Vector3.zero)
+                if Now < Burst.Until and Stop.SpamTPPrompt == true and Stop.Prompt == true then
+                    if Now >= Burst.NextAt and Burst.Count < PROMPT_BURST_SENDS then
+                        if TeleportToPoint(Burst.Position) then
+                            Burst.Count += 1
+                            Burst.NextAt = Now + PROMPT_BURST_INTERVAL
+                        else
+                            Burst.Until = Now
+                        end
+                    end
+                    if Now < Burst.Until then
+                        SetStatus(string.format("STOP %d/%d  SPAM TP PROMPT  %d/%d", S.Index, #GetStops(), Burst.Count, PROMPT_BURST_SENDS))
+                        return true
+                    end
+                end
+                S.PromptBurst = nil
+                S.PromptCheckAt, S.WaitUntil = Now + PROMPT_WAIT, Now + PROMPT_WAIT
+                S.PromptTargetPosition = Burst.Position
+                return true
+            end
+
             --// The stop saved an interaction prompt (a door or portal in front
             --// of the boss): land on it once, then walk the rest. A stop that
             --// has both uses the prompt first, because it is the point of
@@ -3427,6 +3463,13 @@ return {
                     end
 
                     if TeleportToPoint(PromptPosition) then
+                        if Stop.SpamTPPrompt == true and Stop.PromptPosition then
+                            S.PromptBurst = { Position = PromptPosition, Humanoid = Humanoid, Count = 1,
+                                NextAt = Now + PROMPT_BURST_INTERVAL, Until = Now + PROMPT_BURST_DURATION }
+                            Humanoid:Move(Vector3.zero)
+                            SetStatus(string.format("STOP %d/%d  SPAM TP PROMPT  1/%d", S.Index, #GetStops(), PROMPT_BURST_SENDS))
+                            return true
+                        end
                         --// Read back once the landing has had PROMPT_WAIT,
                         --// instead of trusting the send: the prompt can drop
                         --// the body inside a floor or put it back where it
@@ -4345,6 +4388,7 @@ return {
                 Dodge = true,
                 DodgeDistance = AICConfig.DEFAULT_BOSS_DODGE_DISTANCE,
                 Prompt = false,
+                SpamTPPrompt = false,
                 PromptPosition = nil,
                 PromptName = "",
                 Radius = AICConfig.DEFAULT_BOSS_RADIUS,
@@ -4742,6 +4786,18 @@ return {
                         and "STOP TELEPORTS TO ITS PROMPT"
                         or "STOP TRAVELS BY PATH / WAYPOINT"
                 )
+            end,
+        }
+
+        UIRef.BossSpamPromptToggle = UIRef.BossTravelSection:AddToggle{
+            Name = "Spam TP Prompt",
+            Default = false,
+            Description = "With TP to Prompt enabled, teleport to the saved prompt twice per second for two seconds before continuing the route.",
+            Callback = function(Value)
+                local Stop = SelectedStop()
+                if not Stop or not CanEdit() or not AICProfile.S.ActiveProfileName then RefreshEditor(); return end
+                Stop.SpamTPPrompt = Value == true
+                AICProfile.SaveActiveProfile()
             end,
         }
 

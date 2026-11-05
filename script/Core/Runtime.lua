@@ -1154,6 +1154,7 @@ return {
                         --// On with nothing saved is allowed: the nearest prompt
                         --// to the stop is found at run time.
                         Prompt = Stop.Prompt == true,
+                        SpamTPPrompt = Stop.SpamTPPrompt == true,
                         PromptPosition = PromptPosition,
                         PromptName = PromptName,
                         Radius = math.clamp(

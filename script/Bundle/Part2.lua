@@ -4655,6 +4655,7 @@ AICConfig.MIN_BOSS_DODGE_DISTANCE,
 AICConfig.MAX_BOSS_DODGE_DISTANCE
 ),
 Prompt = Stop.Prompt == true,
+SpamTPPrompt = Stop.SpamTPPrompt == true,
 PromptPosition = PromptPosition,
 PromptName = PromptName,
 Radius = math.clamp(
