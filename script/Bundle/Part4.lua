@@ -731,6 +731,7 @@ local Stop = SelectedStop()
 RefreshBoundsVisuals(GetStops())
 if UIRef.BossResetModeDropdown then UIRef.BossResetModeDropdown:Set(GetResetMode(), true) end
 if UIRef.BossDuoSyncToggle then UIRef.BossDuoSyncToggle:Set(CONFIG.BOSS_DUO_SYNC == true, true) end
+if UIRef.EvadeSafeResetToggle then UIRef.EvadeSafeResetToggle:Set(CONFIG.BOSS_EVADE_SAFE_RESET == true, true) end
 if UIRef.BossDuoNameBox then UIRef.BossDuoNameBox:Set(tostring(CONFIG.BOSS_DUO_NAME or ""), true) end
 if UIRef.BossDuoRangeBox then UIRef.BossDuoRangeBox:Set(tostring(CONFIG.BOSS_DUO_RANGE or 35), true) end
 if UIRef.BossDuoTimeoutBox then UIRef.BossDuoTimeoutBox:Set(tostring(CONFIG.BOSS_DUO_WAIT_TIMEOUT or 0), true) end
@@ -1408,10 +1409,8 @@ end
 return ClampToBounds(Stop, Fallback or OnRing(Away), BOUNDS_INSET)
 end
 local function GetNearestMob(Position, Distance)
-local MobFolder = workspace:FindFirstChild("Mobs")
 local BestRoot, BestDistance = nil, Distance
-for _, Mob in ipairs(MobFolder and MobFolder:GetChildren() or {}) do
-if Mob:IsA("Model") then
+EachMob(function(Mob)
 local MobHumanoid = Mob:FindFirstChildOfClass("Humanoid")
 local MobRoot = Mob:FindFirstChild("HumanoidRootPart")
 if MobHumanoid and MobRoot and MobHumanoid.Health > 0 then
@@ -1420,8 +1419,7 @@ if Flat <= BestDistance then
 BestRoot, BestDistance = MobRoot, Flat
 end
 end
-end
-end
+end)
 return BestRoot
 end
 local function MobDetectionRange(Mob)
@@ -3421,6 +3419,15 @@ end,
 EvadeSection
 )
 UIRef.EvadeSpotLabel = EvadeSection:AddLabel("HIDING SPOTS:  NONE")
+UIRef.EvadeSafeResetToggle = EvadeSection:AddToggle{
+Name = "Evade Before Reset",
+Default = CONFIG.BOSS_EVADE_SAFE_RESET == true,
+Description = "Stop attacking and flee all nearby mob types until your damage tags have cleared for 2 seconds, then reset and hide as usual. Off resets immediately.",
+Callback = function(Value)
+CONFIG.BOSS_EVADE_SAFE_RESET = Value == true
+if AICProfile.S.ActiveProfileName then AICProfile.SaveActiveProfile() end
+end,
+}
 EvadeSection:AddNote("When someone who is not on your Block Whitelist shows up, the route stops. Your character resets, hides at one of your Hiding Spots, and waits 2-3 minutes for them to leave")
 EvadeSection:AddNote("They leave: the route starts again at stop #1")
 EvadeSection:AddNote("They stay: the game is closed, like Leave Instead Of Block")
@@ -3559,6 +3566,8 @@ BeginStop = BeginStop,
 ResetWalk = ResetWalk,
 EndDodge = EndDodge,
 StopFlee = StopFlee,
+FleeStep = FleeStep,
+GetDamageTag = GetDamageTag,
 ClearKillClock = ClearKillClock,
 SyncDeathMark = SyncDeathMark,
 GetFloorOverlap = GetFloorOverlap,
@@ -3608,6 +3617,7 @@ Name = "BossNavigator_Evade",
 Dependencies = {"BossNavigator", "AutoBlock", "Webhook", "Logger"},
 Start = function(Context)
 local Runtime = Context.Runtime
+local CONFIG = Context.CONFIG
 local Player = Context.Player
 local Players = Context.Services.Players
 local AICConfig = Context.AICConfig
@@ -3620,6 +3630,7 @@ local FeatureState = Boss.FeatureState or Context.FeatureState or Context.Featur
 assert(FeatureState ~= nil, "BossNavigator_Evade: the route published no feature state")
 local REQUIRED = {
 "S", "SetStatus", "Say", "IsEnabled", "CurrentStop", "GetStops",
+"FleeStep", "GetDamageTag",
 "BeginStop", "ResetWalk", "EndDodge", "StopFlee", "ClearKillClock",
 "SyncDeathMark", "GetFloorOverlap", "LiftFromFloor", "FixLandedFloor",
 "TeleportToPoint", "TeleportToWaypoint", "FightStep", "ApproachStep",
@@ -3722,12 +3733,14 @@ local function BeginEvade(Now, OtherPlayer)
 S.Evading = true
 S.EvadeName = tostring(OtherPlayer.Name)
 S.EvadeId = tonumber(OtherPlayer.UserId)
-S.EvadeStage = "Reset"
+S.EvadeStage = CONFIG.BOSS_EVADE_SAFE_RESET == true and "ClearExp" or "Reset"
+S.EvadeSafeSince = nil
 S.EvadeSince = Now
 S.EvadeWaitUntil = nil
 S.EvadeWaitTotal = 0
 S.EvadeResetHumanoid = nil
 S.EvadeResetAt = nil
+S.EvadeResetStartedAt = nil
 S.EvadeResetRetries = 0
 S.EvadeResetPosition = nil
 S.EvadeSent = false
@@ -3750,8 +3763,9 @@ S.LastTarget = nil
 S.TargetSeenAt = nil
 ClearKillClock()
 ResetWalk()
-SetStatus("EVADING  @" .. S.EvadeName .. "  RESETTING")
-Say("Evasion", "Pause For Strangers: @" .. S.EvadeName .. " is here; resetting", 5)
+local Action = S.EvadeStage == "ClearExp" and "CLEARING DAMAGE TAGS" or "RESETTING"
+SetStatus("EVADING  @" .. S.EvadeName .. "  " .. Action)
+Say("Evasion", "Pause For Strangers: @" .. S.EvadeName .. " is here; " .. string.lower(Action), 5)
 if AICFeature.ReportHold then
 AICFeature.ReportHold(S.EvadeStrangers)
 end
@@ -3765,11 +3779,13 @@ S.Evading = false
 S.EvadeName = ""
 S.EvadeId = nil
 S.EvadeStage = nil
+S.EvadeSafeSince = nil
 S.EvadeSince = nil
 S.EvadeWaitUntil = nil
 S.EvadeWaitTotal = 0
 S.EvadeResetHumanoid = nil
 S.EvadeResetAt = nil
+S.EvadeResetStartedAt = nil
 S.EvadeResetRetries = 0
 S.EvadeResetPosition = nil
 S.EvadeSent = false
@@ -3783,6 +3799,8 @@ S.EvadeKickAt = nil
 S.EvadeStrangers = nil
 S.EvadeStrangersAt = nil
 S.Phase = "Idle"
+StopFlee()
+SetBlocking(false)
 SyncDeathMark()
 if not (Restart and IsEnabled() and CurrentStop()) then
 SetStatus("EVASION OVER")
@@ -3829,6 +3847,7 @@ end
 if not S.EvadeResetHumanoid then
 S.EvadeResetHumanoid = Humanoid
 S.EvadeResetAt = Now
+S.EvadeResetStartedAt = Now
 S.EvadeResetPosition = RootPart.Position
 S.OwnDeaths = (S.OwnDeaths or 0) + 1
 S.OwnDeathAt = Now
@@ -3843,7 +3862,7 @@ S.EvadeResetAt = Now
 Humanoid.Health = 0
 return true
 end
-if Now - (S.EvadeSince or Now) >= EVADE_RESET_GIVE_UP then
+if Now - (S.EvadeResetStartedAt or Now) >= EVADE_RESET_GIVE_UP then
 S.EvadeResetHumanoid = nil
 return false
 end
@@ -4022,6 +4041,42 @@ if #Live > 0 then
 S.EvadeStrangers = Live
 end
 S.EvadeStrangersAt = Now
+end
+if S.EvadeStage == "ClearExp" then
+if not Stranger then
+StrangersLeft(Now)
+return true
+end
+if Humanoid and (tonumber(Humanoid.Health) or 0) <= 0 then
+StopFlee(Humanoid)
+S.EvadeStage = "Travel"
+elseif not Humanoid or not RootPart then
+SetStatus("EVADING  @" .. S.EvadeName .. "  WAITING FOR CHARACTER")
+return true
+elseif CONFIG.BOSS_EVADE_SAFE_RESET ~= true then
+StopFlee(Humanoid)
+SetBlocking(false, Now)
+S.EvadeStage = "Reset"
+else
+local Tagged = Boss.GetDamageTag() ~= nil
+if Tagged then S.EvadeSafeSince = nil end
+S.EvadeSafeSince = S.EvadeSafeSince or (not Tagged and Now or nil)
+if S.EvadeSafeSince and Now - S.EvadeSafeSince >= 2 then
+StopFlee(Humanoid)
+SetBlocking(false, Now)
+S.EvadeStage = "Reset"
+else
+AICCombat.S.ClosestTarget = nil
+local Running = Boss.FleeStep(Humanoid, RootPart, nil)
+if not Running then Humanoid:Move(Vector3.zero) end
+SetBlocking(true, Now)
+if AICFeature.TryHeal then AICFeature.TryHeal(Now) end
+SetStatus("EVADING  @" .. S.EvadeName .. "  "
+.. (Tagged and "WAITING FOR DAMAGE TAGS" or "CHECKING SAFE RESET")
+.. (Running and "  RUNNING" or ""))
+return true
+end
+end
 end
 if S.EvadeStage == "Reset" then
 local Pending = Humanoid ~= nil
@@ -6966,160 +7021,6 @@ if SmoothFolder then SmoothFolder:Destroy() end
 if Root then Root:Destroy() end
 end)
 return Feature
-end,
-}
-]======],
-	["Features/Farmzone.lua"] = [======[
-return {
-Name = "Farmzone",
-Dependencies = {"Runtime", "ProfileManager", "ProfileSettings", "Components"},
-Start = function(Context)
-local Runtime = Context.Runtime
-local AICProfile = Context.AICProfile
-local AICUI = Context.AICUI
-local AICDebug = Context.AICDebug
-local AICConfig = Context.AICConfig
-local UIRef = Context.UIRef
-local NotifyAction = Context.NotifyAction
-local function GetRootPart()
-local _, _, RootPart = Runtime:GetCharacter()
-return RootPart
-end
-local Module = {Name = "Farmzone", IsFeature = true}
-UIRef.FarmzoneSection = UIRef.ProfileTab:AddSection{ Title = "Farm Boundaries", Side = "Right", Description = "Where targets and farming are allowed" }
-UIRef.FarmzoneSection = UIRef.FarmzoneSection
-UIRef.FarmRadiusSlider = UIRef.FarmzoneSection:AddSlider{
-Name = "Farm Radius",
-Default = 100,
-Min = 1,
-Max = 500,
-Callback = function(Value)
-local Zone = Runtime:GetPlaceConfig() and Runtime:GetPlaceConfig().FARM_ZONES
-and Runtime:GetPlaceConfig().FARM_ZONES[AICProfile.S.SelectedFarmZoneIndex]
-if not Zone or not AICProfile.S.ActiveProfileName then return end
-Zone.Radius = Value
-AICUI.RefreshFarmZoneList()
-AICDebug.UpdateDebugVisualizer()
-AICProfile.QueueProfileSave()
-end,
-}
-UIRef.FarmzoneSection:AddButton{
-Name = "Add Farm Zone Here",
-Callback = function()
-if not GetRootPart() then
-AICUI.SetProfileStatus("CHARACTER NOT READY")
-return
-end
-if not AICProfile.S.ActiveProfileName then
-AICUI.SetProfileStatus("CREATE / LOAD PROFILE FIRST")
-return
-end
-local Radius = UIRef.FarmRadiusSlider:Get()
-table.insert(Runtime:GetPlaceConfig().FARM_ZONES, {
-Center = AICConfig.RoundVector3(GetRootPart().Position),
-Radius = Radius,
-})
-Runtime:SetPlaceConfig(AICConfig.NormalizePlaceConfig(Runtime:GetPlaceConfig()))
-AICUI.RefreshFarmZoneList()
-AICProfile.S.SelectedFarmZoneIndex = #Runtime:GetPlaceConfig().FARM_ZONES
-AICUI.RefreshFarmZonePicker()
-AICProfile.SaveActiveProfile()
-AICDebug.UpdateDebugVisualizer()
-AICUI.SetProfileStatus("FARM ZONE ADDED #" .. tostring(#Runtime:GetPlaceConfig().FARM_ZONES))
-end,
-}
-UIRef.FarmzoneSection:AddButton{
-Name = "Clear Farm Zones",
-Callback = function()
-if not AICProfile.S.ActiveProfileName then
-AICUI.SetProfileStatus("CREATE / LOAD PROFILE FIRST")
-return
-end
-table.clear(Runtime:GetPlaceConfig().FARM_ZONES)
-Runtime:SetPlaceConfig(AICConfig.NormalizePlaceConfig(Runtime:GetPlaceConfig()))
-AICProfile.S.SelectedFarmZoneIndex = 1
-AICUI.RefreshFarmZoneList()
-AICUI.RefreshFarmZonePicker()
-AICProfile.SaveActiveProfile()
-AICDebug.UpdateDebugVisualizer()
-AICUI.SetProfileStatus("FARM ZONES CLEARED")
-NotifyAction("Farm Zone", "Cleared all farm zones")
-end,
-}
-UIRef.FarmZoneListComponent = UIRef.FarmzoneSection:AddPriority(
-"All Farm Zones",
-AICUI.BuildZoneLabels(Runtime:GetPlaceConfig().FARM_ZONES, "Farm")
-)
-AICUI.S.OriginalFarmZoneMoveUp = UIRef.FarmZoneListComponent.MoveUp
-AICUI.S.OriginalFarmZoneMoveDown = UIRef.FarmZoneListComponent.MoveDown
-AICUI.S.OriginalFarmZoneRemove = UIRef.FarmZoneListComponent.Remove
-AICUI.RefreshFarmZonePicker()
-function UIRef.FarmZoneListComponent:MoveUp(Label)
-if not AICProfile.S.ActiveProfileName then
-AICUI.SetProfileStatus("DEFAULT PLACE_CONFIG IS READ-ONLY")
-return
-end
-local Index = table.find(AICUI.BuildZoneLabels(Runtime:GetPlaceConfig().FARM_ZONES, "Farm"), Label)
-if Index and Index > 1 then
-Runtime:GetPlaceConfig().FARM_ZONES[Index], Runtime:GetPlaceConfig().FARM_ZONES[Index - 1] =
-Runtime:GetPlaceConfig().FARM_ZONES[Index - 1], Runtime:GetPlaceConfig().FARM_ZONES[Index]
-AICConfig.RemapWaypointZones(Runtime:GetPlaceConfig(), function(Z)
-return (Z == Index and Index - 1) or (Z == Index - 1 and Index) or Z
-end)
-AICUI.S.OriginalFarmZoneMoveUp(self, Label)
-AICUI.RefreshFarmZoneList()
-AICProfile.S.SelectedFarmZoneIndex = math.max(1, Index - 1)
-AICUI.RefreshFarmZonePicker()
-AICProfile.SaveActiveProfile()
-AICDebug.UpdateDebugVisualizer()
-AICUI.SetProfileStatus("FARM ZONE MOVED UP")
-NotifyAction("Farm Zone", "Moved up")
-end
-end
-function UIRef.FarmZoneListComponent:MoveDown(Label)
-if not AICProfile.S.ActiveProfileName then
-AICUI.SetProfileStatus("DEFAULT PLACE_CONFIG IS READ-ONLY")
-return
-end
-local Index = table.find(AICUI.BuildZoneLabels(Runtime:GetPlaceConfig().FARM_ZONES, "Farm"), Label)
-if Index and Index < #Runtime:GetPlaceConfig().FARM_ZONES then
-Runtime:GetPlaceConfig().FARM_ZONES[Index], Runtime:GetPlaceConfig().FARM_ZONES[Index + 1] =
-Runtime:GetPlaceConfig().FARM_ZONES[Index + 1], Runtime:GetPlaceConfig().FARM_ZONES[Index]
-AICConfig.RemapWaypointZones(Runtime:GetPlaceConfig(), function(Z)
-return (Z == Index and Index + 1) or (Z == Index + 1 and Index) or Z
-end)
-AICUI.S.OriginalFarmZoneMoveDown(self, Label)
-AICUI.RefreshFarmZoneList()
-AICProfile.S.SelectedFarmZoneIndex = math.min(#Runtime:GetPlaceConfig().FARM_ZONES, Index + 1)
-AICUI.RefreshFarmZonePicker()
-AICProfile.SaveActiveProfile()
-AICDebug.UpdateDebugVisualizer()
-AICUI.SetProfileStatus("FARM ZONE MOVED DOWN")
-NotifyAction("Farm Zone", "Moved down")
-end
-end
-function UIRef.FarmZoneListComponent:Remove(Label)
-if not AICProfile.S.ActiveProfileName then
-AICUI.SetProfileStatus("DEFAULT PLACE_CONFIG IS READ-ONLY")
-return
-end
-local Index = table.find(AICUI.BuildZoneLabels(Runtime:GetPlaceConfig().FARM_ZONES, "Farm"), Label)
-if Index then
-table.remove(Runtime:GetPlaceConfig().FARM_ZONES, Index)
-AICConfig.RemapWaypointZones(Runtime:GetPlaceConfig(), function(Z)
-return (Z == Index and 0) or (Z > Index and Z - 1) or Z
-end)
-AICUI.S.OriginalFarmZoneRemove(self, Label)
-Runtime:SetPlaceConfig(AICConfig.NormalizePlaceConfig(Runtime:GetPlaceConfig()))
-AICProfile.S.SelectedFarmZoneIndex = math.clamp(Index, 1, math.max(1, #Runtime:GetPlaceConfig().FARM_ZONES))
-AICUI.RefreshFarmZoneList()
-AICUI.RefreshFarmZonePicker()
-AICProfile.SaveActiveProfile()
-AICDebug.UpdateDebugVisualizer()
-AICUI.SetProfileStatus("FARM ZONE REMOVED #" .. tostring(Index))
-end
-end
-return Module
 end,
 }
 ]======],

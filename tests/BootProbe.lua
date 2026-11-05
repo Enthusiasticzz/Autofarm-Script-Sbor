@@ -1248,6 +1248,17 @@ do
     Context.AICCombatUtils.IsPressedAgainstBody=function() return false end
     Context.AICCombatUtils.IsHoleAhead=function() return false end
     Context.AICCombatUtils.IsPathClear=function() return true end
+    local nested = Instance.new("Folder", mobs); nested.Name="OtherMobs"
+    local otherMob = Instance.new("Model", nested); otherMob.Name="UnlistedMob"
+    local otherRoot = Instance.new("Part", otherMob); otherRoot.Name="HumanoidRootPart"; otherRoot.Position=vec(10,0,0)
+    local otherHum = Instance.new("Humanoid", otherMob); otherHum.Health=100
+    local beforeFlee = #moves
+    assert(nav.FleeStep(hum,root,nil) and #moves==beforeFlee+1,
+        "safe reset did not flee an unlisted mob in a nested folder")
+    assert(moves[#moves].X>20, "safe reset was trapped inside the boss fight bounds")
+    otherHum.Health=0
+    assert(not nav.FleeStep(hum,root,nil), "safe reset fled a dead mob")
+    nested:Destroy(); nav.StopFlee(hum)
     Context.AICCombat.GetCombatDistance=function(_,offset) return offset.Magnitude end
     local function bounded(point)
         assert(point and math.abs(point.X)<=18 and math.abs(point.Z)<=18,"live combat navigated outside the inset fight bounds")
@@ -1536,5 +1547,100 @@ do
     nav.StopRoute()
     assert(not guard,"stopping the route left the block input held")
     print("BOSS GUARD passed: failed/dropped input recovery, refresh rate limit, release retry, respawn/rebind, wait/heal integration")
+end
+do
+    local nav=Context.AICFeature.BossNav
+    local state=nav.S
+    nav.StopRoute()
+    local oldGetCharacter=Context.Runtime.GetCharacter
+    local oldFind=Context.Services.Replicated.FindFirstChild
+    local oldPlayers=players.GetPlayers
+    local oldFlee=nav.FleeStep
+    local function pos(x)
+        return setmetatable({X=x,Y=0,Z=0}, {__typename="Vector3",
+            __sub=function(a,b) return {Magnitude=math.abs(a.X-b.X)} end})
+    end
+    local hum={Health=100,MaxHealth=100,WalkSpeed=16,Move=noop,MoveTo=noop}
+    local root={Position=pos(0),Size=Vector3.new(2,2,1)}
+    Context.Runtime.GetCharacter=function() return {},hum,root end
+    local tagged=true
+    local tags={GetChildren=function()
+        return tagged and {{Name=Context.Player.Name.."MobDamaged"}} or {}
+    end}
+    local teleports={}
+    Context.Services.Replicated.FindFirstChild=function(_,name)
+        if name=="PlayerDamageTags" then return tags end
+        if name=="TeleportEvent" then return {FireServer=function(_,waypoint)
+            teleports[#teleports+1]=waypoint; root.Position=pos(700)
+        end} end
+    end
+    local fled=0
+    nav.FleeStep=function(_,_,stop)
+        assert(stop==nil,"safe-reset evasion must not use boss target lists or fight bounds")
+        fled+=1; return true
+    end
+    players.GetPlayers=function() return {Context.Player,intruder} end
+    Context.Feature.BossRoute.Enabled=true
+    Context.Feature.PauseForStrangers.Enabled=true
+    local place=Context.Runtime:GetPlaceConfig()
+    place.BOSS_ROUTE={{Label="Safety",Position=pos(0),Targets={},Path={},Radius=100}}
+    place.BOSS_EVADE={Spots={{Kind="Waypoint",Waypoint=7}}}
+    boss.EvadeSafeResetToggle:Set(true)
+    assert(Context.CONFIG.BOSS_EVADE_SAFE_RESET,"safe-reset toggle did not set saved config")
+    nav.BeginStop(3000)
+    Context.AICFeature.BossEvadeStep(3000)
+    Context.AICFeature.BossEvadeStep(3100)
+    assert(hum.Health==100 and state.EvadeStage=="ClearExp" and fled==2 and #teleports==0,
+        "tagged account reset, teleported, or stopped evading after a long wait")
+    tagged=false; Context.AICFeature.BossEvadeStep(3101)
+    tagged=true; Context.AICFeature.BossEvadeStep(3102)
+    tagged=false; Context.AICFeature.BossEvadeStep(3103)
+    Context.AICFeature.BossEvadeStep(3104)
+    assert(hum.Health==100,"new damage tag did not restart the clear window")
+    Context.AICFeature.BossEvadeStep(3105)
+    assert(hum.Health==0 and state.EvadeStage=="Reset" and #teleports==0,
+        "safe reset did not happen after tags cleared or travel happened before reset")
+    hum={Health=100,MaxHealth=100,WalkSpeed=16,Move=noop,MoveTo=noop}
+    Context.AICFeature.BossEvadeStep(3106)
+    Context.AICFeature.BossEvadeStep(3107)
+    Context.AICFeature.BossEvadeStep(3108)
+    Context.AICFeature.BossEvadeStep(3109)
+    assert(#teleports==1 and teleports[1]==7 and state.EvadeStage=="Hold" and state.EvadeWaitUntil>3108,
+        "safe reset did not continue through respawn, saved waypoint, and waiting")
+    Context.AICFeature.BossEvadeEnd(3109,false)
+    tagged=true; nav.BeginStop(3110)
+    Context.AICFeature.BossEvadeStep(3110)
+    players.GetPlayers=function() return {Context.Player} end
+    Context.AICFeature.BossEvadeStep(3111)
+    assert(hum.Health==100 and not state.Evading,"departing stranger caused a needless reset")
+    players.GetPlayers=function() return {Context.Player,intruder} end
+    Context.AICFeature.BossEvadeStep(3112)
+    boss.EvadeSafeResetToggle:Set(false)
+    Context.AICFeature.BossEvadeStep(3113)
+    assert(hum.Health==0,"turning safe reset off did not restore immediate reset")
+    Context.AICFeature.BossEvadeEnd(3114,false)
+    hum.Health=100
+    boss.EvadeSafeResetToggle:Set(true)
+    nav.BeginStop(3120)
+    Context.AICFeature.BossEvadeStep(3120)
+    local savedRoot=root
+    root=nil
+    Context.AICFeature.BossEvadeStep(3121)
+    assert(state.EvadeStage=="ClearExp" and hum.Health==100,"missing root bypassed the safe reset")
+    root=savedRoot
+    local deathsBefore=state.OwnDeaths
+    hum.Health=0
+    Context.AICFeature.BossEvadeStep(3122)
+    assert(state.EvadeStage=="Travel" and state.OwnDeaths==deathsBefore,"natural death triggered another reset")
+    Context.AICFeature.BossEvadeEnd(3123,false)
+    boss.EvadeSafeResetToggle:Set(false)
+    nav.StopRoute()
+    Context.Feature.PauseForStrangers.Enabled=false
+    Context.Feature.BossRoute.Enabled=false
+    Context.Runtime.GetCharacter=oldGetCharacter
+    Context.Services.Replicated.FindFirstChild=oldFind
+    players.GetPlayers=oldPlayers
+    nav.FleeStep=oldFlee
+    print("SAFE EVADE RESET passed: all mob types, damage tags, clear window, reset, respawn, hiding travel, cancellation")
 end
 print("BOOT PROBE PASSED")

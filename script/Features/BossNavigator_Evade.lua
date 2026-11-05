@@ -21,6 +21,7 @@ return {
 
     Start = function(Context)
         local Runtime = Context.Runtime
+        local CONFIG = Context.CONFIG
         local Player = Context.Player
         local Players = Context.Services.Players
         local AICConfig = Context.AICConfig
@@ -38,6 +39,7 @@ return {
 
         local REQUIRED = {
             "S", "SetStatus", "Say", "IsEnabled", "CurrentStop", "GetStops",
+            "FleeStep", "GetDamageTag",
             "BeginStop", "ResetWalk", "EndDodge", "StopFlee", "ClearKillClock",
             "SyncDeathMark", "GetFloorOverlap", "LiftFromFloor", "FixLandedFloor",
             "TeleportToPoint", "TeleportToWaypoint", "FightStep", "ApproachStep",
@@ -172,12 +174,14 @@ return {
             --// Kept beside the name so a report always has someone to name,
             --// even if the snapshot below is ever empty.
             S.EvadeId = tonumber(OtherPlayer.UserId)
-            S.EvadeStage = "Reset"
+            S.EvadeStage = CONFIG.BOSS_EVADE_SAFE_RESET == true and "ClearExp" or "Reset"
+            S.EvadeSafeSince = nil
             S.EvadeSince = Now
             S.EvadeWaitUntil = nil
             S.EvadeWaitTotal = 0
             S.EvadeResetHumanoid = nil
             S.EvadeResetAt = nil
+            S.EvadeResetStartedAt = nil
             S.EvadeResetRetries = 0
             S.EvadeResetPosition = nil
             S.EvadeSent = false
@@ -200,8 +204,9 @@ return {
             S.TargetSeenAt = nil
             ClearKillClock()
             ResetWalk()
-            SetStatus("EVADING  @" .. S.EvadeName .. "  RESETTING")
-            Say("Evasion", "Pause For Strangers: @" .. S.EvadeName .. " is here; resetting", 5)
+            local Action = S.EvadeStage == "ClearExp" and "CLEARING DAMAGE TAGS" or "RESETTING"
+            SetStatus("EVADING  @" .. S.EvadeName .. "  " .. Action)
+            Say("Evasion", "Pause For Strangers: @" .. S.EvadeName .. " is here; " .. string.lower(Action), 5)
 
             --// Log When Hiding is on: the report says who joined and stopped
             --// the run. It names everyone on the server, not only the one the
@@ -226,11 +231,13 @@ return {
             S.EvadeName = ""
             S.EvadeId = nil
             S.EvadeStage = nil
+            S.EvadeSafeSince = nil
             S.EvadeSince = nil
             S.EvadeWaitUntil = nil
             S.EvadeWaitTotal = 0
             S.EvadeResetHumanoid = nil
             S.EvadeResetAt = nil
+            S.EvadeResetStartedAt = nil
             S.EvadeResetRetries = 0
             S.EvadeResetPosition = nil
             S.EvadeSent = false
@@ -244,6 +251,8 @@ return {
             S.EvadeStrangers = nil
             S.EvadeStrangersAt = nil
             S.Phase = "Idle"
+            StopFlee()
+            SetBlocking(false)
             --// The hold's own reset bumped the player's death counter. Taking
             --// it as read here is what keeps the restart from being treated as
             --// a death the route has to walk back from.
@@ -328,6 +337,7 @@ return {
             if not S.EvadeResetHumanoid then
                 S.EvadeResetHumanoid = Humanoid
                 S.EvadeResetAt = Now
+                S.EvadeResetStartedAt = Now
                 S.EvadeResetPosition = RootPart.Position
                 --// This reset is the script's own: its death counter bump must
                 --// not restart the stop the route was on.
@@ -349,7 +359,7 @@ return {
                 return true
             end
 
-            if Now - (S.EvadeSince or Now) >= EVADE_RESET_GIVE_UP then
+            if Now - (S.EvadeResetStartedAt or Now) >= EVADE_RESET_GIVE_UP then
                 S.EvadeResetHumanoid = nil
                 return false
             end
@@ -644,6 +654,49 @@ return {
                 end
 
                 S.EvadeStrangersAt = Now
+            end
+
+            if S.EvadeStage == "ClearExp" then
+                -- No reset has been sent yet, so a departing stranger can
+                -- release the run without killing or teleporting the account.
+                if not Stranger then
+                    StrangersLeft(Now)
+                    return true
+                end
+
+                if Humanoid and (tonumber(Humanoid.Health) or 0) <= 0 then
+                    StopFlee(Humanoid)
+                    S.EvadeStage = "Travel"
+                elseif not Humanoid or not RootPart then
+                    SetStatus("EVADING  @" .. S.EvadeName .. "  WAITING FOR CHARACTER")
+                    return true
+                elseif CONFIG.BOSS_EVADE_SAFE_RESET ~= true then
+                    StopFlee(Humanoid)
+                    SetBlocking(false, Now)
+                    S.EvadeStage = "Reset"
+                else
+                    -- As with Safe Booster Reset, the game's damage tags are
+                    -- the reset gate. Do not turn a timeout into a forced death.
+                    -- A short clear window covers tags arriving between ticks.
+                    local Tagged = Boss.GetDamageTag() ~= nil
+                    if Tagged then S.EvadeSafeSince = nil end
+                    S.EvadeSafeSince = S.EvadeSafeSince or (not Tagged and Now or nil)
+                    if S.EvadeSafeSince and Now - S.EvadeSafeSince >= 2 then
+                        StopFlee(Humanoid)
+                        SetBlocking(false, Now)
+                        S.EvadeStage = "Reset"
+                    else
+                        AICCombat.S.ClosestTarget = nil
+                        local Running = Boss.FleeStep(Humanoid, RootPart, nil)
+                        if not Running then Humanoid:Move(Vector3.zero) end
+                        SetBlocking(true, Now)
+                        if AICFeature.TryHeal then AICFeature.TryHeal(Now) end
+                        SetStatus("EVADING  @" .. S.EvadeName .. "  "
+                            .. (Tagged and "WAITING FOR DAMAGE TAGS" or "CHECKING SAFE RESET")
+                            .. (Running and "  RUNNING" or ""))
+                        return true
+                    end
+                end
             end
 
             if S.EvadeStage == "Reset" then

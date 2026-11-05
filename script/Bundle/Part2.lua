@@ -5015,6 +5015,7 @@ SaveConfig.Settings = {
 { Key = "BOSS_RESET_ALWAYS_WAIT", Default = false },
 { Key = "BOSS_DEATH_FARM", Default = false },
 { Key = "BOSS_WAIT_FOR_SPAWN", Default = false },
+{ Key = "BOSS_EVADE_SAFE_RESET", Default = false },
 { Key = "BOSS_DUO_SYNC", Default = false },
 { Key = "BOSS_DUO_NAME", Default = "", Normalize = function(Value)
 return type(Value) == "string" and Value:gsub("^%s*(.-)%s*$", "%1") or ""

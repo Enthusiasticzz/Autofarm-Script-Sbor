@@ -1346,6 +1346,7 @@ return {
             if UIRef.BossResetModeDropdown then UIRef.BossResetModeDropdown:Set(GetResetMode(), true) end
             -- Duo preferences are profile settings, independent of the selected stop.
             if UIRef.BossDuoSyncToggle then UIRef.BossDuoSyncToggle:Set(CONFIG.BOSS_DUO_SYNC == true, true) end
+            if UIRef.EvadeSafeResetToggle then UIRef.EvadeSafeResetToggle:Set(CONFIG.BOSS_EVADE_SAFE_RESET == true, true) end
             if UIRef.BossDuoNameBox then UIRef.BossDuoNameBox:Set(tostring(CONFIG.BOSS_DUO_NAME or ""), true) end
             if UIRef.BossDuoRangeBox then UIRef.BossDuoRangeBox:Set(tostring(CONFIG.BOSS_DUO_RANGE or 35), true) end
             if UIRef.BossDuoTimeoutBox then UIRef.BossDuoTimeoutBox:Set(tostring(CONFIG.BOSS_DUO_WAIT_TIMEOUT or 0), true) end
@@ -2312,23 +2313,20 @@ return {
         --// run away from. The mob folder is read directly: this only runs
         --// while the reset hold is counting down.
         local function GetNearestMob(Position, Distance)
-            local MobFolder = workspace:FindFirstChild("Mobs")
             local BestRoot, BestDistance = nil, Distance
 
-            for _, Mob in ipairs(MobFolder and MobFolder:GetChildren() or {}) do
-                if Mob:IsA("Model") then
-                    local MobHumanoid = Mob:FindFirstChildOfClass("Humanoid")
-                    local MobRoot = Mob:FindFirstChild("HumanoidRootPart")
+            EachMob(function(Mob)
+                local MobHumanoid = Mob:FindFirstChildOfClass("Humanoid")
+                local MobRoot = Mob:FindFirstChild("HumanoidRootPart")
 
-                    if MobHumanoid and MobRoot and MobHumanoid.Health > 0 then
-                        local Flat = AICCombatUtils.GetHorizontalDistance(Position, MobRoot.Position)
+                if MobHumanoid and MobRoot and MobHumanoid.Health > 0 then
+                    local Flat = AICCombatUtils.GetHorizontalDistance(Position, MobRoot.Position)
 
-                        if Flat <= BestDistance then
-                            BestRoot, BestDistance = MobRoot, Flat
-                        end
+                    if Flat <= BestDistance then
+                        BestRoot, BestDistance = MobRoot, Flat
                     end
                 end
-            end
+            end)
 
             return BestRoot
         end
@@ -5277,6 +5275,16 @@ return {
 
             UIRef.EvadeSpotLabel = EvadeSection:AddLabel("HIDING SPOTS:  NONE")
 
+            UIRef.EvadeSafeResetToggle = EvadeSection:AddToggle{
+                Name = "Evade Before Reset",
+                Default = CONFIG.BOSS_EVADE_SAFE_RESET == true,
+                Description = "Stop attacking and flee all nearby mob types until your damage tags have cleared for 2 seconds, then reset and hide as usual. Off resets immediately.",
+                Callback = function(Value)
+                    CONFIG.BOSS_EVADE_SAFE_RESET = Value == true
+                    if AICProfile.S.ActiveProfileName then AICProfile.SaveActiveProfile() end
+                end,
+            }
+
             EvadeSection:AddNote("When someone who is not on your Block Whitelist shows up, the route stops. Your character resets, hides at one of your Hiding Spots, and waits 2-3 minutes for them to leave")
             EvadeSection:AddNote("They leave: the route starts again at stop #1")
             EvadeSection:AddNote("They stay: the game is closed, like Leave Instead Of Block")
@@ -5461,6 +5469,8 @@ return {
             ResetWalk = ResetWalk,
             EndDodge = EndDodge,
             StopFlee = StopFlee,
+            FleeStep = FleeStep,
+            GetDamageTag = GetDamageTag,
             ClearKillClock = ClearKillClock,
             SyncDeathMark = SyncDeathMark,
             GetFloorOverlap = GetFloorOverlap,

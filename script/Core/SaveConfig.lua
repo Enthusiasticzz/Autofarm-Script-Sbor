@@ -210,6 +210,7 @@ return {
             --// those still wait the stop's own Reset (s).
             { Key = "BOSS_DEATH_FARM", Default = false },
             { Key = "BOSS_WAIT_FOR_SPAWN", Default = false },
+            { Key = "BOSS_EVADE_SAFE_RESET", Default = false },
             --// Holds every boss stop until the duo is beside the character,
             --// then starts that stop's Wait At Spot (0 included).
             { Key = "BOSS_DUO_SYNC", Default = false },
