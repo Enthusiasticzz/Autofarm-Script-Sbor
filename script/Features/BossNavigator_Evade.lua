@@ -522,7 +522,7 @@ return {
             --// one; the departure latch it sets keeps the kick's own report
             --// from repeating the same leave with a single name.
             if FirstAsk and AICFeature.ReportHoldLeave then
-                AICFeature.ReportHoldLeave(FindStrangers())
+                AICFeature.ReportHoldLeave(FindStrangers(), math.max(0, Now - (S.EvadeSince or Now)))
             end
 
             if AICFeature.LeaveGame then

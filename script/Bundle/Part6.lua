@@ -987,7 +987,8 @@ table.insert(List, Value)
 return List
 end
 function Feature:BuildReport(Kind, Names, Waited)
-local Ending = Kind == "End"
+local Stayed = Kind == "Stayed"
+local Ending = Kind == "End" or Stayed
 local Waiting = Kind == "Waiting"
 local Left = Kind == "Left"
 local Currency = ReadCurrency()
@@ -1009,21 +1010,29 @@ elseif Left then
 local Who = ShortNames(Names)
 Head = "# " .. (Who ~= "" and Who or "A Player")
 .. " Left at " .. ZoneClock()
+elseif Stayed then
+Head = "# Macro Stopped: " .. (#Names == 1 and "Player Stayed Too Long" or "Players Stayed Too Long")
 elseif Ending then
 Head = "# Macro Turned off at " .. ZoneClock()
 else
 Head = "# Macro Started at " .. self:GetStartedClock()
 end
-local Lines = {
-Head,
-"Account: " .. Account,
-string.format("Floor: %s (%s)", GetPlaceName(game.PlaceId), tostring(game.PlaceId)),
-}
+local Lines = { Head }
+if Stayed then
+table.insert(Lines, "Stopped at: " .. ZoneClock())
+table.insert(Lines, "> Stop reason: The hiding timer expired because these players did not leave.")
+if #Names > 0 then table.insert(Lines, "> Still present: " .. NameList(Names)) end
+local HoldSeconds = tonumber(Waited) or 0
+if HoldSeconds > 0 then table.insert(Lines, "> Waited: " .. FormatDuration(HoldSeconds)) end
+table.insert(Lines, "")
+end
+table.insert(Lines, "Account: " .. Account)
+table.insert(Lines, string.format("Floor: %s (%s)", GetPlaceName(game.PlaceId), tostring(game.PlaceId)))
 if Waiting and #Names > 0 then
 table.insert(Lines, "Waiting on: " .. NameList(Names))
 elseif Left and #Names > 0 then
 table.insert(Lines, "Hid from: " .. NameList(Names))
-elseif Ending and #Names > 0 then
+elseif Ending and not Stayed and #Names > 0 then
 table.insert(Lines, "Left because of: " .. NameList(Names))
 end
 if Left then
@@ -1283,8 +1292,8 @@ return false
 end
 return Feature:PostReport("Left", true, AsList(Strangers), tonumber(Seconds) or 0)
 end
-AICFeature.ReportHoldLeave = function(Strangers)
-local Posted = Feature:PostReport("End", true, AsList(Strangers))
+AICFeature.ReportHoldLeave = function(Strangers, Seconds)
+local Posted = Feature:PostReport("Stayed", true, AsList(Strangers), tonumber(Seconds))
 if AICFeature.S ~= nil then
 AICFeature.S.LeaveStarted = true
 end

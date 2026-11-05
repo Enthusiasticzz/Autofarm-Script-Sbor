@@ -729,6 +729,10 @@ local function RefreshEditor()
 local Stop = SelectedStop()
 RefreshBoundsVisuals(GetStops())
 if UIRef.BossResetModeDropdown then UIRef.BossResetModeDropdown:Set(GetResetMode(), true) end
+if UIRef.BossDuoSyncToggle then UIRef.BossDuoSyncToggle:Set(CONFIG.BOSS_DUO_SYNC == true, true) end
+if UIRef.BossDuoNameBox then UIRef.BossDuoNameBox:Set(tostring(CONFIG.BOSS_DUO_NAME or ""), true) end
+if UIRef.BossDuoRangeBox then UIRef.BossDuoRangeBox:Set(tostring(CONFIG.BOSS_DUO_RANGE or 35), true) end
+if UIRef.BossDuoTimeoutBox then UIRef.BossDuoTimeoutBox:Set(tostring(CONFIG.BOSS_DUO_WAIT_TIMEOUT or 0), true) end
 if not Stop then
 return
 end
@@ -787,9 +791,6 @@ end
 if UIRef.BossLoopToggle then UIRef.BossLoopToggle:Set(CONFIG.BOSS_ROUTE_LOOP ~= false, true) end
 if UIRef.BossWaitForSpawnToggle then
 UIRef.BossWaitForSpawnToggle:Set(CONFIG.BOSS_WAIT_FOR_SPAWN == true, true)
-end
-if UIRef.BossDuoTimeoutBox then
-UIRef.BossDuoTimeoutBox:Set(tostring(CONFIG.BOSS_DUO_WAIT_TIMEOUT or 0), true)
 end
 AICUI.RefreshBossPathList()
 end
@@ -1891,6 +1892,9 @@ tonumber(CONFIG.BOSS_DUO_RANGE) or DEFAULT_DUO_RANGE,
 MIN_DUO_RANGE,
 MAX_DUO_RANGE
 )
+end
+local function SaveDuoSettings()
+if AICProfile.S.ActiveProfileName then AICProfile.SaveActiveProfile() end
 end
 local function TrimText(Value)
 return tostring(Value or ""):gsub("^%s*(.-)%s*$", "%1")
@@ -3168,7 +3172,7 @@ CONFIG.BOSS_DUO_SYNC = Value == true
 S.FightDuoCharacter, S.FightDuoName = nil, nil
 S.AwaitDuoCharacter, S.AwaitDuoName = nil, nil
 S.DuoWaitStartedAt, S.DuoWaitReleased, S.DuoWaitName = nil, false, nil
-AICProfile.WriteGlobalStore()
+SaveDuoSettings()
 SetStatus(CONFIG.BOSS_DUO_SYNC
 and "DUO SYNC  STOPS WAIT FOR THE DUO"
 or "DUO SYNC OFF")
@@ -3180,7 +3184,7 @@ Inline = true,
 Default = TrimText(CONFIG.BOSS_DUO_NAME),
 Callback = function(Value)
 CONFIG.BOSS_DUO_NAME = TrimText(Value)
-AICProfile.WriteGlobalStore()
+SaveDuoSettings()
 end,
 }
 UIRef.BossDuoRangeBox = UIRef.BossSection:AddTextBox{
@@ -3189,7 +3193,7 @@ Inline = true,
 Default = tostring(GetDuoRange()),
 Callback = function(Value)
 local Number = tonumber(Value)
-if not Number then
+if not Number or Number ~= Number or math.abs(Number) == math.huge then
 UIRef.BossDuoRangeBox:Set(tostring(GetDuoRange()), true)
 return
 end
@@ -3198,7 +3202,7 @@ math.floor(Number),
 MIN_DUO_RANGE,
 MAX_DUO_RANGE
 )
-AICProfile.WriteGlobalStore()
+SaveDuoSettings()
 UIRef.BossDuoRangeBox:Set(tostring(CONFIG.BOSS_DUO_RANGE), true)
 end,
 }
@@ -3217,8 +3221,7 @@ end
 CONFIG.BOSS_DUO_WAIT_TIMEOUT = math.clamp(Seconds, 0, 86400)
 S.DuoWaitStartedAt, S.DuoWaitReleased = nil, false
 UIRef.BossDuoTimeoutBox:Set(tostring(CONFIG.BOSS_DUO_WAIT_TIMEOUT), true)
-AICProfile.WriteGlobalStore()
-if AICProfile.S.ActiveProfileName then AICProfile.SaveActiveProfile() end
+SaveDuoSettings()
 end,
 }
 UIRef.BossLoopToggle = UIRef.BossSection:AddToggle{
@@ -3913,7 +3916,7 @@ S.EvadeKicked = true
 S.EvadeKickAt = Now
 SetStatus("EVADING  @" .. S.EvadeName .. "  STAYED  LEAVING")
 if FirstAsk and AICFeature.ReportHoldLeave then
-AICFeature.ReportHoldLeave(FindStrangers())
+AICFeature.ReportHoldLeave(FindStrangers(), math.max(0, Now - (S.EvadeSince or Now)))
 end
 if AICFeature.LeaveGame then
 AICFeature.LeaveGame("Boss Evasion: a stranger stayed for the whole hold", Stranger)

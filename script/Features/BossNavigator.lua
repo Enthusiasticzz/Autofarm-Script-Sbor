@@ -1343,6 +1343,11 @@ return {
             --// not tied to which stop is being edited.
             RefreshBoundsVisuals(GetStops())
             if UIRef.BossResetModeDropdown then UIRef.BossResetModeDropdown:Set(GetResetMode(), true) end
+            -- Duo preferences are profile settings, independent of the selected stop.
+            if UIRef.BossDuoSyncToggle then UIRef.BossDuoSyncToggle:Set(CONFIG.BOSS_DUO_SYNC == true, true) end
+            if UIRef.BossDuoNameBox then UIRef.BossDuoNameBox:Set(tostring(CONFIG.BOSS_DUO_NAME or ""), true) end
+            if UIRef.BossDuoRangeBox then UIRef.BossDuoRangeBox:Set(tostring(CONFIG.BOSS_DUO_RANGE or 35), true) end
+            if UIRef.BossDuoTimeoutBox then UIRef.BossDuoTimeoutBox:Set(tostring(CONFIG.BOSS_DUO_WAIT_TIMEOUT or 0), true) end
 
             if not Stop then
                 return
@@ -1406,9 +1411,6 @@ return {
             if UIRef.BossLoopToggle then UIRef.BossLoopToggle:Set(CONFIG.BOSS_ROUTE_LOOP ~= false, true) end
             if UIRef.BossWaitForSpawnToggle then
                 UIRef.BossWaitForSpawnToggle:Set(CONFIG.BOSS_WAIT_FOR_SPAWN == true, true)
-            end
-            if UIRef.BossDuoTimeoutBox then
-                UIRef.BossDuoTimeoutBox:Set(tostring(CONFIG.BOSS_DUO_WAIT_TIMEOUT or 0), true)
             end
             AICUI.RefreshBossPathList()
         end
@@ -3098,6 +3100,10 @@ return {
                 MIN_DUO_RANGE,
                 MAX_DUO_RANGE
             )
+        end
+
+        local function SaveDuoSettings()
+            if AICProfile.S.ActiveProfileName then AICProfile.SaveActiveProfile() end
         end
 
         local function TrimText(Value)
@@ -4967,7 +4973,7 @@ return {
                 S.FightDuoCharacter, S.FightDuoName = nil, nil
                 S.AwaitDuoCharacter, S.AwaitDuoName = nil, nil
                 S.DuoWaitStartedAt, S.DuoWaitReleased, S.DuoWaitName = nil, false, nil
-                AICProfile.WriteGlobalStore()
+                SaveDuoSettings()
                 SetStatus(CONFIG.BOSS_DUO_SYNC
                     and "DUO SYNC  STOPS WAIT FOR THE DUO"
                     or "DUO SYNC OFF")
@@ -4980,7 +4986,7 @@ return {
             Default = TrimText(CONFIG.BOSS_DUO_NAME),
             Callback = function(Value)
                 CONFIG.BOSS_DUO_NAME = TrimText(Value)
-                AICProfile.WriteGlobalStore()
+                SaveDuoSettings()
             end,
         }
 
@@ -4991,7 +4997,7 @@ return {
             Callback = function(Value)
                 local Number = tonumber(Value)
 
-                if not Number then
+                if not Number or Number ~= Number or math.abs(Number) == math.huge then
                     UIRef.BossDuoRangeBox:Set(tostring(GetDuoRange()), true)
                     return
                 end
@@ -5001,7 +5007,7 @@ return {
                     MIN_DUO_RANGE,
                     MAX_DUO_RANGE
                 )
-                AICProfile.WriteGlobalStore()
+                SaveDuoSettings()
                 UIRef.BossDuoRangeBox:Set(tostring(CONFIG.BOSS_DUO_RANGE), true)
             end,
         }
@@ -5021,8 +5027,7 @@ return {
                 CONFIG.BOSS_DUO_WAIT_TIMEOUT = math.clamp(Seconds, 0, 86400)
                 S.DuoWaitStartedAt, S.DuoWaitReleased = nil, false
                 UIRef.BossDuoTimeoutBox:Set(tostring(CONFIG.BOSS_DUO_WAIT_TIMEOUT), true)
-                AICProfile.WriteGlobalStore()
-                if AICProfile.S.ActiveProfileName then AICProfile.SaveActiveProfile() end
+                SaveDuoSettings()
             end,
         }
 

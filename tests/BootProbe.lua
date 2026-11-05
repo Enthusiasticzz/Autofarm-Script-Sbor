@@ -825,6 +825,31 @@ assert(posted == 2, "the same left report was posted twice")
 Context.AICFeature.ReportHoldCleared({}, 35)
 assert(posted == 2, "a left report with nobody to name was posted")
 
+-- A timed-out hold is a distinct, prominent stop reason, not an ordinary
+-- shutdown with player names mixed into the EXP/currency fields.
+local httpService=Context.Services.HttpService
+local originalEncode=httpService.JSONEncode
+local stayedPayload
+httpService.JSONEncode=function(_,value) stayedPayload=value; return "{}" end
+Context.CONFIG.DISCORD_HOLD_LOG=false
+Context.AICFeature.S.LeaveStarted=false
+Context.AICFeature.ReportHoldLeave({{Name="Intruder",UserId=2},{Name="OtherIntruder",UserId=3}},150)
+assert(posted==3,"stayed-too-long report was skipped when hiding logs were disabled")
+assert(Context.AICFeature.S.LeaveStarted==true,"stayed report didn't latch departure as reported")
+local stayedText=assert(stayedPayload).content
+assert(stayedText:find("# Macro Stopped: Players Stayed Too Long",1,true),"stayed-too-long stop didn't have its own headline")
+assert(stayedText:find("> Stop reason: The hiding timer expired",1,true),"stayed-too-long stop reason wasn't separated from session stats")
+assert(stayedText:find("> Still present: @Intruder (2), @OtherIntruder (3)",1,true),"stayed report lost the full player list")
+assert(stayedText:find("> Waited: 2 Minutes, 30 Seconds",1,true),"stayed report lost the wait duration")
+local reasonAt=assert(stayedText:find("> Stop reason:",1,true))
+local accountAt=assert(stayedText:find("Account:",1,true))
+assert(reasonAt<accountAt and stayedText:find("\n\nAccount:",1,true),"stop reason was mixed into the session stats")
+local normalEnd=Webhook:BuildReport("End",{{Name="Intruder",UserId=2}})
+assert(normalEnd:find("# Macro Turned off at",1,true) and not normalEnd:find("hiding timer expired",1,true),"normal stops were mislabeled as stayed-too-long")
+httpService.JSONEncode=originalEncode
+Context.CONFIG.DISCORD_HOLD_LOG=true
+print("WEBHOOK STAYED passed: separate headline/reason block, complete names/duration, mandatory departure report")
+
 request = nil
 http_request = nil
 
@@ -1367,5 +1392,47 @@ do
     mobs:Destroy(); character:Destroy()
     players.GetPlayers=realGetPlayers
     print("BOSS WAIT regression passed: spawn/duo priority, reset cycles, indefinite waits, timeout attacks current stop")
+end
+do
+    -- Use the real profile capture/save/apply code, with an in-memory disk,
+    -- to simulate reconnecting after editing the actual Duo controls.
+    ProfileCreationModule.Start(Context)
+    local profile=Context.AICProfile
+    profile.S.ActiveProfileName="Duo persistence"
+    profile.S.ProfileStore={Profiles={},LastUsed=nil}
+    local disk,writes,globalWrites=nil,0,0
+    profile.WriteProfileStore=function()
+        writes+=1
+        disk=profile.SerializeConfigValue(profile.S.ProfileStore)
+        return true
+    end
+    profile.WriteGlobalStore=function() globalWrites+=1 end
+    boss.BossDuoSyncToggle:Set(false,true)
+    boss.BossDuoSyncToggle:Set(true)
+    boss.BossDuoRangeBox:Set("82")
+    boss.BossDuoNameBox:Set("  PartnerPersist  ")
+    boss.BossDuoTimeoutBox:Set("19")
+    local reloaded=profile.DeserializeConfigValue(assert(disk))
+    local saved=reloaded.Profiles["Duo persistence"].SETTINGS
+    assert(saved.BOSS_DUO_SYNC==true and saved.BOSS_DUO_RANGE==82,"Duo Sync/range didn't persist to the profile")
+    assert(saved.BOSS_DUO_NAME=="PartnerPersist" and saved.BOSS_DUO_WAIT_TIMEOUT==19,"duo name/timeout didn't persist alongside sync/range")
+    assert(writes>=4 and globalWrites==0,"Duo controls still saved into the wrong store")
+    local writesBeforeLoad=writes
+    local place=Context.Runtime:GetPlaceConfig()
+    local oldStops=place.BOSS_ROUTE
+    place.BOSS_ROUTE={}
+    profile.ApplySettings({},place)
+    Context.AICUI.RefreshBossRoutePickers()
+    assert(boss.BossDuoSyncToggle:Get()==false and boss.BossDuoRangeBox:Get()=="35","default profile values weren't reflected in Duo controls")
+    profile.ApplySettings(saved,place)
+    Context.AICUI.RefreshBossRoutePickers()
+    assert(Context.CONFIG.BOSS_DUO_SYNC==true and Context.CONFIG.BOSS_DUO_RANGE==82,"reconnect didn't restore Duo values")
+    assert(boss.BossDuoSyncToggle:Get()==true and boss.BossDuoRangeBox:Get()=="82","loaded profile left Duo controls showing stale values")
+    assert(boss.BossDuoNameBox:Get()=="PartnerPersist" and boss.BossDuoTimeoutBox:Get()=="19","loaded profile didn't refresh all Duo controls")
+    assert(writes==writesBeforeLoad,"refreshing Duo controls rewrote the profile")
+    boss.BossDuoRangeBox:Set("invalid")
+    assert(Context.CONFIG.BOSS_DUO_RANGE==82 and boss.BossDuoRangeBox:Get()=="82" and writes==writesBeforeLoad,"invalid range overwrote the saved range")
+    place.BOSS_ROUTE=oldStops
+    print("DUO PERSISTENCE passed: actual control edits -> saved profile -> reconnect/apply -> matching controls, without callback rewrites")
 end
 print("BOOT PROBE PASSED")
