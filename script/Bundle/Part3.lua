@@ -2231,7 +2231,10 @@ end
 if AICCombat.S.RETREATING then
 AICFeature.SetFarmState("RETREAT (" .. tostring(AICCombat.S.RetreatReason or "?") .. ")")
 AICCombatUtils.S.DodgeOffRoute = RouteActive
-local RetreatMoved = AICCombat.RetreatFromGoblins(EnemyUsingSkill)
+local RetreatMoved = AICFeature.BossRetreatStep and AICFeature.BossRetreatStep(now)
+if RetreatMoved == nil then
+RetreatMoved = AICCombat.RetreatFromGoblins(EnemyUsingSkill)
+end
 AICCombatUtils.S.DodgeOffRoute = false
 local RouteDone = not PlaceConfig
 or type(PlaceConfig.WAYPOINTS) ~= "table"

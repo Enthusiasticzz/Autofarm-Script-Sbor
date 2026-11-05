@@ -2342,8 +2342,8 @@ return {
             return nil
         end
 
-        local function FleeStep(Humanoid, RootPart, Stop)
-            local MobRoot = GetNearestMob(RootPart.Position, HOLD_FLEE_DISTANCE)
+        local function FleeStep(Humanoid, RootPart, Stop, MobRoot)
+            MobRoot = MobRoot or GetNearestMob(RootPart.Position, HOLD_FLEE_DISTANCE)
 
             if not MobRoot then
                 StopFlee(Humanoid)
@@ -2528,6 +2528,7 @@ return {
             if not Humanoid or not RootPart or not TargetRoot then
                 return
             end
+            StopFlee(Humanoid)
 
             -- The live fight must obey the same walls as the dodge and the
             -- post-kill flee. Recover from knockback before resuming combat.
@@ -3188,6 +3189,39 @@ return {
             end
             return true
         end
+
+        -- Auto Farm's low-HP/skill retreat runs before BossStep. Own its
+        -- movement while at a bounded boss stop, leaving its heal/recovery
+        -- decisions intact and preventing its farm-zone fallback taking over.
+        local function BossRetreatStep(Now)
+            if not IsEnabled() then return nil end
+            local AtStop = S.Phase == "Fight" or (S.Phase == "Approach"
+                and (S.SpotWaitUntil ~= nil or S.DuoWaitStartedAt ~= nil))
+            local Stop = AtStop and CurrentStop()
+            if not Stop or not GetBoundsRect(Stop) then return nil end
+            local _, Humanoid, RootPart = Runtime:GetCharacter()
+            if not Humanoid or not RootPart then return nil end
+            if S.Phase == "Approach" then S.LastProgressAt, S.WalkStart = Now, Now end
+            if not InsideBounds(Stop, RootPart.Position, 0) then
+                local Back = ClampToBounds(Stop, RootPart.Position, BOUNDS_INSET)
+                AICCombatUtils.DoJumpIfObstacle(Back)
+                Humanoid:MoveTo(Back)
+            else
+                local Target = FindTarget(Stop, Now)
+                local MobRoot = Target and Target:FindFirstChild("HumanoidRootPart")
+                if MobRoot and AICCombatUtils.GetHorizontalDistance(RootPart.Position, MobRoot.Position) > HOLD_FLEE_DISTANCE then
+                    MobRoot = nil
+                end
+                if not FleeStep(Humanoid, RootPart, Stop, MobRoot) then Humanoid:Move(Vector3.zero) end
+            end
+            local DuoWaiting = IsWaitingForDuo(RootPart, Now)
+            SetStatus(string.format("STOP %d/%d  %sHEALING INSIDE FIGHT BOUNDS", S.Index, #GetStops(), DuoWaiting and "WAITING FOR DUO  " or ""))
+            return true
+        end
+        AICFeature.BossRetreatStep = BossRetreatStep
+        Context.Lifetime.OnEnd(function()
+            if AICFeature.BossRetreatStep == BossRetreatStep then AICFeature.BossRetreatStep = nil end
+        end)
 
         local function HoldForBoss(Stop, Now, Humanoid, RootPart, DuoWaiting, BossWaiting, WaitTarget)
             -- Waiting owns the frame and never expires as an unreachable walk.

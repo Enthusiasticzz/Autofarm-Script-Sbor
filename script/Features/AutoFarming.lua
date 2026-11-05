@@ -327,7 +327,10 @@ return {
                 --// On the route the dodge may land outside the farm zones,
                 --// which is where the route runs.
                 AICCombatUtils.S.DodgeOffRoute = RouteActive
-                local RetreatMoved = AICCombat.RetreatFromGoblins(EnemyUsingSkill)
+                local RetreatMoved = AICFeature.BossRetreatStep and AICFeature.BossRetreatStep(now)
+                if RetreatMoved == nil then
+                    RetreatMoved = AICCombat.RetreatFromGoblins(EnemyUsingSkill)
+                end
                 AICCombatUtils.S.DodgeOffRoute = false
 
                 --// With no mob close enough to flee from, the retreat stands still

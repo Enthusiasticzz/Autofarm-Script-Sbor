@@ -1217,9 +1217,34 @@ do
     beforeCorrection=attacks
     nav.FightStep(stop,1221); bounded(moves[#moves])
     assert(attacks==beforeCorrection and boss.BossStatusLabel.Instance.Text:find("WAITING FOR DUO",1,true),"duo wait allowed combat or lost its priority while returning inside")
+    -- The emergency health retreat runs before BossStep. Its dedicated hook
+    -- must own movement (including a stationary heal) so Auto Farm never falls
+    -- through to an unbounded retreat or a return-to-farm-zone destination.
+    Context.Feature.BossRoute.Enabled=true
+    Context.CONFIG.BOSS_DUO_SYNC=false
+    state.Phase="Fight"
+    root.Position,mobRoot.Position,hum.Health=vec(16,0,0),vec(18,0,0),25
+    assert(Context.AICFeature.BossRetreatStep(1222)==true,"low-HP retreat wasn't handled by boss bounds")
+    bounded(moves[#moves])
+    root.Position=vec(25,0,25)
+    assert(Context.AICFeature.BossRetreatStep(1223)==true,"low-HP knockback recovery wasn't handled")
+    bounded(moves[#moves])
+    assert(moves[#moves].X==18 and moves[#moves].Z==18,"healing retreat didn't return to the box")
+    root.Position,mobRoot.Position=vec(0,0,0),vec(100,0,0)
+    local movesBeforeHeal=#moves
+    assert(Context.AICFeature.BossRetreatStep(1224)==true and #moves==movesBeforeHeal,"stationary healing released the farm-zone fallback")
+    state.Phase,state.SpotWaitUntil="Approach",1230
+    assert(Context.AICFeature.BossRetreatStep(1225)==true and state.LastProgressAt==1225,"healing during spot wait could time out the stop")
+    state.SpotWaitUntil,state.DuoWaitStartedAt=nil,nil
+    assert(Context.AICFeature.BossRetreatStep(1226)==nil,"boss bounds constrained travel before reaching the stop")
+    state.Phase="Fight"; stop.Bounds=nil
+    assert(Context.AICFeature.BossRetreatStep(1227)==nil,"unbounded boss stop lost normal retreat")
+    stop.Bounds=bounds; Context.Feature.BossRoute.Enabled=false
+    assert(Context.AICFeature.BossRetreatStep(1228)==nil,"disabled boss route restricted normal farming")
+    hum.Health=100
     nav.StopRoute()
     Vector3.new,Vector3.xAxis=originalVectorNew,originalXAxis
-    print("BOSS BOUNDS passed: live dodge, chase, step-off, knockback, duo wait, and no/partial bounds")
+    print("BOSS BOUNDS passed: live dodge/chase, low-HP healing retreat, knockback, wait, and unbounded fallback")
     -- Spawn readiness is an additional condition, never a replacement for the
     -- configured spot wait. Duo readiness starts that timer, as before.
     Context.CONFIG.BOSS_DUO_SYNC=false
