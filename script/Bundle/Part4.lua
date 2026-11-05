@@ -5417,7 +5417,7 @@ local RunService = game:GetService("RunService")
 local SCAN_INTERVAL = 0.5
 local MEASURE_PER_SCAN = 12
 local LABEL_INTERVAL = 0.25
-local OUTLINE_BUDGET = 96 -- Leave native Highlight slots for the game.
+local OUTLINE_BUDGET = 24 -- Bound per-frame body projection work.
 local TEXT_SIZE = 14
 local KINDS = { "Player", "Mob", "Weapon" }
 local TITLES = { Player = "Players", Mob = "Mobs", Weapon = "Weapons" }
@@ -5442,7 +5442,6 @@ BoxStyle = "Full",
 },
 Timer = 0,
 LabelRefresh = 0,
-OutlineCount = 0,
 }
 for _, Kind in ipairs(KINDS) do
 S.Kinds[Kind] = {
@@ -5518,8 +5517,6 @@ end
 return false
 end
 local function Remove(Target, Entry)
-if Entry.Highlight then pcall(function() Entry.Highlight:Destroy() end) end
-if Entry.CountedOutline then S.OutlineCount -= 1; Entry.CountedOutline = false end
 if Entry.Frame then pcall(function() Entry.Frame:Destroy() end) end
 if Entry.ShadowFrame then pcall(function() Entry.ShadowFrame:Destroy() end) end
 if Entry.TextParts then
@@ -5528,7 +5525,7 @@ if Part.Draw then pcall(function() Part.Draw:Remove() end) end
 if Part.Gui then pcall(function() Part.Gui:Destroy() end) end
 end
 end
-for _, Key in ipairs({ "BoxLines", "BoxShadow" }) do
+for _, Key in ipairs({ "BoxLines", "BoxShadow", "ContourLines", "ContourShadow" }) do
 local List = Entry[Key]
 if List then
 for _, Object in ipairs(List) do
@@ -5579,21 +5576,20 @@ Clear()
 S.Timer = SCAN_INTERVAL
 end
 LoadSettings()
-local Root, HighlightFolder
+local Root
 local function TryParent(Gui, Parent)
 if not Parent then return false end
 local Ok = pcall(function() Gui.Parent = Parent end)
 return Ok and Gui.Parent == Parent
 end
 local function GetRoot()
-if Root and Root.Parent and HighlightFolder and HighlightFolder.Parent then
+if Root and Root.Parent then
 return Root
 end
 if Root then
 pcall(function() Root:Destroy() end)
 end
-if HighlightFolder then HighlightFolder:Destroy() end
-Root, HighlightFolder = nil, nil
+Root = nil
 Clear()
 local Gui = Instance.new("ScreenGui")
 Gui.Name = "AICEsp"
@@ -5617,10 +5613,7 @@ if not Parented then
 Gui:Destroy()
 return nil
 end
-local Folder = Instance.new("Folder")
-Folder.Name = "Outlines"
-Folder.Parent = workspace
-Root, HighlightFolder = Gui, Folder
+Root = Gui
 return Root
 end
 local CORNERS = {}
@@ -5839,6 +5832,47 @@ SetLabelText(Target, Entry.Kind, Entry)
 end
 end
 end
+local DrawingApi
+do
+local Ok, Api = pcall(function() return Drawing end)
+if Ok and Api then
+local Created, Probe = pcall(function() return Api.new("Line") end)
+if Created and Probe then
+Probe.Visible = false
+Probe:Remove()
+DrawingApi = Api
+end
+end
+end
+local ActiveOccluders = {}
+local function Subtract(Intervals, First, Last)
+local Result = {}
+for _, Interval in ipairs(Intervals) do
+local A, B = Interval[1], Interval[2]
+if Last <= A or First >= B then table.insert(Result, Interval)
+else
+if First > A then table.insert(Result, { A, First }) end
+if Last < B then table.insert(Result, { Last, B }) end
+end
+end
+return Result
+end
+local function InsideInterval(A, B, Polygon, Inset)
+local First, Last = 0, 1
+local DX, DY = B.X - A.X, B.Y - A.Y
+for Index, P in ipairs(Polygon) do
+local Q = Polygon[Index % #Polygon + 1]
+local EX, EY = Q.X - P.X, Q.Y - P.Y
+local F = EX * (A.Y - P.Y) - EY * (A.X - P.X) - (Inset or 0)
+local D = EX * DY - EY * DX
+if math.abs(D) < .00001 then
+if F < 0 then return nil end
+elseif D > 0 then First = math.max(First, -F / D)
+else Last = math.min(Last, -F / D) end
+if First >= Last then return nil end
+end
+return First, Last
+end
 local function DisposeLines(List)
 if not List then return end
 for _, Line in ipairs(List) do
@@ -5848,6 +5882,52 @@ end
 local function MakeLines(Count, Color, Thickness)
 local List = {}
 for Index = 1, Count do
+if DrawingApi then
+local Data = { Color = Color, Thickness = Thickness, Objects = {} }
+local function ObjectAt(I)
+if not Data.Objects[I] then
+local Object = DrawingApi.new("Line")
+Object.Transparency, Object.Visible = 1, false
+pcall(function() Object.ZIndex = Color == BLACK and 1 or 2 end)
+Data.Objects[I] = Object
+end
+return Data.Objects[I]
+end
+ObjectAt(1)
+Data.Remove = function()
+for _, Object in ipairs(Data.Objects) do Object:Remove() end
+end
+List[Index] = setmetatable({}, {
+__index = Data,
+__newindex = function(_, Key, Value)
+Data[Key] = Value
+if Key ~= "Visible" then return end
+local Intervals = {}
+if Value and Data.From and Data.To then
+Intervals = { { 0, 1 } }
+for _, Rect in ipairs(ActiveOccluders) do
+local Pad = Data.Thickness * .5 + 1
+local Polygon = {
+Vector2.new(Rect[1]-Pad,Rect[2]-Pad), Vector2.new(Rect[3]+Pad,Rect[2]-Pad),
+Vector2.new(Rect[3]+Pad,Rect[4]+Pad), Vector2.new(Rect[1]-Pad,Rect[4]+Pad),
+}
+local First, Last = InsideInterval(Data.From, Data.To, Polygon)
+if First then Intervals = Subtract(Intervals, First, Last) end
+if #Intervals == 0 then break end
+end
+end
+for I, Interval in ipairs(Intervals) do
+local Object = ObjectAt(I)
+local Delta = Data.To - Data.From
+Object.From = Data.From + Delta * Interval[1]
+Object.To = Data.From + Delta * Interval[2]
+Object.Color, Object.Thickness = Data.Color, Data.Thickness
+Object.Visible = true
+end
+for I = #Intervals + 1, #Data.Objects do Data.Objects[I].Visible = false end
+end,
+})
+else
 local Frame = Instance.new("Frame")
 Frame.Name = "EspEdge"
 Frame.BorderSizePixel = 0
@@ -5870,33 +5950,40 @@ end,
 Data.Remove = function() Frame:Destroy() end
 List[Index] = Line
 end
+end
 return List
 end
 local function AddOutline(Entry, Target, C, Kind)
-local Highlight = Instance.new("Highlight")
-Highlight.Name = Kind
-Highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-Highlight.FillColor = C.Color
-Highlight.FillTransparency = .999
-Highlight.Enabled = false
-Highlight.OutlineColor = C.Color
-Highlight.OutlineTransparency = 0
-Highlight.Adornee = Target
-Highlight.Parent = Target
-Entry.Highlight = Highlight
-Entry.CountedOutline = true
-S.OutlineCount += 1
+local Parts = {}
+for _, Part in ipairs(Target:GetDescendants()) do
+if Part:IsA("BasePart") and Part.Name ~= "HumanoidRootPart" and Part.Transparency < 1 then
+local Parent, Excluded = Part.Parent, false
+while Parent and Parent ~= Target do
+if Kind ~= "Weapon" and (Parent:IsA("Accessory") or Parent:IsA("Tool")
+or Parent.Name == "Sword" or Parent.Name == "Sword2" or Parent.Name == "Weapon") then
+Excluded = true
+break
+end
+Parent = Parent.Parent
+end
+if not Excluded then table.insert(Parts, Part) end
+if #Parts >= 24 then break end
+end
+end
+Entry.BodyParts = Parts
 end
 local function EnsureOutline(Entry, Target, C, Kind)
 local Camera, Anchor = workspace.CurrentCamera, Entry.Anchor
 local InRange = Camera and Anchor and Anchor.Parent
 and (Anchor.Position - Camera.CFrame.Position).Magnitude <= S.Settings.Range
 and (not Entry.Humanoid or Entry.Humanoid.Health > 0)
-if InRange and Entry.Highlight and Entry.Highlight.Parent == Target then return end
-if Entry.Highlight then pcall(function() Entry.Highlight:Destroy() end) end
-if Entry.CountedOutline then S.OutlineCount -= 1; Entry.CountedOutline = false end
-Entry.Highlight = nil
-if not InRange or S.OutlineCount >= OUTLINE_BUDGET then return end
+if not InRange then
+Entry.BodyParts = nil
+DisposeLines(Entry.ContourLines)
+DisposeLines(Entry.ContourShadow)
+Entry.ContourLines, Entry.ContourShadow = nil, nil
+return
+end
 local Ok, Error = pcall(AddOutline, Entry, Target, C, Kind)
 if not Ok and not Entry.OutlineError then
 warn("[AIC] ESP outline failed for " .. tostring(Target.Name) .. ": " .. tostring(Error))
@@ -6048,7 +6135,7 @@ end
 local Measured = 0
 for Target, Entry in pairs(S.Entries) do
 if Target.Parent and (Entry.BoxHeight == nil or not Entry.Anchor or not Entry.Anchor.Parent)
-and (Entry.Frame or Entry.BoxLines or Entry.TextParts or Entry.Highlight) then
+and (Entry.Frame or Entry.BoxLines or Entry.TextParts or Entry.BodyParts) then
 if Measured >= MEASURE_PER_SCAN then break end
 Measure(Target, Entry)
 Measured += 1
@@ -6088,6 +6175,89 @@ end
 Line.From = Vector2.new(X1, Y1)
 Line.To = Vector2.new(X2, Y2)
 end
+local function Cross(A, B, C)
+return (B.X-A.X)*(C.Y-A.Y) - (B.Y-A.Y)*(C.X-A.X)
+end
+local function ProjectHull(Part, Camera)
+local Points = {}
+for _, Corner in ipairs(CORNERS) do
+local P = Camera:WorldToViewportPoint(Part.CFrame:PointToWorldSpace(Corner * Part.Size))
+if P.Z <= .05 then return nil end
+table.insert(Points, Vector2.new(P.X, P.Y))
+end
+table.sort(Points, function(A,B) return A.X < B.X or (A.X == B.X and A.Y < B.Y) end)
+local Hull = {}
+for _, P in ipairs(Points) do
+while #Hull >= 2 and Cross(Hull[#Hull-1], Hull[#Hull], P) <= 0 do table.remove(Hull) end
+table.insert(Hull, P)
+end
+local Lower = #Hull
+for I = #Points-1, 1, -1 do
+local P = Points[I]
+while #Hull > Lower and Cross(Hull[#Hull-1], Hull[#Hull], P) <= 0 do table.remove(Hull) end
+table.insert(Hull, P)
+end
+table.remove(Hull)
+return #Hull >= 3 and Hull or nil
+end
+local function DrawContour(Entry, Camera, Show, Thickness)
+Entry.ContourLines = Entry.ContourLines or {}
+Entry.ContourShadow = Entry.ContourShadow or {}
+local Hulls = {}
+if Show then
+for _, Part in ipairs(Entry.BodyParts or {}) do
+if Part.Parent then
+local Hull = ProjectHull(Part, Camera)
+if Hull then
+local X1,Y1,X2,Y2 = math.huge,math.huge,-math.huge,-math.huge
+for _, P in ipairs(Hull) do
+X1,Y1,X2,Y2 = math.min(X1,P.X),math.min(Y1,P.Y),math.max(X2,P.X),math.max(Y2,P.Y)
+end
+local Hidden = false
+for _, Rect in ipairs(ActiveOccluders) do
+if X1-Thickness>=Rect[1] and Y1-Thickness>=Rect[2]
+and X2+Thickness<=Rect[3] and Y2+Thickness<=Rect[4] then Hidden=true; break end
+end
+if not Hidden then table.insert(Hulls, Hull) end
+end
+end
+end
+end
+local Count, Color = 0, S.Kinds[Entry.Kind].Color
+for Index, Hull in ipairs(Hulls) do
+for I, A in ipairs(Hull) do
+local B = Hull[I % #Hull + 1]
+local Intervals = { {0,1} }
+for OtherIndex, Other in ipairs(Hulls) do
+if Index ~= OtherIndex then
+local First, Last = InsideInterval(A, B, Other, .0001)
+if First then Intervals = Subtract(Intervals, First, Last) end
+if #Intervals == 0 then break end
+end
+end
+for _, Interval in ipairs(Intervals) do
+local Delta = B - A
+local P, Q = A + Delta * Interval[1], A + Delta * Interval[2]
+if (Q-P).Magnitude >= .5 then
+Count += 1
+if not Entry.ContourLines[Count] then
+Entry.ContourShadow[Count] = MakeLines(1, BLACK, Thickness+2)[1]
+Entry.ContourLines[Count] = MakeLines(1, Color, Thickness)[1]
+end
+local Back, Line = Entry.ContourShadow[Count], Entry.ContourLines[Count]
+Back.Thickness, Line.Thickness, Line.Color = Thickness+2, Thickness, Color
+SetLine(Back, P.X, P.Y, Q.X, Q.Y)
+SetLine(Line, P.X, P.Y, Q.X, Q.Y)
+Back.Visible, Line.Visible = true, true
+end
+end
+end
+end
+for I = Count+1, #Entry.ContourLines do
+Entry.ContourLines[I].Visible = false
+Entry.ContourShadow[I].Visible = false
+end
+end
 local function MenuBounds()
 local UI = Context.UI
 if UI and not UI.Destroyed and type(UI.GetOcclusionRects) == "function" then
@@ -6107,10 +6277,9 @@ return false
 end
 local function HideDrawings()
 for _, Entry in pairs(S.Entries) do
-if Entry.Highlight then Entry.Highlight.Enabled = false end
 if Entry.Frame then Entry.Frame.Visible = false end
 if Entry.ShadowFrame then Entry.ShadowFrame.Visible = false end
-for _, Lines in ipairs({ Entry.BoxLines or {}, Entry.BoxShadow or {} }) do
+for _, Lines in ipairs({ Entry.BoxLines or {}, Entry.BoxShadow or {}, Entry.ContourLines or {}, Entry.ContourShadow or {} }) do
 for _, Line in ipairs(Lines) do Line.Visible = false end
 end
 for _, Part in ipairs(Entry.TextParts or {}) do
@@ -6129,34 +6298,30 @@ local CameraPosition = Camera.CFrame.Position
 local Viewport = Camera.ViewportSize
 local Range = S.Settings.Range
 local Occluders = MenuBounds()
+ActiveOccluders = Occluders
+local Outlined = 0
 for Target, Entry in pairs(S.Entries) do
 local Frame, ShadowFrame = Entry.Frame, Entry.ShadowFrame
 local TextParts = Entry.TextParts
 local Lines, Shadow = Entry.BoxLines, Entry.BoxShadow
-if Frame or TextParts or Lines or Entry.Highlight then
+if Frame or TextParts or Lines or Entry.BodyParts or Entry.ContourLines then
 local X1, Y1, X2, Y2
 local Anchor = Entry.Anchor
 local Distance = math.huge
 if Anchor and Anchor.Parent then
 Distance = (Anchor.Position - CameraPosition).Magnitude
 local Alive = not Entry.Humanoid or Entry.Humanoid.Health > 0
-if Entry.Highlight then
-Entry.Highlight.Enabled = Target.Parent ~= nil and Alive and Distance <= Range
-end
 if Target.Parent and Alive and Entry.BoxHeight and Distance <= Range then
 X1, Y1, X2, Y2 = ProjectUpright(Anchor.Position, Entry, Camera)
 end
-elseif Entry.Highlight then
-Entry.Highlight.Enabled = false
 end
 if X1 and (X2 < 0 or Y2 < 0 or X1 > Viewport.X or Y1 > Viewport.Y) then
 X1 = nil
 end
 local Thickness = ThicknessFor(Distance)
 local Edge = Thickness + 2
-if X1 and Covered(X1 - Edge, Y1 - Edge, X2 + Edge, Y2 + Edge, Occluders) then
+if X1 and not Entry.BodyParts and Covered(X1 - Edge, Y1 - Edge, X2 + Edge, Y2 + Edge, Occluders) then
 X1 = nil
-if Entry.Highlight then Entry.Highlight.Enabled = false end
 end
 local TextSize = TextSizeFor()
 local Style = Entry.BoxStyle or "Full"
@@ -6208,6 +6373,12 @@ else
 Frame.Visible = false
 if ShadowFrame then ShadowFrame.Visible = false end
 end
+end
+if Entry.BodyParts or Entry.ContourLines then
+local Show = X1 ~= nil and Entry.BodyParts ~= nil
+and (Outlined < OUTLINE_BUDGET or Entry.Owner == Player)
+if Show then Outlined += 1 end
+DrawContour(Entry, Camera, Show, Thickness)
 end
 if TextParts then
 local Pad = 4 + Thickness
@@ -6294,7 +6465,6 @@ local function Recolor(Kind)
 local Color = S.Kinds[Kind].Color
 for _, Entry in pairs(S.Entries) do
 if Entry.Kind == Kind then
-if Entry.Highlight then Entry.Highlight.OutlineColor = Color end
 if Entry.Stroke then Entry.Stroke.Color = Color end
 if Entry.TextParts then
 for _, Part in ipairs(Entry.TextParts) do
@@ -6424,7 +6594,6 @@ end
 RenderConnection:Disconnect()
 Clear()
 if Root then Root:Destroy() end
-if HighlightFolder then HighlightFolder:Destroy() end
 end)
 return Feature
 end,
@@ -7159,172 +7328,6 @@ AICUI.BindFeatureToggle("JumpWhileFighting", "Jump While Fighting", function()
 AICCombatUtils.ResetStuckTracker()
 end, UIRef.CombatSection)
 return Feature
-end,
-}
-]======],
-	["Features/Minezone.lua"] = [======[
-return {
-Name = "Minezone",
-Dependencies = {"Runtime", "ProfileManager", "Components", "DebugVisualizer"},
-Start = function(Context)
-local Runtime = Context.Runtime
-local AICConfig = Context.AICConfig
-local AICProfile = Context.AICProfile
-local AICUI = Context.AICUI
-local AICDebug = Context.AICDebug
-local UIRef = Context.UIRef
-local NotifyAction = Context.NotifyAction
-local DEFAULT_RADIUS = 60
-local MIN_RADIUS = 5
-local MAX_RADIUS = 300
-local Module = { Name = "Minezone" }
-AICProfile.S.SelectedMineZoneIndex = 1
-local function GetMineZones()
-return Runtime:GetPlaceConfig().MINE_ZONES
-end
-local function GetLabels()
-return AICUI.BuildZoneLabels(GetMineZones(), "Mine")
-end
-local function CanEdit(Message)
-if AICProfile.S.ActiveProfileName then
-return true
-end
-AICUI.SetProfileStatus(Message or "CREATE / LOAD PROFILE FIRST")
-return false
-end
-local function Commit(Status)
-Runtime:SetPlaceConfig(AICConfig.NormalizePlaceConfig(Runtime:GetPlaceConfig()))
-AICUI.RefreshMineZoneList()
-AICUI.RefreshMineZonePicker()
-AICProfile.SaveActiveProfile()
-AICDebug.UpdateDebugVisualizer()
-AICUI.SetProfileStatus(Status)
-end
-UIRef.MineZoneSection = UIRef.MineTab:AddSection{ Title = "Mining Zones", Side = "Left" }
-UIRef.MineRadiusSlider = UIRef.MineZoneSection:AddSlider{
-Name = "Mine Zone Radius",
-Default = DEFAULT_RADIUS,
-Min = MIN_RADIUS,
-Max = MAX_RADIUS,
-Callback = function(Value)
-local Zone = GetMineZones()[AICProfile.S.SelectedMineZoneIndex]
-if not Zone or not AICProfile.S.ActiveProfileName then
-return
-end
-Zone.Radius = Value
-AICUI.RefreshMineZoneList()
-AICDebug.UpdateDebugVisualizer()
-AICProfile.QueueProfileSave()
-end,
-}
-UIRef.MineZoneSection:AddButton{
-Name = "Add Mine Zone Here",
-Callback = function()
-local _, _, RootPart = Runtime:GetCharacter()
-if not RootPart then
-AICUI.SetProfileStatus("CHARACTER NOT READY")
-return
-end
-if not CanEdit() then
-return
-end
-table.insert(GetMineZones(), {
-Center = AICConfig.RoundVector3(RootPart.Position),
-Radius = UIRef.MineRadiusSlider:Get(),
-})
-AICProfile.S.SelectedMineZoneIndex = #GetMineZones()
-Commit("MINE ZONE ADDED #" .. tostring(#GetMineZones()))
-end,
-}
-UIRef.MineZoneSection:AddButton{
-Name = "Clear Mine Zones",
-Callback = function()
-if not CanEdit() then
-return
-end
-table.clear(GetMineZones())
-AICProfile.S.SelectedMineZoneIndex = 1
-Commit("MINE ZONES CLEARED")
-NotifyAction("Mine Zone", "Cleared all mine zones")
-end,
-}
-UIRef.MineZoneListComponent = UIRef.MineZoneSection:AddPriority("All Mine Zones", GetLabels())
-local OriginalMoveUp = UIRef.MineZoneListComponent.MoveUp
-local OriginalMoveDown = UIRef.MineZoneListComponent.MoveDown
-local OriginalRemove = UIRef.MineZoneListComponent.Remove
-local function MoveZone(Component, Label, Delta, Original, Status)
-if not CanEdit("DEFAULT PLACE_CONFIG IS READ-ONLY") then
-return
-end
-local Zones = GetMineZones()
-local Index = table.find(GetLabels(), Label)
-local Other = Index and Index + Delta
-if not Other or Other < 1 or Other > #Zones then
-return
-end
-Zones[Index], Zones[Other] = Zones[Other], Zones[Index]
-Original(Component, Label)
-AICProfile.S.SelectedMineZoneIndex = Other
-Commit(Status)
-end
-function UIRef.MineZoneListComponent:MoveUp(Label)
-MoveZone(self, Label, -1, OriginalMoveUp, "MINE ZONE MOVED UP")
-end
-function UIRef.MineZoneListComponent:MoveDown(Label)
-MoveZone(self, Label, 1, OriginalMoveDown, "MINE ZONE MOVED DOWN")
-end
-function UIRef.MineZoneListComponent:Remove(Label)
-if not CanEdit("DEFAULT PLACE_CONFIG IS READ-ONLY") then
-return
-end
-local Index = table.find(GetLabels(), Label)
-if not Index then
-return
-end
-table.remove(GetMineZones(), Index)
-OriginalRemove(self, Label)
-AICProfile.S.SelectedMineZoneIndex = math.clamp(Index, 1, math.max(1, #GetMineZones()))
-Commit("MINE ZONE REMOVED #" .. tostring(Index))
-end
-function AICUI.RefreshMineZoneList()
-AICUI.ReplacePriorityList(UIRef.MineZoneListComponent, GetLabels())
-end
-function AICUI.RefreshMineZonePicker()
-local Zones = GetMineZones()
-local Options = AICUI.GetZonePickerOptions(Zones, "Mine")
-local Old = UIRef.MineZonePicker
-local Order = Old and Old.Row and Old.Row.LayoutOrder
-if Old then
-Old:Remove()
-end
-AICProfile.S.SelectedMineZoneIndex = math.clamp(AICProfile.S.SelectedMineZoneIndex, 1, math.max(1, #Zones))
-UIRef.MineZonePicker = UIRef.MineZoneSection:AddDropdown{
-Name = "Edit Mine Zone",
-Options = Options,
-Callback = function(Value)
-local Index = table.find(Options, Value)
-local Zone = Index and GetMineZones()[Index]
-if not Zone then
-return
-end
-AICProfile.S.SelectedMineZoneIndex = Index
-UIRef.MineRadiusSlider:Set(tonumber(Zone.Radius) or DEFAULT_RADIUS, true)
-end,
-}
-if Order and UIRef.MineZonePicker.Row then
-UIRef.MineZonePicker.Row.LayoutOrder = Order
-end
-local Selected = Options[AICProfile.S.SelectedMineZoneIndex] or Options[1]
-if Selected then
-UIRef.MineZonePicker:Set(Selected, true)
-local Zone = Zones[AICProfile.S.SelectedMineZoneIndex]
-if Zone then
-UIRef.MineRadiusSlider:Set(tonumber(Zone.Radius) or DEFAULT_RADIUS, true)
-end
-end
-end
-AICUI.RefreshMineZonePicker()
-return Module
 end,
 }
 ]======],

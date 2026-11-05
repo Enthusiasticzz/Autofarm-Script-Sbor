@@ -1,10 +1,10 @@
 -- Esp outlines players, mobs and equipped weapons in the world.
 --
--- Each enabled kind draws either an outline (Highlight) or a 2D box, never
+-- Each enabled kind draws either a projected body contour or a 2D box, never
 -- both. Name and health form a compact block above the box; level, mob EXP
--- and distance share one line below it. Outlines live in Workspace.
--- Boxes and labels share a GUI layer below every menu. Fully covered targets
--- are culled; partially covered targets remain behind the window surfaces.
+-- and distance share one line below it. Drawing lines follow the readable
+-- Blissful reference implementations; menu rectangles clip only covered line
+-- segments. GUI labels and the no-Drawing fallback live below the menu layer.
 --
 -- The box look follows the reference ESPs: a black backing behind a thinner
 -- coloured box, and corner brackets instead of a closed box if that style is
@@ -44,7 +44,7 @@ return {
         --// Label text is refreshed this often from the render loop, so it
         --// reads live instead of at the scan's rate.
         local LABEL_INTERVAL = 0.25
-        local OUTLINE_BUDGET = 96 -- Leave native Highlight slots for the game.
+        local OUTLINE_BUDGET = 24 -- Bound per-frame body projection work.
         --// Every piece of text is the same pixel size at any distance, like
         --// the popular ESP libraries. Change this one number to resize all
         --// of it.
@@ -68,7 +68,7 @@ return {
 
         local S = {
             Kinds = {},
-            --// [Target] = { Kind, BoxStyle, Highlight?, BoxLines?, BoxShadow?,
+            --// [Target] = { Kind, BoxStyle, BodyParts?, ContourLines?, BoxLines?, BoxShadow?,
             --//              Frame?, Stroke?, TextParts?, Anchor?,
             --//              BoxHeight?/BoxWidth?/BoxOffsetY? }
             Entries = {},
@@ -81,7 +81,6 @@ return {
             },
             Timer = 0,
             LabelRefresh = 0,
-            OutlineCount = 0,
         }
         for _, Kind in ipairs(KINDS) do
             S.Kinds[Kind] = {
@@ -180,8 +179,6 @@ return {
         end
 
         local function Remove(Target, Entry)
-            if Entry.Highlight then pcall(function() Entry.Highlight:Destroy() end) end
-            if Entry.CountedOutline then S.OutlineCount -= 1; Entry.CountedOutline = false end
             if Entry.Frame then pcall(function() Entry.Frame:Destroy() end) end
             if Entry.ShadowFrame then pcall(function() Entry.ShadowFrame:Destroy() end) end
             if Entry.TextParts then
@@ -190,7 +187,7 @@ return {
                     if Part.Gui then pcall(function() Part.Gui:Destroy() end) end
                 end
             end
-            for _, Key in ipairs({ "BoxLines", "BoxShadow" }) do
+            for _, Key in ipairs({ "BoxLines", "BoxShadow", "ContourLines", "ContourShadow" }) do
                 local List = Entry[Key]
                 if List then
                     for _, Object in ipairs(List) do
@@ -264,7 +261,7 @@ return {
         -- ScreenGui root
         ----------------------------------------------------------------------
 
-        local Root, HighlightFolder
+        local Root
 
         local function TryParent(Gui, Parent)
             if not Parent then return false end
@@ -272,21 +269,20 @@ return {
             return Ok and Gui.Parent == Parent
         end
 
-        --// One ScreenGui holds the highlights and, when there is no Drawing
-        --// API, every box and label. It goes in a hidden UI container when
+        --// One ScreenGui holds labels and the no-Drawing fallback edges.
+        --// It goes in the same UI container as the menu when
         --// the executor has one, then CoreGui, then PlayerGui.
         --// If it is ever lost (PlayerGui reset, etc.) it is rebuilt and all
         --// entries are redrawn on the same scan.
         local function GetRoot()
-            if Root and Root.Parent and HighlightFolder and HighlightFolder.Parent then
+            if Root and Root.Parent then
                 return Root
             end
 
             if Root then
                 pcall(function() Root:Destroy() end)
             end
-            if HighlightFolder then HighlightFolder:Destroy() end
-            Root, HighlightFolder = nil, nil
+            Root = nil
             Clear()
 
             local Gui = Instance.new("ScreenGui")
@@ -313,12 +309,7 @@ return {
                 return nil
             end
 
-            local Folder = Instance.new("Folder")
-            Folder.Name = "Outlines"
-            -- Highlights belong to the world render tree, not the UI tree.
-            Folder.Parent = workspace
-
-            Root, HighlightFolder = Gui, Folder
+            Root = Gui
             return Root
         end
 
@@ -645,6 +636,54 @@ return {
         -- Building the pieces
         ----------------------------------------------------------------------
 
+        -- The readable Blissful references use Drawing.Line, with an opaque
+        -- black backing and a thinner colored line. Keep that executor path.
+        local DrawingApi
+        do
+            local Ok, Api = pcall(function() return Drawing end)
+            if Ok and Api then
+                local Created, Probe = pcall(function() return Api.new("Line") end)
+                if Created and Probe then
+                    Probe.Visible = false
+                    Probe:Remove()
+                    DrawingApi = Api
+                end
+            end
+        end
+        local ActiveOccluders = {}
+
+        local function Subtract(Intervals, First, Last)
+            local Result = {}
+            for _, Interval in ipairs(Intervals) do
+                local A, B = Interval[1], Interval[2]
+                if Last <= A or First >= B then table.insert(Result, Interval)
+                else
+                    if First > A then table.insert(Result, { A, First }) end
+                    if Last < B then table.insert(Result, { Last, B }) end
+                end
+            end
+            return Result
+        end
+
+        -- Interval inside a convex, counterclockwise polygon. This is used
+        -- for both menu clipping and removing seams between body-part hulls.
+        local function InsideInterval(A, B, Polygon, Inset)
+            local First, Last = 0, 1
+            local DX, DY = B.X - A.X, B.Y - A.Y
+            for Index, P in ipairs(Polygon) do
+                local Q = Polygon[Index % #Polygon + 1]
+                local EX, EY = Q.X - P.X, Q.Y - P.Y
+                local F = EX * (A.Y - P.Y) - EY * (A.X - P.X) - (Inset or 0)
+                local D = EX * DY - EY * DX
+                if math.abs(D) < .00001 then
+                    if F < 0 then return nil end
+                elseif D > 0 then First = math.max(First, -F / D)
+                else Last = math.min(Last, -F / D) end
+                if First >= Last then return nil end
+            end
+            return First, Last
+        end
+
         local function DisposeLines(List)
             if not List then return end
             for _, Line in ipairs(List) do
@@ -655,6 +694,52 @@ return {
         local function MakeLines(Count, Color, Thickness)
             local List = {}
             for Index = 1, Count do
+                if DrawingApi then
+                    local Data = { Color = Color, Thickness = Thickness, Objects = {} }
+                    local function ObjectAt(I)
+                        if not Data.Objects[I] then
+                            local Object = DrawingApi.new("Line")
+                            Object.Transparency, Object.Visible = 1, false
+                            pcall(function() Object.ZIndex = Color == BLACK and 1 or 2 end)
+                            Data.Objects[I] = Object
+                        end
+                        return Data.Objects[I]
+                    end
+                    ObjectAt(1)
+                    Data.Remove = function()
+                        for _, Object in ipairs(Data.Objects) do Object:Remove() end
+                    end
+                    List[Index] = setmetatable({}, {
+                        __index = Data,
+                        __newindex = function(_, Key, Value)
+                            Data[Key] = Value
+                            if Key ~= "Visible" then return end
+                            local Intervals = {}
+                            if Value and Data.From and Data.To then
+                                Intervals = { { 0, 1 } }
+                                for _, Rect in ipairs(ActiveOccluders) do
+                                    local Pad = Data.Thickness * .5 + 1
+                                    local Polygon = {
+                                        Vector2.new(Rect[1]-Pad,Rect[2]-Pad), Vector2.new(Rect[3]+Pad,Rect[2]-Pad),
+                                        Vector2.new(Rect[3]+Pad,Rect[4]+Pad), Vector2.new(Rect[1]-Pad,Rect[4]+Pad),
+                                    }
+                                    local First, Last = InsideInterval(Data.From, Data.To, Polygon)
+                                    if First then Intervals = Subtract(Intervals, First, Last) end
+                                    if #Intervals == 0 then break end
+                                end
+                            end
+                            for I, Interval in ipairs(Intervals) do
+                                local Object = ObjectAt(I)
+                                local Delta = Data.To - Data.From
+                                Object.From = Data.From + Delta * Interval[1]
+                                Object.To = Data.From + Delta * Interval[2]
+                                Object.Color, Object.Thickness = Data.Color, Data.Thickness
+                                Object.Visible = true
+                            end
+                            for I = #Intervals + 1, #Data.Objects do Data.Objects[I].Visible = false end
+                        end,
+                    })
+                else
                 local Frame = Instance.new("Frame")
                 Frame.Name = "EspEdge"
                 Frame.BorderSizePixel = 0
@@ -676,26 +761,32 @@ return {
                 })
                 Data.Remove = function() Frame:Destroy() end
                 List[Index] = Line
+                end
             end
             return List
         end
 
         local function AddOutline(Entry, Target, C, Kind)
-            local Highlight = Instance.new("Highlight")
-            Highlight.Name = Kind
-            Highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-            Highlight.FillColor = C.Color
-            -- Keep a practically invisible fill pass active as well as the
-            -- outline, rather than relying on an outline-only render pass.
-            Highlight.FillTransparency = .999
-            Highlight.Enabled = false
-            Highlight.OutlineColor = C.Color
-            Highlight.OutlineTransparency = 0
-            Highlight.Adornee = Target
-            Highlight.Parent = Target
-            Entry.Highlight = Highlight
-            Entry.CountedOutline = true
-            S.OutlineCount += 1
+            -- DrawingLib Chams.lua projects actual body-part corners. Use those
+            -- same parts, with boundary lines instead of filled faces. Never
+            -- depend on a native Highlight pass to make outline mode visible.
+            local Parts = {}
+            for _, Part in ipairs(Target:GetDescendants()) do
+                if Part:IsA("BasePart") and Part.Name ~= "HumanoidRootPart" and Part.Transparency < 1 then
+                    local Parent, Excluded = Part.Parent, false
+                    while Parent and Parent ~= Target do
+                        if Kind ~= "Weapon" and (Parent:IsA("Accessory") or Parent:IsA("Tool")
+                            or Parent.Name == "Sword" or Parent.Name == "Sword2" or Parent.Name == "Weapon") then
+                            Excluded = true
+                            break
+                        end
+                        Parent = Parent.Parent
+                    end
+                    if not Excluded then table.insert(Parts, Part) end
+                    if #Parts >= 24 then break end
+                end
+            end
+            Entry.BodyParts = Parts
         end
 
         local function EnsureOutline(Entry, Target, C, Kind)
@@ -703,13 +794,13 @@ return {
             local InRange = Camera and Anchor and Anchor.Parent
                 and (Anchor.Position - Camera.CFrame.Position).Magnitude <= S.Settings.Range
                 and (not Entry.Humanoid or Entry.Humanoid.Health > 0)
-            if InRange and Entry.Highlight and Entry.Highlight.Parent == Target then return end
-            if Entry.Highlight then pcall(function() Entry.Highlight:Destroy() end) end
-            if Entry.CountedOutline then S.OutlineCount -= 1; Entry.CountedOutline = false end
-            Entry.Highlight = nil
-            -- Disabled and out-of-range Highlights still consume engine slots.
-            -- Do not allocate them for the whole map and starve nearby players.
-            if not InRange or S.OutlineCount >= OUTLINE_BUDGET then return end
+            if not InRange then
+                Entry.BodyParts = nil
+                DisposeLines(Entry.ContourLines)
+                DisposeLines(Entry.ContourShadow)
+                Entry.ContourLines, Entry.ContourShadow = nil, nil
+                return
+            end
             local Ok, Error = pcall(AddOutline, Entry, Target, C, Kind)
             if not Ok and not Entry.OutlineError then
                 warn("[AIC] ESP outline failed for " .. tostring(Target.Name) .. ": " .. tostring(Error))
@@ -903,7 +994,7 @@ return {
             local Measured = 0
             for Target, Entry in pairs(S.Entries) do
                 if Target.Parent and (Entry.BoxHeight == nil or not Entry.Anchor or not Entry.Anchor.Parent)
-                    and (Entry.Frame or Entry.BoxLines or Entry.TextParts or Entry.Highlight) then
+                    and (Entry.Frame or Entry.BoxLines or Entry.TextParts or Entry.BodyParts) then
                     if Measured >= MEASURE_PER_SCAN then break end
                     Measure(Target, Entry)
                     Measured += 1
@@ -953,6 +1044,92 @@ return {
             Line.To = Vector2.new(X2, Y2)
         end
 
+        local function Cross(A, B, C)
+            return (B.X-A.X)*(C.Y-A.Y) - (B.Y-A.Y)*(C.X-A.X)
+        end
+
+        local function ProjectHull(Part, Camera)
+            local Points = {}
+            for _, Corner in ipairs(CORNERS) do
+                local P = Camera:WorldToViewportPoint(Part.CFrame:PointToWorldSpace(Corner * Part.Size))
+                if P.Z <= .05 then return nil end
+                table.insert(Points, Vector2.new(P.X, P.Y))
+            end
+            table.sort(Points, function(A,B) return A.X < B.X or (A.X == B.X and A.Y < B.Y) end)
+            local Hull = {}
+            for _, P in ipairs(Points) do
+                while #Hull >= 2 and Cross(Hull[#Hull-1], Hull[#Hull], P) <= 0 do table.remove(Hull) end
+                table.insert(Hull, P)
+            end
+            local Lower = #Hull
+            for I = #Points-1, 1, -1 do
+                local P = Points[I]
+                while #Hull > Lower and Cross(Hull[#Hull-1], Hull[#Hull], P) <= 0 do table.remove(Hull) end
+                table.insert(Hull, P)
+            end
+            table.remove(Hull)
+            return #Hull >= 3 and Hull or nil
+        end
+
+        local function DrawContour(Entry, Camera, Show, Thickness)
+            Entry.ContourLines = Entry.ContourLines or {}
+            Entry.ContourShadow = Entry.ContourShadow or {}
+            local Hulls = {}
+            if Show then
+                for _, Part in ipairs(Entry.BodyParts or {}) do
+                    if Part.Parent then
+                        local Hull = ProjectHull(Part, Camera)
+                        if Hull then
+                            local X1,Y1,X2,Y2 = math.huge,math.huge,-math.huge,-math.huge
+                            for _, P in ipairs(Hull) do
+                                X1,Y1,X2,Y2 = math.min(X1,P.X),math.min(Y1,P.Y),math.max(X2,P.X),math.max(Y2,P.Y)
+                            end
+                            local Hidden = false
+                            for _, Rect in ipairs(ActiveOccluders) do
+                                if X1-Thickness>=Rect[1] and Y1-Thickness>=Rect[2]
+                                    and X2+Thickness<=Rect[3] and Y2+Thickness<=Rect[4] then Hidden=true; break end
+                            end
+                            if not Hidden then table.insert(Hulls, Hull) end
+                        end
+                    end
+                end
+            end
+            local Count, Color = 0, S.Kinds[Entry.Kind].Color
+            for Index, Hull in ipairs(Hulls) do
+                for I, A in ipairs(Hull) do
+                    local B = Hull[I % #Hull + 1]
+                    local Intervals = { {0,1} }
+                    for OtherIndex, Other in ipairs(Hulls) do
+                        if Index ~= OtherIndex then
+                            local First, Last = InsideInterval(A, B, Other, .0001)
+                            if First then Intervals = Subtract(Intervals, First, Last) end
+                            if #Intervals == 0 then break end
+                        end
+                    end
+                    for _, Interval in ipairs(Intervals) do
+                        local Delta = B - A
+                        local P, Q = A + Delta * Interval[1], A + Delta * Interval[2]
+                        if (Q-P).Magnitude >= .5 then
+                            Count += 1
+                            if not Entry.ContourLines[Count] then
+                                Entry.ContourShadow[Count] = MakeLines(1, BLACK, Thickness+2)[1]
+                                Entry.ContourLines[Count] = MakeLines(1, Color, Thickness)[1]
+                            end
+                            local Back, Line = Entry.ContourShadow[Count], Entry.ContourLines[Count]
+                            Back.Thickness, Line.Thickness, Line.Color = Thickness+2, Thickness, Color
+                            SetLine(Back, P.X, P.Y, Q.X, Q.Y)
+                            SetLine(Line, P.X, P.Y, Q.X, Q.Y)
+                            Back.Visible, Line.Visible = true, true
+                        end
+                    end
+                end
+            end
+            for I = Count+1, #Entry.ContourLines do
+                Entry.ContourLines[I].Visible = false
+                Entry.ContourShadow[I].Visible = false
+            end
+        end
+
         local function MenuBounds()
             local UI = Context.UI
             if UI and not UI.Destroyed and type(UI.GetOcclusionRects) == "function" then
@@ -974,10 +1151,9 @@ return {
 
         local function HideDrawings()
             for _, Entry in pairs(S.Entries) do
-                if Entry.Highlight then Entry.Highlight.Enabled = false end
                 if Entry.Frame then Entry.Frame.Visible = false end
                 if Entry.ShadowFrame then Entry.ShadowFrame.Visible = false end
-                for _, Lines in ipairs({ Entry.BoxLines or {}, Entry.BoxShadow or {} }) do
+                for _, Lines in ipairs({ Entry.BoxLines or {}, Entry.BoxShadow or {}, Entry.ContourLines or {}, Entry.ContourShadow or {} }) do
                     for _, Line in ipairs(Lines) do Line.Visible = false end
                 end
                 for _, Part in ipairs(Entry.TextParts or {}) do
@@ -1005,13 +1181,15 @@ return {
             local Viewport = Camera.ViewportSize
             local Range = S.Settings.Range
             local Occluders = MenuBounds()
+            ActiveOccluders = Occluders
+            local Outlined = 0
 
             for Target, Entry in pairs(S.Entries) do
                 local Frame, ShadowFrame = Entry.Frame, Entry.ShadowFrame
                 local TextParts = Entry.TextParts
                 local Lines, Shadow = Entry.BoxLines, Entry.BoxShadow
 
-                if Frame or TextParts or Lines or Entry.Highlight then
+                if Frame or TextParts or Lines or Entry.BodyParts or Entry.ContourLines then
                     local X1, Y1, X2, Y2
                     local Anchor = Entry.Anchor
                     local Distance = math.huge
@@ -1022,14 +1200,9 @@ return {
                     if Anchor and Anchor.Parent then
                         Distance = (Anchor.Position - CameraPosition).Magnitude
                         local Alive = not Entry.Humanoid or Entry.Humanoid.Health > 0
-                        if Entry.Highlight then
-                            Entry.Highlight.Enabled = Target.Parent ~= nil and Alive and Distance <= Range
-                        end
                         if Target.Parent and Alive and Entry.BoxHeight and Distance <= Range then
                             X1, Y1, X2, Y2 = ProjectUpright(Anchor.Position, Entry, Camera)
                         end
-                    elseif Entry.Highlight then
-                        Entry.Highlight.Enabled = false
                     end
 
                     --// Off-screen targets are hidden rather than moved, so a
@@ -1042,9 +1215,8 @@ return {
                     local Edge = Thickness + 2
                     -- Cull only a target completely covered by a window. Partial
                     -- overlap stays rendered below it, right up to its edge.
-                    if X1 and Covered(X1 - Edge, Y1 - Edge, X2 + Edge, Y2 + Edge, Occluders) then
+                    if X1 and not Entry.BodyParts and Covered(X1 - Edge, Y1 - Edge, X2 + Edge, Y2 + Edge, Occluders) then
                         X1 = nil
-                        if Entry.Highlight then Entry.Highlight.Enabled = false end
                     end
                     local TextSize = TextSizeFor()
                     local Style = Entry.BoxStyle or "Full"
@@ -1104,6 +1276,13 @@ return {
                             Frame.Visible = false
                             if ShadowFrame then ShadowFrame.Visible = false end
                         end
+                    end
+
+                    if Entry.BodyParts or Entry.ContourLines then
+                        local Show = X1 ~= nil and Entry.BodyParts ~= nil
+                            and (Outlined < OUTLINE_BUDGET or Entry.Owner == Player)
+                        if Show then Outlined += 1 end
+                        DrawContour(Entry, Camera, Show, Thickness)
                     end
 
                     -- Drawing and GUI text share the same top-aligned layout.
@@ -1208,7 +1387,6 @@ return {
             local Color = S.Kinds[Kind].Color
             for _, Entry in pairs(S.Entries) do
                 if Entry.Kind == Kind then
-                    if Entry.Highlight then Entry.Highlight.OutlineColor = Color end
                     if Entry.Stroke then Entry.Stroke.Color = Color end
                     if Entry.TextParts then
                         for _, Part in ipairs(Entry.TextParts) do
@@ -1352,7 +1530,6 @@ return {
             RenderConnection:Disconnect()
             Clear()
             if Root then Root:Destroy() end
-            if HighlightFolder then HighlightFolder:Destroy() end
         end)
 
         return Feature
