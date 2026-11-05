@@ -1313,9 +1313,39 @@ do
     state.Phase,state.SpotWaitUntil="Approach",1230
     assert(Context.AICFeature.BossRetreatStep(1225)==true and state.LastProgressAt==1225,"healing during spot wait could time out the stop")
     state.SpotWaitUntil,state.DuoWaitStartedAt=nil,nil
+    state.BestDistance=0
     assert(Context.AICFeature.BossRetreatStep(1226)==nil,"boss bounds constrained travel before reaching the stop")
+    assert(state.WalkStart==1226 and state.LastProgressAt==1226 and state.BestDistance==nil,
+        "retreat during initial travel counted toward a failed stop")
     state.Phase="Fight"; stop.Bounds=nil
-    assert(Context.AICFeature.BossRetreatStep(1227)==nil,"unbounded boss stop lost normal retreat")
+    assert(Context.AICFeature.BossRetreatStep(1227)==true,"unbounded boss retreat released the farm-zone fallback")
+    -- A long potion cooldown can pull the player far from a stop. Its travel
+    -- timers and old near-zero best distance must not survive that retreat.
+    nav.BeginStop(1230)
+    state.SpotWaitUntil=1231
+    state.BestDistance=0
+    root.Position=vec(1000,0,0)
+    for t=1230,1400,10 do
+        assert(Context.AICFeature.BossRetreatStep(t)==true,"unbounded healing did not own the frame")
+        assert(state.Phase=="Approach" and state.Index==1,"healing skipped the current stop")
+    end
+    assert(state.WalkStart==1400 and state.LastProgressAt==1400 and state.BestDistance==nil,
+        "healing kept old travel clocks or distance")
+    hum.Health=100
+    for i=0,3 do
+        root.Position=vec(1000-i*100,0,0)
+        nav.ApproachStep(stop,1401+i*10)
+        assert(state.Phase=="Approach" and state.Index==1,"return from healing was skipped as unreachable")
+        assert(state.LastProgressAt==1401+i*10,"return walk did not record progress from its new distance")
+    end
+    -- Genuine travel that makes no progress still keeps its normal timeout.
+    local oldStops=place.BOSS_ROUTE
+    place.BOSS_ROUTE={stop,table.clone(stop)}
+    nav.ApproachStep(stop,1452)
+    assert(state.Index==2,"healing fix disabled the timeout for a genuinely stuck return walk")
+    place.BOSS_ROUTE=oldStops
+    state.Index=1
+    root.Position=vec(0,0,0)
     stop.Bounds=bounds; Context.Feature.BossRoute.Enabled=false
     assert(Context.AICFeature.BossRetreatStep(1228)==nil,"disabled boss route restricted normal farming")
     hum.Health=100

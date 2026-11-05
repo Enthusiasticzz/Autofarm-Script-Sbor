@@ -2005,14 +2005,19 @@ return true
 end
 local function BossRetreatStep(Now)
 if not IsEnabled() then return nil end
+if S.Phase == "Approach" then
+S.LastProgressAt, S.WalkStart = Now, Now
+S.BestDistance = nil
+ResetWalk()
+end
 local AtStop = S.Phase == "Fight" or (S.Phase == "Approach"
 and (S.SpotWaitUntil ~= nil or S.DuoWaitStartedAt ~= nil))
 local Stop = AtStop and CurrentStop()
-if not Stop or not GetBoundsRect(Stop) then return nil end
+if not Stop then return nil end
+local Bounded = GetBoundsRect(Stop) ~= nil
 local _, Humanoid, RootPart = Runtime:GetCharacter()
 if not Humanoid or not RootPart then return nil end
-if S.Phase == "Approach" then S.LastProgressAt, S.WalkStart = Now, Now end
-if not InsideBounds(Stop, RootPart.Position, 0) then
+if Bounded and not InsideBounds(Stop, RootPart.Position, 0) then
 local Back = ClampToBounds(Stop, RootPart.Position, BOUNDS_INSET)
 AICCombatUtils.DoJumpIfObstacle(Back)
 Humanoid:MoveTo(Back)
@@ -2029,7 +2034,9 @@ RequireWeapon(Now)
 SetBlocking(true, Now)
 end
 local DuoWaiting = IsWaitingForDuo(RootPart, Now)
-SetStatus(string.format("STOP %d/%d  %sHEALING INSIDE FIGHT BOUNDS", S.Index, #GetStops(), DuoWaiting and "WAITING FOR DUO  " or ""))
+SetStatus(string.format("STOP %d/%d  %s%s", S.Index, #GetStops(),
+DuoWaiting and "WAITING FOR DUO  " or "",
+Bounded and "HEALING INSIDE FIGHT BOUNDS" or "HEALING  HOLDING CURRENT STOP"))
 return true
 end
 AICFeature.BossRetreatStep = BossRetreatStep

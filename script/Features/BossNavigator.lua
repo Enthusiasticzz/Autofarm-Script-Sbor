@@ -3229,18 +3229,27 @@ return {
         end
 
         -- Auto Farm's low-HP/skill retreat runs before BossStep. Own its
-        -- movement while at a bounded boss stop, leaving its heal/recovery
+        -- movement while at a boss stop, leaving its heal/recovery
         -- decisions intact and preventing its farm-zone fallback taking over.
         local function BossRetreatStep(Now)
             if not IsEnabled() then return nil end
+            -- Healing and skill evasion interrupt travel on purpose. Time
+            -- spent fleeing is not failed progress toward a path point. Drop
+            -- the old closest distance too, or the walk back can time out
+            -- before it gets as close as it was before the retreat.
+            if S.Phase == "Approach" then
+                S.LastProgressAt, S.WalkStart = Now, Now
+                S.BestDistance = nil
+                ResetWalk()
+            end
             local AtStop = S.Phase == "Fight" or (S.Phase == "Approach"
                 and (S.SpotWaitUntil ~= nil or S.DuoWaitStartedAt ~= nil))
             local Stop = AtStop and CurrentStop()
-            if not Stop or not GetBoundsRect(Stop) then return nil end
+            if not Stop then return nil end
+            local Bounded = GetBoundsRect(Stop) ~= nil
             local _, Humanoid, RootPart = Runtime:GetCharacter()
             if not Humanoid or not RootPart then return nil end
-            if S.Phase == "Approach" then S.LastProgressAt, S.WalkStart = Now, Now end
-            if not InsideBounds(Stop, RootPart.Position, 0) then
+            if Bounded and not InsideBounds(Stop, RootPart.Position, 0) then
                 local Back = ClampToBounds(Stop, RootPart.Position, BOUNDS_INSET)
                 AICCombatUtils.DoJumpIfObstacle(Back)
                 Humanoid:MoveTo(Back)
@@ -3257,7 +3266,9 @@ return {
                 SetBlocking(true, Now)
             end
             local DuoWaiting = IsWaitingForDuo(RootPart, Now)
-            SetStatus(string.format("STOP %d/%d  %sHEALING INSIDE FIGHT BOUNDS", S.Index, #GetStops(), DuoWaiting and "WAITING FOR DUO  " or ""))
+            SetStatus(string.format("STOP %d/%d  %s%s", S.Index, #GetStops(),
+                DuoWaiting and "WAITING FOR DUO  " or "",
+                Bounded and "HEALING INSIDE FIGHT BOUNDS" or "HEALING  HOLDING CURRENT STOP"))
             return true
         end
         AICFeature.BossRetreatStep = BossRetreatStep
