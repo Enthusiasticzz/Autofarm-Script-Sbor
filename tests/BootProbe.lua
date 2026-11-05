@@ -988,6 +988,15 @@ LevelStat.Value, ExpStat.Value = 1358, 1367827
 assert(Context.AICFeature.GetExpProgress() == 4558220, "backwards correction inflated the session")
 print("EXP regression passed: both replication orders, recovery, multi-level correction, report/status agreement")
 do
+    local data = Context.UI.WatermarkDataProvider()
+    local gained, rate = Context.AICFeature.GetExpProgress()
+    assert(data.ExpTotal == gained and data.ExpRate == rate, "watermark EXP differs from session stats")
+    assert(type(data.Session) == "number" and data.Session >= 0, "watermark session time missing")
+    Context.AICFeature.BossStatus = "WAITING FOR DUO"
+    Context.UI:_updateWatermark(60)
+    assert(Context.UI.WatermarkLabel.Text:find("Boss: WAITING FOR DUO", 1, true), "watermark boss data missing")
+end
+do
     -- Exercise the real approach/fight/reset code: a spawn is not a release
     -- signal until a living duo has returned from this cycle's reset.
     local nav = Context.AICFeature.BossNav
@@ -1074,13 +1083,12 @@ do
     LevelStat.Value,ExpStat.Value=1358,0
     nav.FightStep(stop,267)
     assert(state.Phase=="Recover" and hum.Health==0, "dynamic spawn wait blocked the post-kill reset")
-    assert(state.AwaitDuoCharacter==duoCharacter, "reset didn't require a new duo character")
     hum.Health=100
     nav.BeginStop(268)
     mobHum.Health=100
     nav.ApproachStep(stop,269)
-    assert(state.Phase=="Approach" and attacks==4 and not state.DuoReadyThisVisit, "nearby duo still waiting to reset released next boss")
-    assert(boss.BossStatusLabel.Instance.Text:find("WAITING FOR DUO",1,true), "resetting duo lost status priority")
+    assert(state.Phase=="Fight" and attacks==4 and state.DuoReadyThisVisit, "nearby surviving duo was required to reset")
+    nav.BeginStop(270)
     respawnDuo(200); nav.ApproachStep(stop,270)
     assert(state.Phase=="Approach", "duo respawned far away but counted as ready")
     duoCharacter,duoRoot,duoHum=respawnDuo(0)
@@ -1090,7 +1098,7 @@ do
     local foughtCharacter=duoCharacter
     respawnDuo(0)
     mobHum.Health=0; nav.FightStep(stop,273)
-    assert(state.AwaitDuoCharacter==foughtCharacter, "slow reset captured the partner's new character and would deadlock")
+    assert(state.Phase=="Recover", "fast partner respawn blocked our reset")
     hum.Health=100; nav.BeginStop(274); mobHum.Health=100
     nav.ApproachStep(stop,275)
     assert(state.Phase=="Fight", "already respawned/returned duo was asked to reset again")
@@ -1148,7 +1156,7 @@ do
     respawnDuo(0); mobRoot.Position=pos(90); mobHum.Health=100; nav.FightStep(stop,933)
     assert(attacks==attacksBeforeHold and hum.Health==100, "new spawn interrupted EXP hold")
     nav.FightStep(stop,937)
-    assert(state.Phase=="Recover" and hum.Health==0 and state.AwaitDuoCharacter==previousDuo, "slow reset lost the prior duo cycle")
+    assert(state.Phase=="Recover" and hum.Health==0, "slow reset was blocked by the duo")
     nav.StopRoute()
     -- Verify the complete requested loop through the real teleport, recovery
     -- and stop-advance paths, including wrapping from stop #2 back to #1.

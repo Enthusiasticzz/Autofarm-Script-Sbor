@@ -40,6 +40,27 @@ local TextService  = game:GetService("TextService")
 local rgb = Color3.fromRGB
 local Library = {}
 Library.__index = Library
+local WATERMARK_FIELDS = {
+	{ "Title", "Title" }, { "Username", "Username" }, { "FPS", "FPS" },
+	{ "Ping", "Ping" }, { "Clock", "Clock" }, { "Boss", "Boss status" },
+	{ "ExpRate", "Average EXP per hour" }, { "ExpTotal", "Session EXP gained" },
+	{ "Session", "Session length" },
+}
+
+function Library:GetWatermarkFields()
+	local fields = {}
+	for _, item in ipairs(WATERMARK_FIELDS) do
+		fields[item[1]] = not self.WatermarkFields or self.WatermarkFields[item[1]] ~= false
+	end
+	return fields
+end
+
+function Library:SetWatermarkField(key, value)
+	self.WatermarkFields = self:GetWatermarkFields()
+	self.WatermarkFields[key] = value == true
+	self:_updateWatermark(self._WatermarkFPS or 0)
+	self:_settingsChanged()
+end
 
 local ROOT_W, ROOT_H, SIDEBAR = 760, 500, 190
 local HEADER, MINI_W = 30, 250        -- top strip (minimize / close live here) and the width of the minimized bar
@@ -700,7 +721,8 @@ function Library:SetNotificationsEnabled(b)
 	self:_settingsChanged()
 end
 function Library:SetWatermark(b)
-	self.Watermark.Visible = b and true or false
+	self._WatermarkEnabled = b == true
+	self:_updateWatermark(self._WatermarkFPS or 0)
 	self:_settingsChanged()
 end
 function Library:SetKeybindList(b)
@@ -730,7 +752,8 @@ function Library:GetUISettings()
 		Notifications = not (self.Notifications and self.Notifications.Enabled == false),
 		NotificationPosition = type(self.Notifications and self.Notifications.Position) == "string"
 			and self.Notifications.Position or "Bottom right",
-		Watermark = self.Watermark ~= nil and self.Watermark.Visible == true,
+		Watermark = self._WatermarkEnabled == true,
+		WatermarkFields = self:GetWatermarkFields(),
 		KeybindList = self.KeybindFrame ~= nil and self.KeybindFrame.Visible == true,
 		Cursor = {
 			Mode = Cursor.Mode or "Menu open",
@@ -798,8 +821,15 @@ function Library:ApplyUISettings(Settings)
 	end
 
 	if type(Settings.Watermark) == "boolean" and self.Watermark then
-		self.Watermark.Visible = Settings.Watermark
+		self._WatermarkEnabled = Settings.Watermark
 	end
+	if type(Settings.WatermarkFields) == "table" then
+		self.WatermarkFields = {}
+		for _, item in ipairs(WATERMARK_FIELDS) do
+			self.WatermarkFields[item[1]] = Settings.WatermarkFields[item[1]] ~= false
+		end
+	end
+	self:_updateWatermark(self._WatermarkFPS or 0)
 
 	if type(Settings.KeybindList) == "boolean" and self.KeybindFrame then
 		self.KeybindFrame.Visible = Settings.KeybindList
@@ -2433,17 +2463,18 @@ function Library:Notify(o)
 end
 
 function Library:_buildWatermark()
-	local f = New("Frame", { AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0,26), AnchorPoint = Vector2.new(1,0), Position = UDim2.new(1,-12,0,12), BorderSizePixel = 0, Visible = false, Parent = self.Gui })
+	local f = New("Frame", { AutomaticSize = Enum.AutomaticSize.Y, Size = UDim2.fromOffset(600,0), AnchorPoint = Vector2.new(1,0), Position = UDim2.new(1,-12,0,12), BorderSizePixel = 0, Visible = false, Parent = self.Gui })
 	Round(f, 6)
 	self:Themed(f, { BackgroundColor3 = "Panel" })
 	self:Themed(Stroke(f), { Color = "Border" })
-	New("UIPadding", { PaddingLeft = UDim.new(0,10), PaddingRight = UDim.new(0,10), Parent = f })
-	local l = New("TextLabel", { BackgroundTransparency = 1, AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0,26), Font = Fonts.Medium, TextSize = 12, Text = "", Parent = f })
+	New("UIPadding", { PaddingTop = UDim.new(0,6), PaddingBottom = UDim.new(0,6), PaddingLeft = UDim.new(0,10), PaddingRight = UDim.new(0,10), Parent = f })
+	local l = New("TextLabel", { BackgroundTransparency = 1, AutomaticSize = Enum.AutomaticSize.Y, Size = UDim2.new(1,0,0,14), TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left, Font = Fonts.Medium, TextSize = 12, Text = "", Parent = f })
 	self:Themed(l, { TextColor3 = "Text" })
 	self.Watermark, self.WatermarkLabel = f, l
 	self:_updateWatermark(60)
 end
 function Library:_updateWatermark(fps)
+	self._WatermarkFPS = fps or 0
 	local ping = 0
 	pcall(function() ping = math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue()) end)
 	--// The strip names the person actually running the script. The loader
@@ -2457,7 +2488,28 @@ function Library:_updateWatermark(fps)
 		who = (lp.DisplayName ~= "" and lp.DisplayName) or lp.Name
 	end
 
-	self.WatermarkLabel.Text = string.format("%s  |  %s  |  %d fps  |  %d ms  |  %s", self.Title, who or self.Text.UserFallback, fps or 0, ping, os.date("%H:%M"))
+	local fields, parts = self:GetWatermarkFields(), {}
+	local data = {}
+	if self.WatermarkDataProvider then
+		local ok, result = pcall(self.WatermarkDataProvider)
+		if ok and type(result) == "table" then data = result end
+	end
+	local function add(key, text) if fields[key] then table.insert(parts, text) end end
+	add("Title", self.Title)
+	add("Username", who or self.Text.UserFallback)
+	add("FPS", string.format("%d fps", fps or 0))
+	add("Ping", string.format("%d ms", ping))
+	add("Clock", os.date("%H:%M"))
+	add("Boss", "Boss: " .. tostring(data.Boss or "IDLE"))
+	add("ExpRate", data.ExpRate and string.format("EXP/h: %.0f", data.ExpRate) or "EXP/h: waiting for stats")
+	add("ExpTotal", data.ExpTotal and string.format("EXP gained: %.0f", data.ExpTotal) or "EXP gained: waiting for stats")
+	local seconds = math.floor(math.max(0, tonumber(data.Session) or 0))
+	add("Session", string.format("Session: %02d:%02d:%02d", math.floor(seconds / 3600), math.floor(seconds / 60) % 60, seconds % 60))
+	self.WatermarkLabel.Text = table.concat(parts, "  |  ")
+	local camera = workspace.CurrentCamera
+	local width = camera and camera.ViewportSize.X or 800
+	self.Watermark.Size = UDim2.fromOffset(math.max(100, math.min(600, width - 24)), 0)
+	self.Watermark.Visible = self._WatermarkEnabled == true and #parts > 0
 end
 
 function Library:_buildKeybindList()
@@ -3333,7 +3385,7 @@ function Library:_BuildSettingsTab()
 	}
 	behavior:AddToggle{
 		Name = "Watermark",
-		Default = self.Watermark and self.Watermark.Visible or false,
+		Default = self._WatermarkEnabled == true,
 		Flag = "Watermark",
 		Callback = function(value) self:SetWatermark(value) end,
 	}
@@ -3343,6 +3395,15 @@ function Library:_BuildSettingsTab()
 		Flag = "KeybindList",
 		Callback = function(value) self:SetKeybindList(value) end,
 	}
+	local watermark = tab:AddSection{ Full = true, Title = "Watermark info" }
+	for _, item in ipairs(WATERMARK_FIELDS) do
+		local key = item[1]
+		watermark:AddToggle{
+			Name = item[2], Default = self:GetWatermarkFields()[key],
+			Flag = "Watermark" .. key,
+			Callback = function(value) self:SetWatermarkField(key, value) end,
+		}
+	end
 	behavior:AddKeybind{
 		Name = "Menu key",
 		Default = self.MenuKey or Enum.KeyCode.Insert,

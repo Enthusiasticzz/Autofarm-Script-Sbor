@@ -358,6 +358,16 @@ return {
             return Feature:GetExpProgress()
         end
 
+        Context.UI.WatermarkDataProvider = function()
+            local Gained, PerHour = Feature:GetExpProgress()
+            return {
+                Boss = AICFeature.BossStatus or "IDLE",
+                ExpRate = PerHour,
+                ExpTotal = Gained,
+                Session = Feature:GetElapsed(),
+            }
+        end
+
         --// When this session started, in whichever zone is picked now.
         function Feature:GetStartedClock()
             if self.S.StartedEpoch then

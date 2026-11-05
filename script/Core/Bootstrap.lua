@@ -260,6 +260,7 @@ return {
                 CONFIG.UI_NOTIFICATIONS = State.Notifications
                 CONFIG.UI_NOTIFICATION_POSITION = State.NotificationPosition
                 CONFIG.UI_WATERMARK = State.Watermark
+                CONFIG.UI_WATERMARK_FIELDS = State.WatermarkFields
                 CONFIG.UI_KEYBIND_LIST = State.KeybindList
                 CONFIG.UI_CURSOR = State.Cursor
             end
@@ -274,6 +275,7 @@ return {
                 Notifications = CONFIG.UI_NOTIFICATIONS,
                 NotificationPosition = CONFIG.UI_NOTIFICATION_POSITION,
                 Watermark = CONFIG.UI_WATERMARK,
+                WatermarkFields = CONFIG.UI_WATERMARK_FIELDS,
                 KeybindList = CONFIG.UI_KEYBIND_LIST,
                 Cursor = type(CONFIG.UI_CURSOR) == "table" and CONFIG.UI_CURSOR or nil,
             }

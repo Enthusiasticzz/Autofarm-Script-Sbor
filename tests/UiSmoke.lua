@@ -809,6 +809,32 @@ Check("settings: saved values are applied before the tab is built", function()
     Expect(state.Palette == "Forest", "the palette does not round trip")
 end)
 
+Check("watermark: live data, switches and saved fields", function()
+    win.WatermarkDataProvider = function()
+        return { Boss = "WAITING FOR DUO", ExpRate = 1200, ExpTotal = 400, Session = 3661 }
+    end
+    win:SetWatermark(true)
+    win:_updateWatermark(75)
+    local text = win.WatermarkLabel.Text
+    Expect(string.find(text, "WAITING FOR DUO", 1, true) ~= nil, "boss status missing")
+    Expect(string.find(text, "EXP/h: 1200", 1, true) ~= nil, "EXP average missing")
+    Expect(string.find(text, "Session: 01:01:01", 1, true) ~= nil, "session length missing")
+    for key in pairs(win:GetWatermarkFields()) do win:SetWatermarkField(key, false) end
+    Expect(win.WatermarkLabel.Text == "" and not win.Watermark.Visible, "empty watermark should hide")
+    local saved = win:GetUISettings()
+    Expect(saved.Watermark == true and saved.WatermarkFields.FPS == false, "master and field choices must persist")
+    win:ApplyUISettings(saved)
+    Expect(not win:GetWatermarkFields().Username, "hidden username must stay hidden")
+    win:SetWatermarkField("Boss", true)
+    Expect(win.WatermarkLabel.Text == "Boss: WAITING FOR DUO" and win.Watermark.Visible, "boss-only watermark failed")
+    win:SetWatermark(false)
+    win:SetWatermarkField("FPS", true)
+    Expect(not win.Watermark.Visible, "field switch must respect master switch")
+    win:ApplyUISettings{ WatermarkFields = {} }
+    Expect(win:GetWatermarkFields().FPS, "missing fields should default on")
+    win.WatermarkDataProvider = nil
+end)
+
 Check("settings: restore defaults", function()
     win:SetTextScale(1.4)
     win.AnimSpeed = 2

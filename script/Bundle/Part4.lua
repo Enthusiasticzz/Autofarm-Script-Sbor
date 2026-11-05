@@ -320,6 +320,7 @@ AICProfile.S.SelectedBossStopIndex = AICProfile.S.SelectedBossStopIndex or 1
 local LastStatus = ""
 local LastStatusTime = 0
 local function SetStatus(Text)
+AICFeature.BossStatus = tostring(Text)
 local Now = os.clock()
 if Text == LastStatus and Now - LastStatusTime < STATUS_INTERVAL then
 return

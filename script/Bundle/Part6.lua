@@ -929,6 +929,15 @@ end
 AICFeature.GetExpProgress = function()
 return Feature:GetExpProgress()
 end
+Context.UI.WatermarkDataProvider = function()
+local Gained, PerHour = Feature:GetExpProgress()
+return {
+Boss = AICFeature.BossStatus or "IDLE",
+ExpRate = PerHour,
+ExpTotal = Gained,
+Session = Feature:GetElapsed(),
+}
+end
 function Feature:GetStartedClock()
 if self.S.StartedEpoch then
 return ClockAt(self.S.StartedEpoch)

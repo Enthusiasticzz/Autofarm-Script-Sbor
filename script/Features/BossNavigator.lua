@@ -680,6 +680,7 @@ return {
         --// The status line, rewritten only when it changes or after
         --// STATUS_INTERVAL, so countdowns can be shown without churn.
         local function SetStatus(Text)
+            AICFeature.BossStatus = tostring(Text)
             local Now = os.clock()
 
             if Text == LastStatus and Now - LastStatusTime < STATUS_INTERVAL then

@@ -2691,6 +2691,7 @@ CONFIG.UI_MENU_ANIMATION = State.MenuAnimation
 CONFIG.UI_NOTIFICATIONS = State.Notifications
 CONFIG.UI_NOTIFICATION_POSITION = State.NotificationPosition
 CONFIG.UI_WATERMARK = State.Watermark
+CONFIG.UI_WATERMARK_FIELDS = State.WatermarkFields
 CONFIG.UI_KEYBIND_LIST = State.KeybindList
 CONFIG.UI_CURSOR = State.Cursor
 end
@@ -2704,6 +2705,7 @@ MenuAnimation = CONFIG.UI_MENU_ANIMATION,
 Notifications = CONFIG.UI_NOTIFICATIONS,
 NotificationPosition = CONFIG.UI_NOTIFICATION_POSITION,
 Watermark = CONFIG.UI_WATERMARK,
+WatermarkFields = CONFIG.UI_WATERMARK_FIELDS,
 KeybindList = CONFIG.UI_KEYBIND_LIST,
 Cursor = type(CONFIG.UI_CURSOR) == "table" and CONFIG.UI_CURSOR or nil,
 }
@@ -5120,6 +5122,14 @@ end },
 { Key = "UI_NOTIFICATIONS", Default = true },
 { Key = "UI_NOTIFICATION_POSITION", Default = "Bottom right", Options = { "Top left", "Top center", "Top right", "Bottom left", "Bottom right" } },
 { Key = "UI_WATERMARK", Default = false },
+{ Key = "UI_WATERMARK_FIELDS", Default = {}, Normalize = function(Value)
+local Result = {}
+local Source = type(Value) == "table" and Value or {}
+for _, Key in ipairs({ "Title", "Username", "FPS", "Ping", "Clock", "Boss", "ExpRate", "ExpTotal", "Session" }) do
+Result[Key] = Source[Key] ~= false
+end
+return Result
+end },
 { Key = "UI_KEYBIND_LIST", Default = false },
 { Key = "UI_CURSOR", Default = { Mode = "Menu open", Style = "Arrow", Size = 100, Effects = true, CustomEnabled = false, Color = "46A0FF" }, Normalize = function(Value)
 local Defaults = { Mode = "Menu open", Style = "Arrow", Size = 100, Effects = true, CustomEnabled = false, Color = "46A0FF" }

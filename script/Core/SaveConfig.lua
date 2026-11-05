@@ -409,6 +409,14 @@ return {
             { Key = "UI_NOTIFICATIONS", Default = true },
             { Key = "UI_NOTIFICATION_POSITION", Default = "Bottom right", Options = { "Top left", "Top center", "Top right", "Bottom left", "Bottom right" } },
             { Key = "UI_WATERMARK", Default = false },
+            { Key = "UI_WATERMARK_FIELDS", Default = {}, Normalize = function(Value)
+                local Result = {}
+                local Source = type(Value) == "table" and Value or {}
+                for _, Key in ipairs({ "Title", "Username", "FPS", "Ping", "Clock", "Boss", "ExpRate", "ExpTotal", "Session" }) do
+                    Result[Key] = Source[Key] ~= false
+                end
+                return Result
+            end },
             { Key = "UI_KEYBIND_LIST", Default = false },
             --// The menu cursor: when it shows, how it is drawn, its size, the
             --// click ripple, and the colour behind its own tick.
