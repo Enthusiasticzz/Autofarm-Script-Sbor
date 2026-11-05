@@ -338,6 +338,7 @@ return {
             { Key = "ESP_RANGE", Default = 900, Min = 100, Max = 2000 },
             --// Box look: a closed box or corner brackets.
             { Key = "ESP_BOX_STYLE", Default = "Full", Options = { "Full", "Corners" } },
+            { Key = "ESP_OUTLINE_RENDERER", Default = "Contour", Options = { "Contour", "Smooth" } },
 
         }
 

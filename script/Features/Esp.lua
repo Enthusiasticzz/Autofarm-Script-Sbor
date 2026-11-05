@@ -5,6 +5,8 @@
 -- and distance share one line below it. Drawing lines follow the readable
 -- Blissful reference implementations; menu rectangles clip only covered line
 -- segments. GUI labels and the no-Drawing fallback live below the menu layer.
+-- Optional Smooth mode uses native Highlight on body-only mesh copies; the
+-- original contour renderer stays the default and the creation-error fallback.
 --
 -- The box look follows the reference ESPs: a black backing behind a thinner
 -- coloured box, and corner brackets instead of a closed box if that style is
@@ -78,6 +80,7 @@ return {
                 AutoThickness = true,
                 Range = 900, -- studs; nothing past this is drawn
                 BoxStyle = "Full",
+                OutlineRenderer = "Contour",
             },
             Timer = 0,
             LabelRefresh = 0,
@@ -178,7 +181,13 @@ return {
             return false
         end
 
+        local function RemoveSmooth(Entry)
+            if Entry.SmoothModel then Entry.SmoothModel:Destroy() end
+            Entry.SmoothModel, Entry.SmoothHighlight, Entry.SmoothParts, Entry.SmoothActive = nil, nil, nil, nil
+        end
+
         local function Remove(Target, Entry)
+            RemoveSmooth(Entry)
             if Entry.Frame then pcall(function() Entry.Frame:Destroy() end) end
             if Entry.ShadowFrame then pcall(function() Entry.ShadowFrame:Destroy() end) end
             if Entry.TextParts then
@@ -223,6 +232,7 @@ return {
             S.Settings.AutoThickness = ReadSetting("ESP_AUTO_THICKNESS", S.Settings.AutoThickness) == true
             S.Settings.Range = ReadSetting("ESP_RANGE", S.Settings.Range)
             S.Settings.BoxStyle = BOX_STYLE_KEYS[ReadSetting("ESP_BOX_STYLE", nil) or ""] or "Full"
+            S.Settings.OutlineRenderer = ReadSetting("ESP_OUTLINE_RENDERER", "Contour") == "Smooth" and "Smooth" or "Contour"
 
             for _, Kind in ipairs(KINDS) do
                 local C = S.Kinds[Kind]
@@ -246,6 +256,7 @@ return {
             end
 
             if Controls.BoxStyle then Controls.BoxStyle:Set(BOX_STYLE_NAMES[S.Settings.BoxStyle], true) end
+            if Controls.OutlineRenderer then Controls.OutlineRenderer:Set(S.Settings.OutlineRenderer == "Smooth" and "Smooth (experimental)" or "Body contour", true) end
             if Controls.Thickness then Controls.Thickness:Set(S.Settings.Thickness, true) end
             if Controls.AutoThickness then Controls.AutoThickness:Set(S.Settings.AutoThickness, true) end
             if Controls.Range then Controls.Range:Set(S.Settings.Range, true) end
@@ -820,6 +831,7 @@ return {
                 and (Anchor.Position - Camera.CFrame.Position).Magnitude <= S.Settings.Range
                 and (not Entry.Humanoid or Entry.Humanoid.Health > 0)
             if not InRange then
+                RemoveSmooth(Entry)
                 Entry.BodyParts = nil
                 Entry.HullCache, Entry.Hulls = nil, nil
                 DisposeLines(Entry.ContourLines)
@@ -1180,6 +1192,77 @@ return {
             end
         end
 
+        -- Native Highlight follows the actual mesh silhouette. A separate,
+        -- body-only model excludes equipment without touching the live rig.
+        -- The contour renderer remains available if native rendering fails.
+        local SmoothFolder
+        local function DrawSmooth(Entry, Show)
+            if not Show then RemoveSmooth(Entry); return false end
+            if Entry.SmoothFailed then return false end
+            local Ok, Error = pcall(function()
+                if not SmoothFolder or not SmoothFolder.Parent then
+                    SmoothFolder = Instance.new("Folder")
+                    SmoothFolder.Name = "GildedEspBodies"
+                    SmoothFolder.Parent = workspace
+                end
+                if not Entry.SmoothModel then
+                    local Model = Instance.new("Model")
+                    Entry.SmoothModel, Entry.SmoothParts, Entry.SmoothActive = Model, {}, {}
+                    Model.Name = "EspBody"
+                    -- A humanoid lets the native character highlight pass handle
+                    -- nearly transparent body meshes; it never controls a rig.
+                    local Humanoid = Instance.new("Humanoid")
+                    Humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+                    Humanoid.EvaluateStateMachine = false
+                    Humanoid.Parent = Model
+                    local Highlight = Instance.new("Highlight")
+                    Highlight.Adornee = Model
+                    Highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                    Highlight.FillTransparency = 1
+                    Highlight.OutlineTransparency = 0
+                    Highlight.Enabled = false
+                    Highlight.Parent = Model
+                    Entry.SmoothHighlight = Highlight
+                end
+                local Parts, Active = Entry.SmoothParts, Entry.SmoothActive
+                table.clear(Active)
+                for _, Part in ipairs(Entry.BodyParts or {}) do
+                    if Part.Parent then
+                        Active[Part] = true
+                        local Copy = Parts[Part]
+                        if not Copy then
+                            Copy = assert(Part:Clone(), "body part cannot be cloned")
+                            Parts[Part] = Copy
+                            -- Keep mesh geometry only. No joints, effects,
+                            -- textures, equipment or scripts enter workspace.
+                            for _, Child in ipairs(Copy:GetDescendants()) do
+                                if not Child:IsA("DataModelMesh") and not Child:IsA("Bone") then Child:Destroy() end
+                            end
+                            Copy.Anchored, Copy.CanCollide, Copy.CanTouch, Copy.CanQuery = true, false, false, false
+                            Copy.CastShadow, Copy.LocalTransparencyModifier = false, 0
+                            Copy.Transparency = .99
+                            Copy.Material = Enum.Material.SmoothPlastic
+                            Copy.Parent = Entry.SmoothModel
+                        end
+                        Copy.CFrame, Copy.Size = Part.CFrame, Part.Size
+                    end
+                end
+                for Part, Copy in pairs(Parts) do
+                    if not Active[Part] then Copy:Destroy(); Parts[Part] = nil end
+                end
+                assert(next(Parts), "no body meshes to outline")
+                Entry.SmoothModel.Parent = SmoothFolder
+                Entry.SmoothHighlight.OutlineColor = S.Kinds[Entry.Kind].Color
+                Entry.SmoothHighlight.Enabled = true
+            end)
+            if not Ok then
+                RemoveSmooth(Entry)
+                Entry.SmoothFailed = true
+                warn("[AIC] Smooth ESP unavailable; using body contour: " .. tostring(Error))
+            end
+            return Ok
+        end
+
         local function MenuBounds()
             local UI = Context.UI
             if UI and not UI.Destroyed and type(UI.GetOcclusionRects) == "function" then
@@ -1201,6 +1284,7 @@ return {
 
         local function HideDrawings()
             for _, Entry in pairs(S.Entries) do
+                if Entry.SmoothHighlight then Entry.SmoothHighlight.Enabled = false end
                 if Entry.Frame then Entry.Frame.Visible = false end
                 if Entry.ShadowFrame then Entry.ShadowFrame.Visible = false end
                 for _, Lines in ipairs({ Entry.BoxLines or {}, Entry.BoxShadow or {}, Entry.ContourLines or {}, Entry.ContourShadow or {} }) do
@@ -1332,7 +1416,9 @@ return {
                         local Show = X1 ~= nil and Entry.BodyParts ~= nil
                             and (Outlined < OUTLINE_BUDGET or Entry.Owner == Player)
                         if Show then Outlined += 1 end
-                        DrawContour(Entry, Camera, Show, Thickness)
+                        local Smooth = S.Settings.OutlineRenderer == "Smooth" and DrawSmooth(Entry, Show)
+                        if S.Settings.OutlineRenderer ~= "Smooth" then RemoveSmooth(Entry) end
+                        DrawContour(Entry, Camera, Show and not Smooth, Thickness)
                     end
 
                     -- Drawing and GUI text share the same top-aligned layout.
@@ -1462,6 +1548,19 @@ return {
         if UIRef.EspTab then
             local SettingsSection = UIRef.EspTab:AddSection{ Title = "ESP Settings", Side = "Right", Description = "Visibility and overlay distance" }
 
+            Controls.OutlineRenderer = SettingsSection:AddDropdown{
+                Name = "Outline renderer",
+                Options = { "Body contour", "Smooth (experimental)" },
+                Default = S.Settings.OutlineRenderer == "Smooth" and "Smooth (experimental)" or "Body contour",
+                Description = "Smooth follows body meshes using Highlight. If it does not appear, choose Body contour to restore the working lines.",
+                Callback = function(Value)
+                    S.Settings.OutlineRenderer = Value == "Smooth (experimental)" and "Smooth" or "Contour"
+                    SaveSetting("ESP_OUTLINE_RENDERER", S.Settings.OutlineRenderer)
+                    Clear()
+                    S.Timer = SCAN_INTERVAL
+                end,
+            }
+
             Controls.BoxStyle = SettingsSection:AddDropdown{
                 Name = "Box style",
                 Options = BOX_STYLES,
@@ -1579,6 +1678,7 @@ return {
             end
             RenderConnection:Disconnect()
             Clear()
+            if SmoothFolder then SmoothFolder:Destroy() end
             if Root then Root:Destroy() end
         end)
 

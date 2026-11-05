@@ -5439,6 +5439,7 @@ Thickness = 1.5, -- box thickness at close range
 AutoThickness = true,
 Range = 900, -- studs; nothing past this is drawn
 BoxStyle = "Full",
+OutlineRenderer = "Contour",
 },
 Timer = 0,
 LabelRefresh = 0,
@@ -5516,7 +5517,12 @@ if IsEnabled(Kind) then return true end
 end
 return false
 end
+local function RemoveSmooth(Entry)
+if Entry.SmoothModel then Entry.SmoothModel:Destroy() end
+Entry.SmoothModel, Entry.SmoothHighlight, Entry.SmoothParts, Entry.SmoothActive = nil, nil, nil, nil
+end
 local function Remove(Target, Entry)
+RemoveSmooth(Entry)
 if Entry.Frame then pcall(function() Entry.Frame:Destroy() end) end
 if Entry.ShadowFrame then pcall(function() Entry.ShadowFrame:Destroy() end) end
 if Entry.TextParts then
@@ -5551,6 +5557,7 @@ S.Settings.Thickness = ReadSetting("ESP_THICKNESS", S.Settings.Thickness)
 S.Settings.AutoThickness = ReadSetting("ESP_AUTO_THICKNESS", S.Settings.AutoThickness) == true
 S.Settings.Range = ReadSetting("ESP_RANGE", S.Settings.Range)
 S.Settings.BoxStyle = BOX_STYLE_KEYS[ReadSetting("ESP_BOX_STYLE", nil) or ""] or "Full"
+S.Settings.OutlineRenderer = ReadSetting("ESP_OUTLINE_RENDERER", "Contour") == "Smooth" and "Smooth" or "Contour"
 for _, Kind in ipairs(KINDS) do
 local C = S.Kinds[Kind]
 local Style = ReadSetting(STYLE_KEYS[Kind], "Outline")
@@ -5569,6 +5576,7 @@ if Controls.Text[Kind] then Controls.Text[Kind]:Set(C.Label, true) end
 if Controls.Colors[Kind] then Controls.Colors[Kind]:Set(C.Color, true) end
 end
 if Controls.BoxStyle then Controls.BoxStyle:Set(BOX_STYLE_NAMES[S.Settings.BoxStyle], true) end
+if Controls.OutlineRenderer then Controls.OutlineRenderer:Set(S.Settings.OutlineRenderer == "Smooth" and "Smooth (experimental)" or "Body contour", true) end
 if Controls.Thickness then Controls.Thickness:Set(S.Settings.Thickness, true) end
 if Controls.AutoThickness then Controls.AutoThickness:Set(S.Settings.AutoThickness, true) end
 if Controls.Range then Controls.Range:Set(S.Settings.Range, true) end
@@ -6000,6 +6008,7 @@ local InRange = Camera and Anchor and Anchor.Parent
 and (Anchor.Position - Camera.CFrame.Position).Magnitude <= S.Settings.Range
 and (not Entry.Humanoid or Entry.Humanoid.Health > 0)
 if not InRange then
+RemoveSmooth(Entry)
 Entry.BodyParts = nil
 Entry.HullCache, Entry.Hulls = nil, nil
 DisposeLines(Entry.ContourLines)
@@ -6305,6 +6314,69 @@ Entry.ContourLines[I].Visible = false
 Entry.ContourShadow[I].Visible = false
 end
 end
+local SmoothFolder
+local function DrawSmooth(Entry, Show)
+if not Show then RemoveSmooth(Entry); return false end
+if Entry.SmoothFailed then return false end
+local Ok, Error = pcall(function()
+if not SmoothFolder or not SmoothFolder.Parent then
+SmoothFolder = Instance.new("Folder")
+SmoothFolder.Name = "GildedEspBodies"
+SmoothFolder.Parent = workspace
+end
+if not Entry.SmoothModel then
+local Model = Instance.new("Model")
+Entry.SmoothModel, Entry.SmoothParts, Entry.SmoothActive = Model, {}, {}
+Model.Name = "EspBody"
+local Humanoid = Instance.new("Humanoid")
+Humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+Humanoid.EvaluateStateMachine = false
+Humanoid.Parent = Model
+local Highlight = Instance.new("Highlight")
+Highlight.Adornee = Model
+Highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+Highlight.FillTransparency = 1
+Highlight.OutlineTransparency = 0
+Highlight.Enabled = false
+Highlight.Parent = Model
+Entry.SmoothHighlight = Highlight
+end
+local Parts, Active = Entry.SmoothParts, Entry.SmoothActive
+table.clear(Active)
+for _, Part in ipairs(Entry.BodyParts or {}) do
+if Part.Parent then
+Active[Part] = true
+local Copy = Parts[Part]
+if not Copy then
+Copy = assert(Part:Clone(), "body part cannot be cloned")
+Parts[Part] = Copy
+for _, Child in ipairs(Copy:GetDescendants()) do
+if not Child:IsA("DataModelMesh") and not Child:IsA("Bone") then Child:Destroy() end
+end
+Copy.Anchored, Copy.CanCollide, Copy.CanTouch, Copy.CanQuery = true, false, false, false
+Copy.CastShadow, Copy.LocalTransparencyModifier = false, 0
+Copy.Transparency = .99
+Copy.Material = Enum.Material.SmoothPlastic
+Copy.Parent = Entry.SmoothModel
+end
+Copy.CFrame, Copy.Size = Part.CFrame, Part.Size
+end
+end
+for Part, Copy in pairs(Parts) do
+if not Active[Part] then Copy:Destroy(); Parts[Part] = nil end
+end
+assert(next(Parts), "no body meshes to outline")
+Entry.SmoothModel.Parent = SmoothFolder
+Entry.SmoothHighlight.OutlineColor = S.Kinds[Entry.Kind].Color
+Entry.SmoothHighlight.Enabled = true
+end)
+if not Ok then
+RemoveSmooth(Entry)
+Entry.SmoothFailed = true
+warn("[AIC] Smooth ESP unavailable; using body contour: " .. tostring(Error))
+end
+return Ok
+end
 local function MenuBounds()
 local UI = Context.UI
 if UI and not UI.Destroyed and type(UI.GetOcclusionRects) == "function" then
@@ -6324,6 +6396,7 @@ return false
 end
 local function HideDrawings()
 for _, Entry in pairs(S.Entries) do
+if Entry.SmoothHighlight then Entry.SmoothHighlight.Enabled = false end
 if Entry.Frame then Entry.Frame.Visible = false end
 if Entry.ShadowFrame then Entry.ShadowFrame.Visible = false end
 for _, Lines in ipairs({ Entry.BoxLines or {}, Entry.BoxShadow or {}, Entry.ContourLines or {}, Entry.ContourShadow or {} }) do
@@ -6425,7 +6498,9 @@ if Entry.BodyParts or Entry.ContourLines then
 local Show = X1 ~= nil and Entry.BodyParts ~= nil
 and (Outlined < OUTLINE_BUDGET or Entry.Owner == Player)
 if Show then Outlined += 1 end
-DrawContour(Entry, Camera, Show, Thickness)
+local Smooth = S.Settings.OutlineRenderer == "Smooth" and DrawSmooth(Entry, Show)
+if S.Settings.OutlineRenderer ~= "Smooth" then RemoveSmooth(Entry) end
+DrawContour(Entry, Camera, Show and not Smooth, Thickness)
 end
 if TextParts then
 local Pad = 4 + Thickness
@@ -6531,6 +6606,18 @@ end
 end
 if UIRef.EspTab then
 local SettingsSection = UIRef.EspTab:AddSection{ Title = "ESP Settings", Side = "Right", Description = "Visibility and overlay distance" }
+Controls.OutlineRenderer = SettingsSection:AddDropdown{
+Name = "Outline renderer",
+Options = { "Body contour", "Smooth (experimental)" },
+Default = S.Settings.OutlineRenderer == "Smooth" and "Smooth (experimental)" or "Body contour",
+Description = "Smooth follows body meshes using Highlight. If it does not appear, choose Body contour to restore the working lines.",
+Callback = function(Value)
+S.Settings.OutlineRenderer = Value == "Smooth (experimental)" and "Smooth" or "Contour"
+SaveSetting("ESP_OUTLINE_RENDERER", S.Settings.OutlineRenderer)
+Clear()
+S.Timer = SCAN_INTERVAL
+end,
+}
 Controls.BoxStyle = SettingsSection:AddDropdown{
 Name = "Box style",
 Options = BOX_STYLES,
@@ -6640,6 +6727,7 @@ AICUI.RefreshEspSettings = nil
 end
 RenderConnection:Disconnect()
 Clear()
+if SmoothFolder then SmoothFolder:Destroy() end
 if Root then Root:Destroy() end
 end)
 return Feature
@@ -7106,275 +7194,6 @@ if UIRef.ServerSafetySection then
 UIRef.ServerSafetySection:AddNote("Kicks you out of the game when one player keeps joining yours")
 end
 return FollowerGuard
-end,
-}
-]======],
-	["Features/FpsBoost.lua"] = [======[
-return {
-Name = "FpsBoost",
-Dependencies = {"Runtime", "SaveConfig", "Components"},
-Start = function(Context)
-local FeatureState = Context.Feature
-local AICUI = Context.AICUI
-local AICCombatUtils = Context.AICCombatUtils
-local UIRef = Context.UIRef
-local Lighting = game:GetService("Lighting")
-local REAPPLY_INTERVAL = 5
-local SCAN_BATCH = 2000
-local FOG_END = 1e6
-local OBJECT_RULES = {
-{ Class = "ParticleEmitter", Props = { Enabled = false } },
-{ Class = "Trail", Props = { Enabled = false } },
-{ Class = "Beam", Props = { Enabled = false } },
-{ Class = "Smoke", Props = { Enabled = false } },
-{ Class = "Fire", Props = { Enabled = false } },
-{ Class = "Sparkles", Props = { Enabled = false } },
-{ Class = "Light", Props = { Enabled = false } },
-{ Class = "Explosion", Props = { Visible = false } },
-{ Class = "Decal", Props = { Transparency = 1 } },
-{ Class = "BasePart", Props = { CastShadow = false } },
-{ Class = "Clouds", Props = { Enabled = false } },
-{ Class = "PostEffect", Props = { Enabled = false } },
-{ Class = "Atmosphere", Props = { Density = 0, Haze = 0, Glare = 0 } },
-}
-local LIGHTING_PROPS = {
-GlobalShadows = false,
-FogEnd = FOG_END,
-ShadowSoftness = 0,
-EnvironmentDiffuseScale = 0,
-EnvironmentSpecularScale = 0,
-}
-local TERRAIN_PROPS = {
-WaterWaveSize = 0,
-WaterWaveSpeed = 0,
-WaterReflectance = 0,
-Decoration = false,
-}
-local S = {
-Saved = setmetatable({}, { __mode = "k" }),
-Connections = {},
-Token = 0,
-QualitySaved = nil,
-}
-local Feature = { Name = "FpsBoost", S = S }
-local function SetProp(Object, Property, Value)
-local Saved = S.Saved[Object]
-if not Saved then
-Saved = {}
-S.Saved[Object] = Saved
-end
-if Saved[Property] == nil then
-local Success, Current = pcall(function()
-return Object[Property]
-end)
-if not Success or Current == nil then
-return
-end
-Saved[Property] = Current
-end
-pcall(function()
-Object[Property] = Value
-end)
-end
-local function IsOurs(Object)
-local Folder = AICCombatUtils.S.DebugFolder
-return Folder ~= nil and (Object == Folder or Object:IsDescendantOf(Folder))
-end
-local function ApplyObject(Object)
-if typeof(Object) ~= "Instance" or not Object.Parent or IsOurs(Object) then
-return
-end
-for _, Rule in ipairs(OBJECT_RULES) do
-if Object:IsA(Rule.Class) then
-for Property, Value in pairs(Rule.Props) do
-SetProp(Object, Property, Value)
-end
-return
-end
-end
-end
-local function ApplyLighting()
-for Property, Value in pairs(LIGHTING_PROPS) do
-SetProp(Lighting, Property, Value)
-end
-local Terrain = workspace:FindFirstChildOfClass("Terrain")
-if Terrain then
-for Property, Value in pairs(TERRAIN_PROPS) do
-SetProp(Terrain, Property, Value)
-end
-end
-end
-local function SetQuality(Level)
-pcall(function()
-local Rendering = settings().Rendering
-if S.QualitySaved == nil then
-S.QualitySaved = Rendering.QualityLevel
-end
-Rendering.QualityLevel = Level
-end)
-end
-local function RestoreQuality()
-local Level = S.QualitySaved
-S.QualitySaved = nil
-if Level ~= nil then
-pcall(function()
-settings().Rendering.QualityLevel = Level
-end)
-end
-end
-local function ScanAll(Token, Roots)
-for _, Root in ipairs(Roots) do
-local List = Root:GetDescendants()
-for Index, Object in ipairs(List) do
-if S.Token ~= Token or not Context.Lifetime.Alive then
-return
-end
-ApplyObject(Object)
-if Index % SCAN_BATCH == 0 then
-task.wait()
-end
-end
-end
-end
-local STREAM_BATCH = 500
-local PendingObjects = {}
-local PendingScheduled = false
-local function FlushPending(Token)
-PendingScheduled = false
-if S.Token ~= Token or not FeatureState.FpsBoost.Enabled then
-return
-end
-local Batch = PendingObjects
-PendingObjects = {}
-for Index, Object in ipairs(Batch) do
-if S.Token ~= Token then
-return
-end
-if Index > STREAM_BATCH then
-for Rest = Index, #Batch do
-table.insert(PendingObjects, Batch[Rest])
-end
-break
-end
-if Object.Parent then
-ApplyObject(Object)
-end
-end
-if #PendingObjects > 0 and not PendingScheduled then
-PendingScheduled = true
-task.delay(0, FlushPending, Token)
-end
-end
-local function OnAdded(Object)
-if not FeatureState.FpsBoost.Enabled then
-return
-end
-table.insert(PendingObjects, Object)
-if not PendingScheduled then
-PendingScheduled = true
-task.delay(0, FlushPending, S.Token)
-end
-end
-function Feature.Enable()
-S.Token += 1
-local Token = S.Token
-Context.Lifetime.Disconnect(S.Connections)
-table.insert(S.Connections, workspace.DescendantAdded:Connect(OnAdded))
-table.insert(S.Connections, Lighting.DescendantAdded:Connect(OnAdded))
-ApplyLighting()
-SetQuality(Enum.QualityLevel.Level01)
-task.spawn(ScanAll, Token, { Lighting, workspace })
-task.spawn(function()
-while Context.Lifetime.Alive and S.Token == Token do
-task.wait(REAPPLY_INTERVAL)
-if Context.Lifetime.Alive and S.Token == Token then
-ApplyLighting()
-end
-end
-end)
-end
-function Feature.Disable()
-S.Token += 1
-Context.Lifetime.Disconnect(S.Connections)
-for Object, Saved in pairs(S.Saved) do
-for Property, Value in pairs(Saved) do
-pcall(function()
-Object[Property] = Value
-end)
-end
-end
-table.clear(S.Saved)
-table.clear(PendingObjects)
-RestoreQuality()
-end
-AICUI.BindFeatureToggle("FpsBoost", "FPS Boost", function(Enabled)
-if Enabled then
-Feature.Enable()
-else
-Feature.Disable()
-end
-end, UIRef.UtilitySection)
-if FeatureState.FpsBoost.Enabled then
-Feature.Enable()
-end
-Context.Lifetime.OnEnd(Feature.Disable)
-return Feature
-end,
-}
-]======],
-	["Features/IgnoreFarmZone.lua"] = [======[
-return {
-Name = "IgnoreFarmZone",
-IsFeature = true,
-Dependencies = {"Runtime", "SaveConfig", "Components"},
-Start = function(Context)
-local AICFeature = Context.AICFeature
-local AICCombat = Context.AICCombat
-local AICUI = Context.AICUI
-local UIRef = Context.UIRef
-local PatrolState = Context.PatrolState
-local Feature = {
-Name = "IgnoreFarmZone",
-IsFeature = true,
-}
-function Feature:Update()
-end
-AICUI.BindFeatureToggle("IgnoreFarmZone", "Ignore Farm Zone", function()
-AICCombat.S.ClosestTarget = nil
-table.clear(AICCombat.S.ValidMobs)
-table.clear(AICCombat.S.CombatGroupCache)
-AICCombat.ResetTargetReposition()
-AICFeature.S.DeadzoneEscapePosition = nil
-PatrolState.PatrolPosition = nil
-PatrolState.LastPatrolCalculateTime = 0
-AICFeature.S.FarmReturnPosition = nil
-AICFeature.S.LastFarmReturnCalculateTime = 0
-AICCombat.UpdateValidMobs()
-AICCombat.S.ClosestTarget = AICCombat.GetClosestGoblin()
-end, UIRef.NavigationSection)
-return Feature
-end,
-}
-]======],
-	["Features/JumpWhileFighting.lua"] = [======[
-return {
-Name = "JumpWhileFighting",
-IsFeature = true,
-Dependencies = {"Runtime", "SaveConfig", "Components"},
-Start = function(Context)
-local AICCombatUtils = Context.AICCombatUtils
-local AICUI = Context.AICUI
-local UIRef = Context.UIRef
-local Feature = {
-Name = "JumpWhileFighting",
-IsFeature = true,
-}
-function Feature:Update()
-end
-AICUI.BindFeatureToggle("JumpWhileFighting", "Jump While Fighting", function()
-AICCombatUtils.ResetStuckTracker()
-end, UIRef.CombatSection)
-return Feature
 end,
 }
 ]======],

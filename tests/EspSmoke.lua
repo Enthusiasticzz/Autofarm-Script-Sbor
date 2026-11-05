@@ -187,4 +187,78 @@ for _,p in ipairs(body) do
     assert(p.Parent==target and p.Name~="HumanoidRootPart","non-body mesh selected")
 end
 cleanup()
+-- Native rendering is optional; test lifecycle/geometry without claiming a GPU test.
+for _,p in ipairs(body) do
+    rawset(p,"Clone",function()
+        local copy=Instance.new("Part")
+        copy.Name=p.Name
+        local mesh=Instance.new("SpecialMesh",copy)
+        rawset(mesh,"IsA",function(_,kind) return kind=="DataModelMesh" end)
+        Instance.new("Script",copy)
+        Instance.new("Motor6D",copy)
+        return copy
+    end)
+end
+local menuRects = {}
+local startup = {IntroDone=true}
+local controls, config = {}, {}
+local section = {
+    AddDropdown=function(_,options) controls[options.Name]=options; return {Set=function() end} end,
+    AddSlider=function() return {Set=function() end} end,
+    AddToggle=function() return {Set=function() end} end,
+    AddColorPicker=function() return {Set=function() end} end,
+}
+local native=EspModule.Start({Services={Players=Players},Player=Players.LocalPlayer,
+    UIRef={EspTab={AddSection=function() return section end}},AICUI={},CONFIG=config,Startup=startup,
+    UI={GetOcclusionRects=function() return menuRects end},
+    Lifetime={OnEnd=function(fn) cleanup=fn end}})
+assert(native.S.Settings.OutlineRenderer=="Contour","experimental native renderer became the default")
+controls["Outline renderer"].Callback("Smooth (experimental)")
+assert(config.ESP_OUTLINE_RENDERER=="Smooth","renderer choice wasn't saved")
+native.S.Kinds.Player.Enabled=true
+native:Update(1); render()
+local entry=assert(native.S.Entries[target])
+local model=assert(entry.SmoothModel,"native body model wasn't created")
+assert(entry.SmoothHighlight.Enabled and entry.SmoothHighlight.Adornee==model,"native highlight is not targeting its body model")
+assert(visible(entry.ContourLines)==0,"native path double-draws contour")
+local n=0
+for source,copy in pairs(entry.SmoothParts) do
+    n+=1
+    assert(source.Parent==target and source.Name~="HumanoidRootPart","native renderer included equipment")
+    assert(copy.Parent==model and copy.CFrame==source.CFrame and copy.Size==source.Size,"native body pose is stale")
+    assert(copy.Anchored and not copy.CanCollide and not copy.CanTouch and not copy.CanQuery,"native proxy affects physics")
+    assert(copy:FindFirstChild("Script")==nil and copy:FindFirstChild("Motor6D")==nil,"native proxy retained behavior")
+    assert(#copy:GetChildren()==1,"native proxy discarded mesh geometry")
+end
+assert(n==20,"native body selection differs from contour")
+local pose=CFrame.new(torso.Position,.2)
+torso.CFrame=pose; render()
+assert(entry.SmoothParts[torso].CFrame==pose,"native body doesn't follow animation")
+menuRects={{397,260,403,280}}; render()
+assert(entry.SmoothHighlight.Enabled,"partial menu overlap disabled native body")
+startup.IntroDone=false; render()
+assert(not entry.SmoothHighlight.Enabled,"native highlight shows through intro")
+startup.IntroDone=true; render()
+assert(entry.SmoothHighlight.Enabled,"native highlight didn't resume after intro")
+native.S.Settings.Range=50; render()
+assert(entry.SmoothModel==nil and rawget(model,"_destroyed"),"out-of-range native body wasn't released")
+native.S.Settings.Range=900; render()
+model=assert(entry.SmoothModel,"native body didn't return when back in range")
+controls["Outline renderer"].Callback("Body contour")
+assert(rawget(model,"_destroyed"),"switching back leaked native body")
+native:Update(1); render()
+assert(visible(native.S.Entries[target].ContourLines)>0,"switching back lost working contour")
+controls["Outline renderer"].Callback("Smooth (experimental)")
+local originalNew=Instance.new
+Instance.new=function(class,...)
+    if class=="Highlight" then error("native pass unavailable") end
+    return originalNew(class,...)
+end
+native:Update(1); render()
+Instance.new=originalNew
+local failed=assert(native.S.Entries[target])
+assert(failed.SmoothFailed and failed.SmoothModel==nil,"failed native build leaked its proxy")
+assert(visible(failed.ContourLines)>0,"native creation failure erased the contour fallback")
+cleanup()
+print("ESP SMOOTH PASSED: body-only proxy, pose sync, intro, switching, failure fallback and cleanup (GPU appearance requires Roblox)")
 print("ESP SMOKE PASSED: reference boxes/corners, rotating body contours, menu segment clipping, GUI fallback, cleanup")
