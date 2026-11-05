@@ -3738,22 +3738,17 @@ return {
             local FinishingKill = CONFIG.BOSS_WAIT_FOR_SPAWN == true and S.KillAt ~= nil
             if FinishingKill then Target, Scanned = nil, false end
 
-            --// The scan is a snapshot of the room, not the game's health: a
-            --// boss that steps out of the engage radius, has its model swapped
-            --// for a phase, or loses its root for a frame disappears from it
-            --// while still alive. Treating that as a kill reset the character
-            --// in the middle of the fight (the free path fires a fifth of a
-            --// second after one missed scan). The mob already being fought is
-            --// kept instead - but only while the scan keeps finding it every
-            --// so often. A reference the scan never sees again is a body the
-            --// game has taken away (another player's kill, a corpse moved out
-            --// of the Mobs folder), not a boss still standing: holding it cost
-            --// nothing while it was alive and frozen the stop in FIGHT when it
-            --// was not, so the keep lapses after TARGET_KEEP_TIME.
+            -- The radius selects the initial encounter. A named boss already
+            -- being fought can chase us to the back of its room and stay outside
+            -- that circle. Keep it while its live model and root still exist;
+            -- scan age alone must not restart the stop and teleport to the door.
+            -- Unnamed encounters retain the short keep window. Removed models
+            -- cannot be kept indefinitely just because their old health is > 0.
             if not Target and not FinishingKill
                 and IsMobAlive(S.LastTarget)
                 and IsWantedTarget(S.LastTarget, Stop)
-                and Now - (S.TargetSeenAt or 0) <= TARGET_KEEP_TIME
+                and (Now - (S.TargetSeenAt or 0) <= TARGET_KEEP_TIME
+                    or (#Stop.Targets > 0 and IsStopTargetAlive(S.LastTarget)))
             then
                 Target = S.LastTarget
             end

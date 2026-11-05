@@ -1077,12 +1077,26 @@ do
     assert(attacks==3, "duo leaving range paused an admitted fight")
     duoRoot.Position=pos(0); nav.FightStep(stop,266)
     assert(attacks==4, "fight stopped after duo arrival")
+    -- Custodian can follow the player to the back of the room, outside the
+    -- stop's initial scan radius. An expired scan must not restart the visit.
+    local attacksBeforeRange = attacks
+    local teleportedBeforeRange = state.Teleported
+    local bossPosition = mobRoot.Position
+    mobRoot.Position = pos(stop.Radius + 100)
+    state.TargetSeenAt = 0
+    nav.FightStep(stop,266.1)
+    nav.FightStep(stop,266.2)
+    assert(state.Phase=="Fight" and state.LastTarget==mob and state.Teleported==teleportedBeforeRange,
+        "living boss outside scan radius restarted the stop or cleared teleport state")
+    assert(attacks==attacksBeforeRange+2, "boss outside initial radius was no longer fought")
+    attacks = attacksBeforeRange
     -- The old character was recorded during combat, before any slow EXP wait.
     assert(state.FightDuoCharacter==duoCharacter, "duo cycle wasn't recorded")
     mobHum.Health=0
     LevelStat.Value,ExpStat.Value=1358,0
     nav.FightStep(stop,267)
     assert(state.Phase=="Recover" and hum.Health==0, "dynamic spawn wait blocked the post-kill reset")
+    mobRoot.Position = bossPosition
     hum.Health=100
     nav.BeginStop(268)
     mobHum.Health=100

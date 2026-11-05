@@ -2329,7 +2329,8 @@ if FinishingKill then Target, Scanned = nil, false end
 if not Target and not FinishingKill
 and IsMobAlive(S.LastTarget)
 and IsWantedTarget(S.LastTarget, Stop)
-and Now - (S.TargetSeenAt or 0) <= TARGET_KEEP_TIME
+and (Now - (S.TargetSeenAt or 0) <= TARGET_KEEP_TIME
+or (#Stop.Targets > 0 and IsStopTargetAlive(S.LastTarget)))
 then
 Target = S.LastTarget
 end
