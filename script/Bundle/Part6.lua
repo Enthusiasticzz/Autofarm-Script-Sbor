@@ -241,6 +241,7 @@ StartLevel = nil,
 StartExp = nil,
 LastExpLevel = nil,
 LastExp = nil,
+SessionExpPosition = 0,
 SessionExpGained = 0,
 LastReportAt = nil,
 LastLabelUpdate = 0,
@@ -275,7 +276,9 @@ local Needed = AICUI.neededExp
 if type(Needed) ~= "function" or not Level or Level <= 0 then
 return nil
 end
-return math.max(0, math.floor(tonumber(Needed(Level)) or 0))
+local Value = tonumber(Needed(Level))
+if not Value or Value ~= Value or Value <= 0 or Value == math.huge then return nil end
+return math.floor(Value)
 end
 local function ReadExpSnapshot()
 local PlayerStats = GetPlayerStats()
@@ -289,7 +292,9 @@ return nil
 end
 local Level = tonumber(LevelStat.Value)
 local Exp = tonumber(ExpStat.Value)
-if not Level or not Exp then
+if not Level or not Exp or Level ~= Level or Exp ~= Exp
+or Level <= 0 or Level == math.huge or Level % 1 ~= 0
+or Exp < 0 or Exp == math.huge then
 return nil
 end
 return Level, Exp
@@ -389,6 +394,7 @@ self.S.StartLevel = StartLevel
 self.S.StartExp = StartExp
 self.S.LastExpLevel = StartLevel
 self.S.LastExp = StartExp
+self.S.SessionExpPosition = 0
 self.S.SessionExpGained = 0
 self.S.LastLabelUpdate = 0
 end
@@ -405,24 +411,17 @@ if PreviousLevel == nil or PreviousExp == nil then
 self.S.LastExpLevel, self.S.LastExp = Level, Exp
 return true
 end
-local Added = 0
-if Level == PreviousLevel then
-Added = math.max(0, Exp - PreviousExp)
-elseif Level > PreviousLevel then
-local PreviousNeeded = NeededExp(PreviousLevel)
-if PreviousNeeded then
-Added += math.max(0, PreviousNeeded - PreviousExp)
-end
-for Passed = PreviousLevel + 1, Level - 1 do
+local Added = Exp - PreviousExp
+if Level ~= PreviousLevel then
+local Direction = Level > PreviousLevel and 1 or -1
+for Passed = math.min(Level, PreviousLevel), math.max(Level, PreviousLevel) - 1 do
 local Needed = NeededExp(Passed)
-if not Needed then
-break
+if not Needed then return false end
+Added += Direction * Needed
 end
-Added += Needed
 end
-Added += math.max(0, Exp)
-end
-self.S.SessionExpGained += Added
+self.S.SessionExpPosition = (self.S.SessionExpPosition or 0) + Added
+self.S.SessionExpGained = math.max(0, self.S.SessionExpPosition)
 self.S.LastExpLevel, self.S.LastExp = Level, Exp
 return true
 end
@@ -434,8 +433,8 @@ if not self:ObserveExp() then
 return nil
 end
 local Gained = math.max(0, tonumber(self.S.SessionExpGained) or 0)
-local Minutes = self:GetElapsed() / 60
-local PerHour = Minutes > 0 and Gained / Minutes * 60 or 0
+local Seconds = self:GetElapsed()
+local PerHour = Seconds > 0 and Gained * 3600 / Seconds or 0
 return Gained, PerHour
 end
 AICFeature.GetExpProgress = function()

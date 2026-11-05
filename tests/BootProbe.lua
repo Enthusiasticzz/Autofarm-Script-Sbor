@@ -891,4 +891,62 @@ assert(StatusRate and StatusRate:find("AVG EXP / HOUR  1,930,", 1, true), "statu
 Context.AICUI.UpdateExpRates()
 assert(Webhook.S.SessionExpGained == 3511335, "repainting status counted the gain twice")
 
+-- EXP can reset one replication tick before Level advances. This exact
+-- sequence used to report 10,028,177 instead of the endpoint gain 4,558,220.
+LevelStat.Value, ExpStat.Value = 1357, 2346164
+Webhook:ResetSession()
+Webhook.GetElapsed = function() return 3963 end
+LevelStat.Value, ExpStat.Value = 1357, 5469957
+Webhook:ObserveExp()
+ExpStat.Value = 0
+Webhook:ObserveExp()
+LevelStat.Value = 1358
+Webhook:ObserveExp()
+ExpStat.Value = 1367827
+local FixedGain, FixedRate = Context.AICFeature.GetExpProgress()
+assert(FixedGain == 4558220, "split level-up counted EXP twice: " .. tostring(FixedGain))
+assert(math.floor(FixedRate) == 4140699, "hourly average doesn't use corrected total and seconds")
+local FixedReport = Webhook:BuildReport("End")
+assert(FixedReport:find("**Session EXP Gained:** 4,558,220", 1, true), "report didn't use corrected gain")
+assert(FixedReport:find("**Average EXP / Hour:** 4,140,699", 1, true), "report didn't use corrected average")
+Context.AICUI.UpdateExpRates()
+assert(StatusGained == "SESSION EXP GAINED  4,558,220", "status panel didn't use corrected total")
+assert(StatusRate == "AVG EXP / HOUR  4,140,699", "status panel didn't use corrected average")
+
+-- The reverse replication order must converge to the same endpoint too.
+LevelStat.Value, ExpStat.Value = 1357, 2346164
+Webhook:ResetSession()
+ExpStat.Value = 5469957; Webhook:ObserveExp()
+LevelStat.Value = 1358; Webhook:ObserveExp()
+ExpStat.Value = 0; Webhook:ObserveExp()
+ExpStat.Value = 1367827
+assert(Context.AICFeature.GetExpProgress() == 4558220, "level-first replication counted EXP twice")
+
+-- A temporary reset below the starting bar must not count its recovery as
+-- profit. Repeated reports/status reads must not change the total either.
+LevelStat.Value, ExpStat.Value = 1358, 1367827
+Webhook:ResetSession()
+ExpStat.Value = 0
+assert(Context.AICFeature.GetExpProgress() == 0, "negative session progress wasn't hidden")
+ExpStat.Value = 1367927
+assert(Context.AICFeature.GetExpProgress() == 100, "recovery of the starting bar was counted as earned EXP")
+assert(Context.AICFeature.GetExpProgress() == 100, "re-reading status duplicated EXP")
+
+-- Skip several levels and cross backwards again; only endpoint progress is
+-- earned. A missing curve must leave the transition pending for a retry.
+LevelStat.Value, ExpStat.Value = 1357, 2346164
+Webhook:ResetSession()
+local Needed = Context.AICUI.neededExp
+Context.AICUI.neededExp = function(level)
+    if level == 1358 then return nil end
+    return Needed(level)
+end
+LevelStat.Value, ExpStat.Value = 1359, 50
+assert(Webhook:ObserveExp() == false, "missing curve committed a partial level transition")
+assert(Webhook.S.LastExpLevel == 1357 and Webhook.S.LastExp == 2346164, "missing curve discarded the previous snapshot")
+Context.AICUI.neededExp = Needed
+assert(Context.AICFeature.GetExpProgress() == Needed(1357) + Needed(1358) - 2346164 + 50, "multi-level gain is wrong")
+LevelStat.Value, ExpStat.Value = 1358, 1367827
+assert(Context.AICFeature.GetExpProgress() == 4558220, "backwards correction inflated the session")
+print("EXP regression passed: both replication orders, recovery, multi-level correction, report/status agreement")
 print("BOOT PROBE PASSED")

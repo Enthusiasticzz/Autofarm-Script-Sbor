@@ -46,6 +46,7 @@ return {
                 --// whole session report 0.
                 LastExpLevel = nil,
                 LastExp = nil,
+                SessionExpPosition = 0,
                 SessionExpGained = 0,
                 --// os.clock() of the last report, so a departure and the
                 --// teleport that follows it (or a toggle and a hop) post once.
@@ -100,12 +101,13 @@ return {
                 return nil
             end
 
-            return math.max(0, math.floor(tonumber(Needed(Level)) or 0))
+            local Value = tonumber(Needed(Level))
+            if not Value or Value ~= Value or Value <= 0 or Value == math.huge then return nil end
+            return math.floor(Value)
         end
 
-        --// Both values come from one PlayerStats read. Capturing them one at a
-        --// time can pair the level before a level-up with the EXP after it,
-        --// which would turn a single observed transition into a false gain.
+        --// Read both stats without yielding. Replication can still deliver the
+        --// bar reset and level separately; ObserveExp accounts for both orders.
         local function ReadExpSnapshot()
             local PlayerStats = GetPlayerStats()
 
@@ -123,7 +125,9 @@ return {
             local Level = tonumber(LevelStat.Value)
             local Exp = tonumber(ExpStat.Value)
 
-            if not Level or not Exp then
+            if not Level or not Exp or Level ~= Level or Exp ~= Exp
+                or Level <= 0 or Level == math.huge or Level % 1 ~= 0
+                or Exp < 0 or Exp == math.huge then
                 return nil
             end
 
@@ -283,6 +287,7 @@ return {
             self.S.StartExp = StartExp
             self.S.LastExpLevel = StartLevel
             self.S.LastExp = StartExp
+            self.S.SessionExpPosition = 0
             self.S.SessionExpGained = 0
             self.S.LastLabelUpdate = 0
         end
@@ -291,9 +296,12 @@ return {
             return math.max(0, os.clock() - (self.S.StartedAt or os.clock()))
         end
 
-        --// Add only forward movement between two real PlayerStats snapshots.
-        --// A death/reset can make the bar go backwards; session gain should
-        --// never be erased by that, and the next normal gain still counts.
+        --// Track signed progress from the start, including backwards samples.
+        --// EXP and Level replicate separately: ignoring a bar reset while still
+        --// advancing LastExp counted the same bar again on the next level tick.
+        --// Signed deltas telescope back to the actual endpoint in either order.
+        --// Keep the unclamped position so a temporary drop below the starting
+        --// bar cannot turn its recovery into additional earned EXP.
         function Feature:ObserveExp()
             local Level, Exp = ReadExpSnapshot()
 
@@ -308,32 +316,20 @@ return {
                 return true
             end
 
-            local Added = 0
-
-            if Level == PreviousLevel then
-                Added = math.max(0, Exp - PreviousExp)
-            elseif Level > PreviousLevel then
-                --// Finish the old bar, include any complete levels crossed,
-                --// then add the progress in the new level. Missing a bar is
-                --// safer than discarding the entire session: keep the
-                --// confirmed portion and resume from this snapshot.
-                local PreviousNeeded = NeededExp(PreviousLevel)
-                if PreviousNeeded then
-                    Added += math.max(0, PreviousNeeded - PreviousExp)
-                end
-
-                for Passed = PreviousLevel + 1, Level - 1 do
+            local Added = Exp - PreviousExp
+            if Level ~= PreviousLevel then
+                local Direction = Level > PreviousLevel and 1 or -1
+                for Passed = math.min(Level, PreviousLevel), math.max(Level, PreviousLevel) - 1 do
                     local Needed = NeededExp(Passed)
-                    if not Needed then
-                        break
-                    end
-                    Added += Needed
+                    -- Do not commit a partial transition. Retry the same pair
+                    -- once the curve is available instead of losing a bar.
+                    if not Needed then return false end
+                    Added += Direction * Needed
                 end
-
-                Added += math.max(0, Exp)
             end
 
-            self.S.SessionExpGained += Added
+            self.S.SessionExpPosition = (self.S.SessionExpPosition or 0) + Added
+            self.S.SessionExpGained = math.max(0, self.S.SessionExpPosition)
             self.S.LastExpLevel, self.S.LastExp = Level, Exp
             return true
         end
@@ -350,8 +346,8 @@ return {
             end
 
             local Gained = math.max(0, tonumber(self.S.SessionExpGained) or 0)
-            local Minutes = self:GetElapsed() / 60
-            local PerHour = Minutes > 0 and Gained / Minutes * 60 or 0
+            local Seconds = self:GetElapsed()
+            local PerHour = Seconds > 0 and Gained * 3600 / Seconds or 0
 
             return Gained, PerHour
         end
