@@ -37,7 +37,17 @@ local root=part("HumanoidRootPart",Vector3.new(0,0,100),Vector3.new(2,2,1),1)
 local torso=part("Torso",Vector3.new(0,0,100),Vector3.new(2,3,1))
 local head=part("Head",Vector3.new(0,2,100),Vector3.new(1.5,1.5,1.5))
 humanoid.RootPart=root
-rawset(target,"GetDescendants",function() return {root,torso,head} end)
+local descendants={root,torso,head}
+-- Clothes and weapons can be ordinary Models, not Accessories/Tools, and
+-- their meshes can even reuse a real body-part name. Neither should outline.
+for _,name in ipairs({"OutfitMesh","Blade","Cape"}) do
+    table.insert(descendants,part(name,torso.Position,torso.Size))
+end
+local armor=Instance.new("Model",target); armor.Name="Armor"
+local nestedBody=part("UpperTorso",torso.Position,torso.Size)
+nestedBody.Parent=armor
+table.insert(descendants,nestedBody)
+rawset(target,"GetDescendants",function() return descendants end)
 local owner=Instance.new("Player")
 owner.Name,owner.Character="OtherPlayer",target
 Players.GetPlayers=function() return {Players.LocalPlayer,owner} end
@@ -150,4 +160,22 @@ for _,draw in ipairs({false,true}) do
         cleanup(); assert(visible(lines)==0,"cleanup leaked Drawing objects")
     end
 end
+
+-- R6 and R15 names are supported without accepting arbitrary visible meshes.
+for _,name in ipairs({"UpperTorso","LowerTorso","LeftUpperArm","LeftLowerArm","LeftHand",
+    "RightUpperArm","RightLowerArm","RightHand","LeftUpperLeg","LeftLowerLeg","LeftFoot",
+    "RightUpperLeg","RightLowerLeg","RightFoot","Left Arm","Right Arm","Left Leg","Right Leg"}) do
+    table.insert(descendants,part(name,torso.Position,torso.Size))
+end
+local cleanup
+local feature=EspModule.Start({Services={Players=Players},Player=Players.LocalPlayer,
+    UIRef={},AICUI={},CONFIG={},Lifetime={OnEnd=function(fn) cleanup=fn end}})
+feature.S.Kinds.Player.Enabled=true
+feature:Update(1)
+local body=assert(feature.S.Entries[target]).BodyParts
+assert(#body==20,"R6/R15 body allowlist omitted limbs or included equipment")
+for _,p in ipairs(body) do
+    assert(p.Parent==target and p.Name~="HumanoidRootPart","non-body mesh selected")
+end
+cleanup()
 print("ESP SMOKE PASSED: reference boxes/corners, rotating body contours, menu segment clipping, GUI fallback, cleanup")

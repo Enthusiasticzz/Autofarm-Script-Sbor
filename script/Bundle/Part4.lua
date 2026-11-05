@@ -5953,10 +5953,20 @@ end
 end
 return List
 end
+local PLAYER_BODY_PARTS = {
+Head = true, UpperTorso = true, LowerTorso = true,
+LeftUpperArm = true, LeftLowerArm = true, LeftHand = true,
+RightUpperArm = true, RightLowerArm = true, RightHand = true,
+LeftUpperLeg = true, LeftLowerLeg = true, LeftFoot = true,
+RightUpperLeg = true, RightLowerLeg = true, RightFoot = true,
+Torso = true, ["Left Arm"] = true, ["Right Arm"] = true,
+["Left Leg"] = true, ["Right Leg"] = true,
+}
 local function AddOutline(Entry, Target, C, Kind)
 local Parts = {}
 for _, Part in ipairs(Target:GetDescendants()) do
-if Part:IsA("BasePart") and Part.Name ~= "HumanoidRootPart" and Part.Transparency < 1 then
+local Allowed = Kind ~= "Player" or (Part.Parent == Target and PLAYER_BODY_PARTS[Part.Name] == true)
+if Allowed and Part:IsA("BasePart") and Part.Name ~= "HumanoidRootPart" and Part.Transparency < 1 then
 local Parent, Excluded = Part.Parent, false
 while Parent and Parent ~= Target do
 if Kind ~= "Weapon" and (Parent:IsA("Accessory") or Parent:IsA("Tool")
