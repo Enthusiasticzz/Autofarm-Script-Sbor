@@ -1688,4 +1688,121 @@ do
     Context.AICProfile.S.ActiveProfileName=oldActiveProfile
     print("SAFE EVADE RESET passed: all mob types, damage tags, clear window, reset, respawn, hiding travel, cancellation")
 end
+do
+    local nav=Context.AICFeature.BossNav
+    local state=nav.S
+    local api=Context.AICFeature
+    local oldCharacter=Context.Runtime.GetCharacter
+    local oldRoster=players.GetPlayers
+    local keys={"GetBlockStatus","IsBlockSettled","promptBlockPlayer","TeleportToPlace","LeaveGame","ReportHoldAction","ReportHoldLeave"}
+    local old={}
+    for _,key in ipairs(keys) do old[key]=api[key] end
+    local hum={Health=100,MaxHealth=100,WalkSpeed=16,Move=noop,MoveTo=noop}
+    local root={Position=Vector3.new(0,0,0)}
+    Context.Runtime.GetCharacter=function() return {},hum,root end
+    local other={Name="Second stranger",UserId=10002}
+    local roster={Context.Player,intruder}
+    players.GetPlayers=function() return roster end
+    local blocked,settled={},{}
+    local requests,hops,kicks=0,0,0
+    local reports={}
+    api.GetBlockStatus=function(id) return blocked[id] end
+    api.IsBlockSettled=function(player) return settled[player.UserId]==true end
+    api.promptBlockPlayer=function() requests+=1 end
+    api.TeleportToPlace=function() hops+=1 end
+    api.LeaveGame=function() kicks+=1 end
+    api.ReportHoldAction=function(kind,list,delay,details) reports[#reports+1]={kind=kind,delay=delay,details=details} end
+    api.ReportHoldLeave=function(_,_,details) reports[#reports+1]={kind="Stayed",details=details} end
+    Context.Feature.BossRoute.Enabled=true
+    Context.Feature.PauseForStrangers.Enabled=true
+    Context.CONFIG.BOSS_EVADE_BLOCK_HOP=true
+    Context.CONFIG.BOSS_EVADE_HOP_MIN=30
+    Context.CONFIG.BOSS_EVADE_HOP_MAX=30
+    Context.Runtime:GetPlaceConfig().BOSS_ROUTE={{Label="Block hop test",Position=root.Position,Path={},Targets={},Radius=100,EvadeBeforeReset=false}}
+    local function begin(t)
+        api.BossEvadeEnd(t,false)
+        state.Index=1
+        nav.BeginStop(t)
+        hum.Health=100
+        local requestsBefore,hopsBefore=requests,hops
+        api.BossEvadeStep(t)
+        assert(hum.Health==0,"block-hop skipped initial reset")
+        assert(requests==requestsBefore and hops==hopsBefore,"blocking or hopping started before hiding travel")
+        hum.Health=100
+        state.EvadeStage="Hold" -- reset/travel sequence covered in SAFE EVADE RESET above
+    end
+    local function count(kind)
+        local n=0; for _,report in ipairs(reports) do if report.kind==kind then n+=1 end end; return n
+    end
+    blocked[intruder.UserId]=nil
+    begin(4000); api.BossEvadeStep(4001)
+    assert(requests==0 and hops==0,"unknown block list was treated as unblocked")
+    blocked[intruder.UserId]=false
+    api.BossEvadeStep(4002)
+    assert(requests==1 and count("BlockRequested")==1,"unblocked stranger was not requested/logged once")
+    blocked[intruder.UserId]=true
+    api.BossEvadeStep(4003)
+    assert(state.EvadeHopUntil==nil,"optimistic block status bypassed settle check")
+    settled[intruder.UserId]=true
+    api.BossEvadeStep(4004)
+    assert(state.EvadeHopUntil==4034 and count("BlockConfirmed")==1,"hop delay did not start after confirmation")
+    api.BossEvadeStep(4033); assert(hops==0,"hop fired before configured delay")
+    api.BossEvadeStep(4034); api.BossEvadeStep(4035)
+    assert(hops==1 and count("BlockHop")==1,"hop or departure report duplicated")
+    roster={Context.Player}
+    api.BossEvadeStep(4036)
+    assert(state.Evading,"departing stranger cancelled an already committed server change")
+    roster={Context.Player,intruder}
+    api.S.Departing=false
+    api.BossEvadeStep(4045)
+    assert(hops==2 and count("BlockHop")==1,"hop retry did not reuse one report")
+    -- Already-blocked strangers retain the old hold/leave behavior.
+    begin(4100); api.BossEvadeStep(4101)
+    assert(count("AlreadyBlocked")==1 and state.EvadeWaitUntil,"already-blocked branch did not wait/log")
+    local deadline=state.EvadeWaitUntil
+    api.BossEvadeStep(deadline+1)
+    assert(kicks==1 and reports[#reports].details:find("already blocked",1,true),"already-blocked timeout did not kick with reason")
+    -- A departed stranger cancels a pending hop.
+    blocked[intruder.UserId]=false
+    begin(4500); api.BossEvadeStep(4501)
+    blocked[intruder.UserId]=true; api.BossEvadeStep(4502)
+    roster={Context.Player}
+    api.BossEvadeStep(4503)
+    assert(not state.Evading and hops==2,"stranger departure did not cancel hop")
+    -- Mixed groups: all initial statuses must be classified, all new blocks settled.
+    roster={Context.Player,intruder,other}
+    blocked[other.UserId]=false
+    begin(4600); api.BossEvadeStep(4601)
+    blocked[other.UserId]=true
+    api.BossEvadeStep(4602)
+    assert(not state.EvadeHopUntil,"mixed group ignored an unconfirmed block")
+    settled[other.UserId]=true
+    api.BossEvadeStep(4603)
+    assert(state.EvadeHopUntil==4633,"mixed group failed to start the delay")
+    Context.CONFIG.BOSS_EVADE_BLOCK_HOP=false
+    api.BossEvadeStep(4604)
+    assert(not state.EvadeHopUntil and state.EvadeWaitUntil,"toggle off failed to fall back to normal hiding")
+    Context.CONFIG.BOSS_EVADE_BLOCK_HOP=true
+    blocked[intruder.UserId]=nil; roster={Context.Player,intruder}
+    begin(4700); api.BossEvadeStep(4701)
+    api.BossEvadeStep(state.EvadeBlockDeadline+1)
+    assert(kicks==2 and count("BlockFailed")==1,"failed lookup was not bounded/reported")
+    api.BossEvadeEnd(5000,false); nav.StopRoute()
+    Context.CONFIG.BOSS_EVADE_BLOCK_HOP=false
+    Context.Feature.PauseForStrangers.Enabled=false
+    Context.Feature.BossRoute.Enabled=false
+    Context.Runtime.GetCharacter=oldCharacter; players.GetPlayers=oldRoster
+    for _,key in ipairs(keys) do api[key]=old[key] end
+    local already=Webhook:BuildReport("AlreadyBlocked",{{Name="Intruder",UserId=2}},nil,"Already blocked before this hold")
+    local hop=Webhook:BuildReport("BlockHop",{{Name="Intruder",UserId=2}},30,"Blocks confirmed; changing servers")
+    assert(already:find("Already Blocked",1,true) and already:find("(2)",1,true),"already-blocked webhook missing status/ID")
+    assert(hop:find("Changing Servers After Blocking",1,true) and hop:find("30 seconds",1,true),"hop webhook missing purpose/delay")
+    Context.CONFIG.BOSS_EVADE_HOP_MIN=30; Context.CONFIG.BOSS_EVADE_HOP_MAX=60
+    boss.EvadeHopMinBox:Set("bad")
+    assert(Context.CONFIG.BOSS_EVADE_HOP_MIN==30,"invalid min delay changed saved value")
+    boss.EvadeHopMaxBox:Set("-1")
+    assert(Context.CONFIG.BOSS_EVADE_HOP_MAX==0,"negative delay was not clamped")
+    boss.EvadeHopMaxBox:Set("60")
+    print("BLOCK-HOP passed: unknown status, confirmed blocks, mixed groups, delay, retry, cancellation, fallback and webhook content")
+end
 print("BOOT PROBE PASSED")

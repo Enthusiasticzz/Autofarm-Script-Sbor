@@ -452,6 +452,33 @@ the route resumes without resetting. Off keeps the immediate reset.
 
 #### Hiding Spots
 
+**Block New Strangers Then Hop**, under **Bosses → Pause For Strangers**, is
+off by default and saved per profile. It requires Pause For Strangers and the
+boss route. The normal reset (including a selected stop's Evade Before Reset
+option) and random hiding-spot travel happen first.
+
+- A stranger not already blocked is blocked using the normal Auto Block
+  confirmation flow. The script waits for confirmation before counting down
+  to a server change. Auto Confirm Block keeps its existing setting; a prompt
+  is not treated as a completed block.
+- **Hop Delay Min (s)** and **Hop Delay Max (s)** default to **30** and **60**.
+  One random delay is chosen per hold. Reversed values are ordered at runtime.
+- Strangers already blocked use the existing 2–3 minute hiding countdown:
+  leaving resumes the route; staying until it expires kicks the account.
+- Mixed groups wait for all required new blocks to settle before departure.
+  New arrivals do not reroll the chosen delay; pending confirmation pauses it.
+- A failed block-list lookup is unknown, not unblocked. Checks and block
+  requests retry at bounded rates. If blocking cannot be confirmed within a
+  normal hiding window, the account leaves with the failure reason.
+- Everyone leaving before departure cancels the hop. Switching this option
+  off before departure returns to the normal hold. It cannot undo a departure
+  that has already started.
+
+With webhooks enabled, **Log When Hiding** controls block-request, confirmed,
+failed and already-blocked updates. Server-change and timeout departure reports
+include the reason and player names/IDs even when hiding updates are off.
+The hop report includes the chosen delay; departure retries reuse its report.
+
 The list the hold picks from, saved on the place config (`BOSS_EVADE.Spots`)
 beside the route. Every hold takes one spot from it **at random**, and never the
 one the hold before it used, so the character does not reappear where a stranger

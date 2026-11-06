@@ -21,6 +21,7 @@ return {
 
     Start = function(Context)
         local Runtime = Context.Runtime
+        local CONFIG = Context.CONFIG
         local Player = Context.Player
         local Players = Context.Services.Players
         local AICConfig = Context.AICConfig
@@ -168,6 +169,10 @@ return {
         --// The hold starts: the route is parked, the fight dropped, and the
         --// reset fired. Nothing is walked or fought until it ends.
         local function BeginEvade(Now, OtherPlayer)
+            S.EvadeBlockPlayers, S.EvadeHopUntil, S.EvadeHopDelay = {}, nil, nil
+            S.EvadeBlockDeadline, S.EvadeBlockPoll, S.EvadeHopCommitted = nil, nil, false
+            S.EvadeBlockReason = nil
+            S.EvadeBlockOwns, S.EvadeBlockFailed, S.EvadeHopPausedAt = false, false, nil
             S.Evading = true
             S.EvadeName = tostring(OtherPlayer.Name)
             --// Kept beside the name so a report always has someone to name,
@@ -227,6 +232,8 @@ return {
             local Was = S.EvadeName
 
             S.Evading = false
+            S.EvadeBlockPlayers, S.EvadeHopUntil, S.EvadeBlockDeadline = {}, nil, nil
+            S.EvadeBlockReason, S.EvadeHopCommitted = nil, false
             S.EvadeName = ""
             S.EvadeId = nil
             S.EvadeStage = nil
@@ -531,7 +538,7 @@ return {
             --// one; the departure latch it sets keeps the kick's own report
             --// from repeating the same leave with a single name.
             if FirstAsk and AICFeature.ReportHoldLeave then
-                AICFeature.ReportHoldLeave(FindStrangers(), math.max(0, Now - (S.EvadeSince or Now)))
+                AICFeature.ReportHoldLeave(FindStrangers(), math.max(0, Now - (S.EvadeSince or Now)), S.EvadeBlockReason)
             end
 
             if AICFeature.LeaveGame then
@@ -542,6 +549,113 @@ return {
         --// The wait itself. Standing still, out of the fight, counting down;
         --// the stranger leaving ends it and a stranger still there when the
         --// window runs out closes the game.
+        local function BlockHopStep(Now)
+            if CONFIG.BOSS_EVADE_BLOCK_HOP ~= true and not S.EvadeHopCommitted then
+                S.EvadeBlockPlayers, S.EvadeHopUntil, S.EvadeBlockDeadline = {}, nil, nil
+                S.EvadeBlockReason = nil
+                S.EvadeBlockPoll, S.EvadeBlockOwns, S.EvadeBlockFailed, S.EvadeHopPausedAt = nil, false, false, nil
+                return false
+            end
+            if S.EvadeHopCommitted then
+                SetStatus("EVADING  CHANGING SERVERS")
+                if AICFeature.S and AICFeature.S.Departing then return true end
+                if Now >= (S.EvadeHopRetryAt or 0) then
+                    S.EvadeHopRetryAt = Now + 10
+                    if AICFeature.TeleportToPlace then AICFeature.TeleportToPlace(nil, S.EvadeHopWho) end
+                end
+                return true
+            end
+            if Now < (S.EvadeBlockPoll or 0) then return S.EvadeBlockOwns == true end
+            S.EvadeBlockPoll = Now + 1
+            local Live = FindStrangers()
+            S.EvadeBlockPlayers = S.EvadeBlockPlayers or {}
+            S.EvadeBlockDeadline = S.EvadeBlockDeadline or (Now + math.random(EVADE_WAIT_MIN, EVADE_WAIT_MAX))
+            local Pending, NewBlock, Who = false, false, nil
+            local function Report(Kind, Other, Details)
+                if AICFeature.ReportHoldAction then AICFeature.ReportHoldAction(Kind, {Other}, nil, Details) end
+            end
+            for _, Other in ipairs(Live) do
+                local Entry = S.EvadeBlockPlayers[Other.UserId]
+                if not Entry then Entry = {}; S.EvadeBlockPlayers[Other.UserId] = Entry end
+                local Ok, Blocked = false, nil
+                if AICFeature.GetBlockStatus then Ok, Blocked = pcall(AICFeature.GetBlockStatus, Other.UserId) end
+                if not Ok then Blocked = nil end
+                if Entry.Initial == nil and Blocked ~= nil then
+                    Entry.Initial = Blocked == true
+                    if Entry.Initial then Report("AlreadyBlocked", Other, "Already blocked before this hiding action; waiting for them to leave.") end
+                end
+                if Entry.Initial == false then
+                    NewBlock, Who = true, Who or Other
+                    local Settled = Blocked == true and AICFeature.IsBlockSettled and AICFeature.IsBlockSettled(Other) == true
+                    if Settled then
+                        if not Entry.Confirmed then
+                            Entry.Confirmed = true
+                            Report("BlockConfirmed", Other, "Block confirmed; preparing to change servers.")
+                        end
+                    else
+                        Pending = true
+                        if Entry.Confirmed then
+                            Entry.Confirmed = false
+                        end
+                        if Blocked == false and Now >= (Entry.RetryAt or 0) then
+                            Entry.RetryAt = Now + 10
+                            if AICFeature.promptBlockPlayer then
+                                AICFeature.promptBlockPlayer(Other)
+                                if not Entry.Requested then
+                                    Entry.Requested = true
+                                    Report("BlockRequested", Other, "Block requested; waiting for confirmation, not yet confirmed.")
+                                end
+                            end
+                        end
+                    end
+                elseif Entry.Initial == nil or Blocked == nil then
+                    Pending = true
+                end
+            end
+            if Pending then
+                if S.EvadeHopUntil then S.EvadeHopPausedAt = S.EvadeHopPausedAt or Now end
+                S.EvadeBlockOwns = true
+                if Now >= S.EvadeBlockDeadline then
+                    S.EvadeBlockReason = "Could not confirm block status or complete all required blocks."
+                    if not S.EvadeBlockFailed then
+                        S.EvadeBlockFailed = true
+                        if AICFeature.ReportHoldAction then AICFeature.ReportHoldAction("BlockFailed", Live, nil, S.EvadeBlockReason) end
+                    end
+                    AskToLeave(Now, Live[1])
+                else
+                    SetStatus("EVADING  CHECKING BLOCK STATUS / WAITING FOR BLOCK CONFIRMATION")
+                end
+                return true
+            end
+            if not NewBlock then
+                S.EvadeBlockOwns = false
+                S.EvadeBlockReason = "These strangers were already blocked; the normal hiding timer applies."
+                return false
+            end
+            if not S.EvadeHopDelay then
+                local Min = math.clamp(tonumber(CONFIG.BOSS_EVADE_HOP_MIN) or 30, 0, 86400)
+                local Max = math.clamp(tonumber(CONFIG.BOSS_EVADE_HOP_MAX) or 60, 0, 86400)
+                S.EvadeHopDelay = math.random(math.floor(math.min(Min, Max)), math.floor(math.max(Min, Max)))
+            end
+            S.EvadeHopUntil = S.EvadeHopUntil or (Now + S.EvadeHopDelay)
+            if S.EvadeHopPausedAt then
+                S.EvadeHopUntil += Now - S.EvadeHopPausedAt
+                S.EvadeHopPausedAt = nil
+            end
+            S.EvadeBlockOwns = true
+            if Now < S.EvadeHopUntil then
+                SetStatus(string.format("EVADING  BLOCK CONFIRMED  CHANGING SERVERS IN %ds", math.ceil(S.EvadeHopUntil - Now)))
+                return true
+            end
+            S.EvadeHopCommitted, S.EvadeHopWho, S.EvadeHopRetryAt = true, Who, Now + 10
+            if AICFeature.ReportHoldAction then
+                AICFeature.ReportHoldAction("BlockHop", SnapshotStrangers(Live), S.EvadeHopDelay,
+                    "Required blocks confirmed; changing servers from a saved hiding spot.")
+            end
+            if AICFeature.TeleportToPlace then AICFeature.TeleportToPlace(nil, Who) end
+            return true
+        end
+
         local function EvadeHoldStep(Now, Humanoid, RootPart)
             if Humanoid and RootPart and (tonumber(Humanoid.Health) or 0) > 0 then
                 Humanoid:Move(Vector3.zero)
@@ -549,6 +663,7 @@ return {
             end
 
             local Stranger = FindStranger()
+            if S.EvadeHopCommitted then return BlockHopStep(Now) end
 
             if not Stranger then
                 --// A leave asked for on the last frame is already under way.
@@ -570,6 +685,8 @@ return {
 
                 return true
             end
+
+            if BlockHopStep(Now) then return true end
 
             if not S.EvadeWaitUntil then
                 S.EvadeWaitTotal = math.random(EVADE_WAIT_MIN, EVADE_WAIT_MAX)
@@ -654,6 +771,8 @@ return {
 
                 S.EvadeStrangersAt = Now
             end
+
+            if S.EvadeHopCommitted then return BlockHopStep(Now) end
 
             if S.EvadeStage == "ClearExp" then
                 -- No reset has been sent yet, so a departing stranger can

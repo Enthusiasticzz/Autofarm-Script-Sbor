@@ -211,6 +211,9 @@ return {
             { Key = "BOSS_DEATH_FARM", Default = false },
             { Key = "BOSS_WAIT_FOR_SPAWN", Default = false },
             { Key = "BOSS_EVADE_SAFE_RESET", Default = false },
+            { Key = "BOSS_EVADE_BLOCK_HOP", Default = false },
+            { Key = "BOSS_EVADE_HOP_MIN", Default = 30, Min = 0, Max = 86400 },
+            { Key = "BOSS_EVADE_HOP_MAX", Default = 60, Min = 0, Max = 86400 },
             --// Holds every boss stop until the duo is beside the character,
             --// then starts that stop's Wait At Spot (0 included).
             { Key = "BOSS_DUO_SYNC", Default = false },

@@ -177,11 +177,14 @@ function AutoBlock:IsSafetyExempt(UserId)
 return Feature.WhitelistSkipsSafety.Enabled == true and self:IsWhitelisted(UserId)
 end
 function AutoBlock:IsBlocked(UserId)
+return self:GetBlockStatus(UserId) == true
+end
+function AutoBlock:GetBlockStatus(UserId)
 local Success, BlockedUserIds = pcall(function()
 return StarterGui:GetCore("GetBlockedUserIds")
 end)
-if not Success or not BlockedUserIds then
-return false
+if not Success or type(BlockedUserIds) ~= "table" then
+return nil
 end
 for _, BlockedUserId in BlockedUserIds do
 if BlockedUserId == UserId then
@@ -455,6 +458,9 @@ return AutoBlock:IsSafetyExempt(UserId)
 end
 AICFeature.isBlocked = function(UserId)
 return AutoBlock:IsBlocked(UserId)
+end
+AICFeature.GetBlockStatus = function(UserId)
+return AutoBlock:GetBlockStatus(UserId)
 end
 AICFeature.IsBlockSettled = function(OtherPlayer)
 return AutoBlock:IsBlockSettled(OtherPlayer)

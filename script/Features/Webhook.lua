@@ -455,11 +455,14 @@ return {
         --// strangers went before the hold ran out). Names lists the players
         --// the report is about; a report with nobody to name leaves that line
         --// out. Waited is how long a "Left" report waited on them.
-        function Feature:BuildReport(Kind, Names, Waited)
+        function Feature:BuildReport(Kind, Names, Waited, Details)
             --// Never capture a start here: a report sent at the end of a run
             --// would make the start equal the current totals and report zero.
             local Stayed = Kind == "Stayed"
-            local Ending = Kind == "End" or Stayed
+            local Ending = Kind == "End" or Stayed or Kind == "BlockHop"
+            local Actions = { BlockRequested = "Block Requested", BlockConfirmed = "Block Confirmed",
+                BlockFailed = "Block Not Confirmed", AlreadyBlocked = "Player Already Blocked",
+                BlockHop = "Changing Servers After Blocking" }
             local Waiting = Kind == "Waiting"
             local Left = Kind == "Left"
             local Currency = ReadCurrency()
@@ -482,7 +485,9 @@ return {
             --// when this session started.
             local Head
 
-            if Waiting then
+            if Actions[Kind] then
+                Head = "# " .. Actions[Kind] .. " at " .. ZoneClock()
+            elseif Waiting then
                 local Who = ShortNames(Names)
 
                 Head = "# Waiting For " .. (Who ~= "" and Who or "A Player")
@@ -501,6 +506,11 @@ return {
             end
 
             local Lines = { Head }
+            if Actions[Kind] then
+                table.insert(Lines, "Players: " .. NameList(Names))
+                if Kind == "BlockHop" then table.insert(Lines, "Hop delay: " .. tostring(tonumber(Waited) or 0) .. " seconds") end
+            end
+            if Details and Details ~= "" then table.insert(Lines, "Action: " .. tostring(Details)) end
             if Stayed then
                 table.insert(Lines, "Stopped at: " .. ZoneClock())
                 table.insert(Lines, "> Stop reason: The hiding timer expired because these players did not leave.")
@@ -667,7 +677,7 @@ return {
 
         --// Everything a report needs, or nil and why it cannot be made. The
         --// URL is checked first so an unconfigured hop stays silent.
-        local function BuildPayload(Kind, Names, Waited)
+        local function BuildPayload(Kind, Names, Waited, Details)
             local Url = Trim(CONFIG.DISCORD_WEBHOOK)
 
             if Url == "" then
@@ -693,7 +703,7 @@ return {
             end
 
             local Prefix = table.concat(Mentions, " ")
-            local Text = Feature:BuildReport(Kind, Names, Waited)
+            local Text = Feature:BuildReport(Kind, Names, Waited, Details)
             local Content = Prefix ~= "" and (Prefix .. "\n" .. Text) or Text
 
             local Ok, Body = pcall(function()
@@ -788,7 +798,7 @@ return {
         local HOLD_REPORT_WINDOW = 30
         local WAITING_REPORT_WINDOW = 8
 
-        function Feature:PostReport(Kind, Force, Names, Waited)
+        function Feature:PostReport(Kind, Force, Names, Waited, Details)
             if CONFIG.DISCORD_ENABLED == false then
                 return false
             end
@@ -841,7 +851,7 @@ return {
 
             --// The list, not what the caller passed: a single Player handed in
             --// by an older hook is counted as one entry here.
-            local Payload = BuildPayload(Kind, List, Waited)
+            local Payload = BuildPayload(Kind, List, Waited, Details)
 
             if not Payload then
                 return false
@@ -930,14 +940,23 @@ return {
         --// everyone who stayed, whether or not Log When Hiding is on. It also
         --// marks the departure as reported, so the kick that follows does not
         --// post the same leave again with a single name.
-        AICFeature.ReportHoldLeave = function(Strangers, Seconds)
-            local Posted = Feature:PostReport("Stayed", true, AsList(Strangers), tonumber(Seconds))
+        AICFeature.ReportHoldLeave = function(Strangers, Seconds, Details)
+            local Posted = Feature:PostReport("Stayed", true, AsList(Strangers), tonumber(Seconds), Details)
 
             if AICFeature.S ~= nil then
                 AICFeature.S.LeaveStarted = true
             end
 
             return Posted
+        end
+
+        AICFeature.ReportHoldAction = function(Kind, Strangers, Seconds, Details)
+            if Kind ~= "BlockHop" and CONFIG.DISCORD_HOLD_LOG == false then return false end
+            if Kind == "BlockHop" and AICFeature.S then
+                if AICFeature.S.LeaveStarted then return false end
+                AICFeature.S.LeaveStarted = true
+            end
+            return Feature:PostReport(Kind, true, AsList(Strangers), Seconds, Details)
         end
 
         local SessionLabel

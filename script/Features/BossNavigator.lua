@@ -1346,6 +1346,9 @@ return {
             if UIRef.BossResetModeDropdown then UIRef.BossResetModeDropdown:Set(GetResetMode(), true) end
             -- Duo preferences are profile settings, independent of the selected stop.
             if UIRef.BossDuoSyncToggle then UIRef.BossDuoSyncToggle:Set(CONFIG.BOSS_DUO_SYNC == true, true) end
+            if UIRef.EvadeBlockHopToggle then UIRef.EvadeBlockHopToggle:Set(CONFIG.BOSS_EVADE_BLOCK_HOP == true, true) end
+            if UIRef.EvadeHopMinBox then UIRef.EvadeHopMinBox:Set(tostring(CONFIG.BOSS_EVADE_HOP_MIN or 30), true) end
+            if UIRef.EvadeHopMaxBox then UIRef.EvadeHopMaxBox:Set(tostring(CONFIG.BOSS_EVADE_HOP_MAX or 60), true) end
             if UIRef.EvadeSafeResetToggle then
                 local Value = Stop and Stop.EvadeBeforeReset
                 if Value == nil then Value = CONFIG.BOSS_EVADE_SAFE_RESET == true end
@@ -5289,6 +5292,30 @@ return {
             )
 
             UIRef.EvadeSpotLabel = EvadeSection:AddLabel("HIDING SPOTS:  NONE")
+
+            UIRef.EvadeBlockHopToggle = EvadeSection:AddToggle{
+                Name = "Block New Strangers Then Hop",
+                Default = CONFIG.BOSS_EVADE_BLOCK_HOP == true,
+                Description = "After hiding, block new strangers and change servers after the chosen delay. Already-blocked strangers use the normal wait-or-kick timer. Uses the existing block confirmation settings.",
+                Callback = function(Value)
+                    CONFIG.BOSS_EVADE_BLOCK_HOP = Value == true
+                    if AICProfile.S.ActiveProfileName then AICProfile.SaveActiveProfile() end
+                end,
+            }
+            for _, Entry in ipairs({ { "Min", "BOSS_EVADE_HOP_MIN", 30 }, { "Max", "BOSS_EVADE_HOP_MAX", 60 } }) do
+                local Key, Default = Entry[2], Entry[3]
+                UIRef["EvadeHop" .. Entry[1] .. "Box"] = EvadeSection:AddTextBox{
+                    Name = "Hop Delay " .. Entry[1] .. " (s)", Numeric = true,
+                    Default = tostring(CONFIG[Key] or Default),
+                    Description = "Random delay after all required blocks are confirmed. The lower and higher values are used as min and max.",
+                    Callback = function(Value)
+                        local Number = tonumber(Value)
+                        if Number and Number == Number then CONFIG[Key] = math.clamp(Number, 0, 86400) end
+                        UIRef["EvadeHop" .. Entry[1] .. "Box"]:Set(tostring(CONFIG[Key] or Default), true)
+                        if AICProfile.S.ActiveProfileName then AICProfile.SaveActiveProfile() end
+                    end,
+                }
+            end
 
             UIRef.EvadeSafeResetToggle = UIRef.BossEditorSection:AddToggle{
                 Name = "Evade Before Reset",
