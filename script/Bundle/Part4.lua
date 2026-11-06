@@ -731,6 +731,9 @@ local Stop = SelectedStop()
 RefreshBoundsVisuals(GetStops())
 if UIRef.BossResetModeDropdown then UIRef.BossResetModeDropdown:Set(GetResetMode(), true) end
 if UIRef.BossDuoSyncToggle then UIRef.BossDuoSyncToggle:Set(CONFIG.BOSS_DUO_SYNC == true, true) end
+if UIRef.BossDuoAutoToggle then UIRef.BossDuoAutoToggle:Set(CONFIG.BOSS_DUO_AUTO_DETECT == true, true) end
+if UIRef.BossDuoNameBox then UIRef.BossDuoNameBox:SetDisabled(CONFIG.BOSS_DUO_AUTO_DETECT == true) end
+if UIRef.BossDuoDetectedLabel then UIRef.BossDuoDetectedLabel:Set(CONFIG.BOSS_DUO_AUTO_DETECT and "DETECTED DUO:  CHECKING SERVER" or "AUTO DETECT OFF") end
 if UIRef.EvadeBlockHopToggle then UIRef.EvadeBlockHopToggle:Set(CONFIG.BOSS_EVADE_BLOCK_HOP == true, true) end
 if UIRef.EvadeHopMinBox then UIRef.EvadeHopMinBox:Set(tostring(CONFIG.BOSS_EVADE_HOP_MIN or 30), true) end
 if UIRef.EvadeHopMaxBox then UIRef.EvadeHopMaxBox:Set(tostring(CONFIG.BOSS_EVADE_HOP_MAX or 60), true) end
@@ -1922,6 +1925,18 @@ local function TrimText(Value)
 return tostring(Value or ""):gsub("^%s*(.-)%s*$", "%1")
 end
 local function GetDuoName()
+if CONFIG.BOSS_DUO_AUTO_DETECT == true then
+local Pick
+for _, Other in ipairs(Players:GetPlayers()) do
+if Other ~= Player and AICFeature.IsWhitelisted and AICFeature.IsWhitelisted(Other.UserId) then
+if Other.UserId == S.AutoDuoId then Pick = Other; break end
+if not Pick or Other.UserId < Pick.UserId then Pick = Other end
+end
+end
+S.AutoDuoId = Pick and Pick.UserId or nil
+if UIRef.BossDuoDetectedLabel then UIRef.BossDuoDetectedLabel:Set("DETECTED DUO:  " .. (Pick and Pick.Name or "NONE IN SERVER")) end
+return Pick and Pick.Name or ""
+end
 local Name = TrimText(CONFIG.BOSS_DUO_NAME)
 if Name == "" then
 Name = TrimText(CONFIG.DISCORD_DUO)
@@ -1931,7 +1946,7 @@ end
 local function GetDuoRoot()
 local Name = GetDuoName()
 if Name == "" then
-return nil, "SET A DUO NAME"
+return nil, CONFIG.BOSS_DUO_AUTO_DETECT == true and "NO WHITELISTED DUO IN SERVER" or "SET A DUO NAME"
 end
 local Lower = string.lower(Name)
 local Match
@@ -2657,6 +2672,7 @@ AICUI.RefreshBossVisuals = RefreshBossVisuals
 Context.Lifetime.OnEnd(ClearBossVisuals)
 Context.Lifetime.OnEnd(ClearBoundsVisual)
 UIRef.BossSection = UIRef.BossTab:AddSection{ Title = "Route Controls", Side = "Left" }
+UIRef.BossDuoSection = UIRef.BossTab:AddSection{ Title = "Duos", Side = "Left" }
 UIRef.BossStopsSection = UIRef.BossTab:AddSection{ Title = "Boss Stops", Side = "Left" }
 UIRef.BossEditorSection = UIRef.BossTab:AddSection{ Title = "Selected Stop", Side = "Left" }
 UIRef.BossNamesSection = UIRef.BossTab:AddSection{ Title = "Boss Targets", Side = "Right" }
@@ -3206,7 +3222,7 @@ end
 Commit("BOSS STOP REMOVED #" .. tostring(Index))
 end,
 }
-UIRef.BossDuoSyncToggle = UIRef.BossSection:AddToggle{
+UIRef.BossDuoSyncToggle = UIRef.BossDuoSection:AddToggle{
 Name = "Duo Sync",
 Default = CONFIG.BOSS_DUO_SYNC == true,
 Description = "Wait for the duo to arrive once per stop visit. Moving away after arrival does not pause the fight or restart its wait timer.",
@@ -3220,16 +3236,31 @@ and "DUO SYNC  STOPS WAIT FOR THE DUO"
 or "DUO SYNC OFF")
 end,
 }
-UIRef.BossDuoNameBox = UIRef.BossSection:AddTextBox{
+UIRef.BossDuoAutoToggle = UIRef.BossDuoSection:AddToggle{
+Name = "Auto Detect Duo",
+Default = CONFIG.BOSS_DUO_AUTO_DETECT == true,
+Description = "Use another player in this server who is on your Block Whitelist. Keeps that player until they leave or are removed from the whitelist. If several match, picks the lowest UserId first.",
+Callback = function(Value)
+CONFIG.BOSS_DUO_AUTO_DETECT = Value == true
+S.AutoDuoId = nil
+S.DuoWaitStartedAt, S.DuoWaitReleased, S.DuoWaitName = nil, false, nil
+UIRef.BossDuoNameBox:SetDisabled(CONFIG.BOSS_DUO_AUTO_DETECT)
+if CONFIG.BOSS_DUO_AUTO_DETECT then GetDuoName() else UIRef.BossDuoDetectedLabel:Set("AUTO DETECT OFF") end
+SaveDuoSettings()
+end,
+}
+UIRef.BossDuoDetectedLabel = UIRef.BossDuoSection:AddLabel(CONFIG.BOSS_DUO_AUTO_DETECT and "DETECTED DUO:  CHECKING SERVER" or "AUTO DETECT OFF")
+UIRef.BossDuoNameBox = UIRef.BossDuoSection:AddTextBox{
 Name = "Duo Username",
 Inline = true,
 Default = TrimText(CONFIG.BOSS_DUO_NAME),
+Disabled = CONFIG.BOSS_DUO_AUTO_DETECT == true,
 Callback = function(Value)
 CONFIG.BOSS_DUO_NAME = TrimText(Value)
 SaveDuoSettings()
 end,
 }
-UIRef.BossDuoRangeBox = UIRef.BossSection:AddTextBox{
+UIRef.BossDuoRangeBox = UIRef.BossDuoSection:AddTextBox{
 Name = "Duo Range (studs)",
 Inline = true,
 Default = tostring(GetDuoRange()),
@@ -3248,8 +3279,8 @@ SaveDuoSettings()
 UIRef.BossDuoRangeBox:Set(tostring(CONFIG.BOSS_DUO_RANGE), true)
 end,
 }
-UIRef.BossSection:AddNote("Blank uses the Duo Username from Utility -> Webhook")
-UIRef.BossDuoTimeoutBox = UIRef.BossSection:AddTextBox{
+UIRef.BossDuoSection:AddNote("Manual mode: blank uses the Webhook Duo Username. Auto mode: the manual name is kept but disabled. Detection uses the Block Whitelist, not the webhook name.")
+UIRef.BossDuoTimeoutBox = UIRef.BossDuoSection:AddTextBox{
 Name = "Duo Wait (s)\n0 = forever",
 Inline = true,
 Default = tostring(GetDuoWaitTimeout()),

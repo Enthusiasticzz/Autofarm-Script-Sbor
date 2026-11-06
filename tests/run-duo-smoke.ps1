@@ -10,6 +10,9 @@ local S = {}
 local Player = {}
 local Members = {}
 local Players = { GetPlayers = function() return Members end }
+local UIRef = {}
+local Allowed = {}
+local AICFeature = { IsWhitelisted = function(id) return Allowed[id] == true end }
 local function TrimText(v) return tostring(v or ""):match("^%s*(.-)%s*$") end
 local function GetDuoRange() return CONFIG.BOSS_DUO_RANGE end
 local AICCombatUtils = { GetHorizontalDistance = function(a, b) return math.abs(a - b) end }
@@ -52,6 +55,28 @@ S = {}
 Members = { { Name = "Partner" } }
 assert(IsWaitingForDuo({ Position = 0 }, 12))
 assert(S.DuoWaitReason == "CHARACTER LOADING / NOT STREAMED")
+CONFIG.BOSS_DUO_AUTO_DETECT = true
+CONFIG.BOSS_DUO_WAIT_TIMEOUT = 0
+S = {}
+local a = Member("WhiteA", "A", 100, 150); a.UserId = 20
+local b = Member("WhiteB", "B", 100, 150); b.UserId = 10
+local stranger = Member("Stranger", "Random", 100, 0); stranger.UserId = 1
+Player.UserId = 0
+Allowed = { [0] = true, [20] = true, [10] = true }
+Members = { Player, stranger, a, b }
+assert(GetDuoName() == "WhiteB", "auto detection must exclude self/strangers and pick deterministically")
+assert(not IsWaitingForDuo({Position=0},20), "whitelisted duo in range was not admitted")
+local c = Member("WhiteC", "C", 100, 0); c.UserId = 5
+Allowed[5] = true; table.insert(Members,c)
+assert(GetDuoName() == "WhiteB", "a new arrival replaced the selected duo")
+Allowed[10] = nil
+assert(GetDuoName() == "WhiteC", "removing duo from whitelist did not select another candidate")
+Members = { Player, stranger }
+S = {}
+assert(IsWaitingForDuo({Position=0},21) and S.DuoWaitReason == "NO WHITELISTED DUO IN SERVER",
+    "auto detection fell back to a manual name or selected an unlisted player")
+CONFIG.BOSS_DUO_AUTO_DETECT = false
+assert(GetDuoName() == "Partner", "manual username was overwritten by detection")
 print("PASS: duo readiness, identity, diagnostics, arrival latch and timeout")
 '@
 $out = Join-Path $PSScriptRoot '_duo-harness.luau'

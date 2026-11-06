@@ -139,6 +139,19 @@ Check("AddButton / AddLabel / AddDivider", function()
     Expect(clicked == false, "button fired early")
 end)
 
+Check("textbox: disabled and restored editing", function()
+    local calls=0
+    local box=section:AddTextBox{ Name="Disabled entry", Default="Saved name", Disabled=true, Callback=function() calls+=1 end }
+    Expect(box.Disabled and not box.Box.TextEditable and box.Strike.Visible,"disabled textbox is not crossed out/uneditable")
+    box.Box.Text="Typed value"; box.Box.FocusLost:Fire()
+    Expect(box:Get()=="Saved name" and calls==0,"disabled textbox accepted user edits")
+    box:Set("Profile value",true)
+    Expect(box:Get()=="Profile value","disabled textbox rejected a silent profile refresh")
+    box:SetEnabled(true)
+    box.Box.Text="New name"; box.Box.FocusLost:Fire()
+    Expect(box:Get()=="New name" and calls==1 and not box.Strike.Visible,"textbox did not restore editing")
+end)
+
 Check("tab row + its description as a hover tip", function()
     local t = win.Tabs[1]
     Expect(t ~= nil and t.Label ~= nil, "no tab row")

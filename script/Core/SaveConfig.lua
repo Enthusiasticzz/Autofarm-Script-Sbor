@@ -217,6 +217,7 @@ return {
             --// Holds every boss stop until the duo is beside the character,
             --// then starts that stop's Wait At Spot (0 included).
             { Key = "BOSS_DUO_SYNC", Default = false },
+            { Key = "BOSS_DUO_AUTO_DETECT", Default = false },
             --// Who Duo Sync waits for; blank falls back to DISCORD_DUO.
             { Key = "BOSS_DUO_NAME", Default = "", Normalize = function(Value)
                 return type(Value) == "string" and Value:gsub("^%s*(.-)%s*$", "%1") or ""

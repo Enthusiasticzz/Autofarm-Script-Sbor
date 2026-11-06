@@ -2328,10 +2328,32 @@ function Section:AddTextBox(o, ...)
 	Round(tb, 6); New("UIPadding", { PaddingLeft = UDim.new(0,10), PaddingRight = UDim.new(0,10), Parent = tb })
 	win:Themed(tb, { BackgroundColor3 = "Element", TextColor3 = "Text", PlaceholderColor3 = "SubText" })
 	local st = Stroke(tb); win:_hover(tb, st); win:_focusStroke(tb, st)
-	local obj = {}
+	local strike = New("Frame", { Name = "DisabledStrike", BackgroundTransparency = .4,
+		BorderSizePixel = 0, Position = UDim2.new(0,8,.5,0), Size = UDim2.new(1,-16,0,1), Visible = false, ZIndex = tb.ZIndex + 1, Parent = tb })
+	win:Themed(strike, { BackgroundColor3 = "SubText" })
+	local obj = { Value = tostring(o.Default or ""), Disabled = false, Row = row, Strike = strike }
 	function obj:Get() return tb.Text end
-	function obj:Set(v, silent) tb.Text = v; if o.Flag then win:_setFlag(o.Flag, v) end if o.Callback and not silent then task.spawn(o.Callback, v) end end
-	tb.FocusLost:Connect(function() obj:Set(tb.Text) end)
+	function obj:Set(v, silent)
+		if self.Disabled and not silent then tb.Text = self.Value; return end
+		self.Value = tostring(v or "")
+		tb.Text = self.Value
+		if o.Flag then win:_setFlag(o.Flag, self.Value) end
+		if o.Callback and not silent then task.spawn(o.Callback, self.Value) end
+	end
+	function obj:SetDisabled(disabled)
+		self.Disabled = disabled == true
+		tb.TextEditable, tb.Active, tb.Selectable = not self.Disabled, not self.Disabled, not self.Disabled
+		tb.TextTransparency = self.Disabled and .55 or 0
+		tb.BackgroundTransparency = self.Disabled and .45 or 0
+		strike.Visible = self.Disabled
+		if self.Disabled then tb:ReleaseFocus(); tb.Text = self.Value end
+	end
+	function obj:SetEnabled(enabled) self:SetDisabled(not enabled) end
+	tb.FocusLost:Connect(function()
+		if obj.Disabled then tb.Text = obj.Value; return end
+		obj:Set(tb.Text)
+	end)
+	obj:SetDisabled(o.Disabled == true)
 	self:_register(o, obj)
 	obj.Box = tb
 	return obj

@@ -1475,10 +1475,14 @@ do
     boss.BossDuoRangeBox:Set("82")
     boss.BossDuoNameBox:Set("  PartnerPersist  ")
     boss.BossDuoTimeoutBox:Set("19")
+    boss.BossDuoAutoToggle:Set(true)
     local reloaded=profile.DeserializeConfigValue(assert(disk))
     local saved=reloaded.Profiles["Duo persistence"].SETTINGS
     assert(saved.BOSS_DUO_SYNC==true and saved.BOSS_DUO_RANGE==82,"Duo Sync/range didn't persist to the profile")
     assert(saved.BOSS_DUO_NAME=="PartnerPersist" and saved.BOSS_DUO_WAIT_TIMEOUT==19,"duo name/timeout didn't persist alongside sync/range")
+    assert(saved.BOSS_DUO_AUTO_DETECT==true and boss.BossDuoNameBox.Disabled,"auto-detect setting did not save or disable manual entry")
+    assert(boss.BossDuoSyncToggle.Row.Parent==boss.BossDuoSection.Frame and boss.BossDuoNameBox.Row.Parent==boss.BossDuoSection.Frame,
+        "duo controls were not moved into Duos")
     assert(writes>=4 and globalWrites==0,"Duo controls still saved into the wrong store")
     local writesBeforeLoad=writes
     local place=Context.Runtime:GetPlaceConfig()
@@ -1487,11 +1491,13 @@ do
     profile.ApplySettings({},place)
     Context.AICUI.RefreshBossRoutePickers()
     assert(boss.BossDuoSyncToggle:Get()==false and boss.BossDuoRangeBox:Get()=="35","default profile values weren't reflected in Duo controls")
+    assert(not boss.BossDuoNameBox.Disabled,"manual name stayed disabled after loading defaults")
     profile.ApplySettings(saved,place)
     Context.AICUI.RefreshBossRoutePickers()
     assert(Context.CONFIG.BOSS_DUO_SYNC==true and Context.CONFIG.BOSS_DUO_RANGE==82,"reconnect didn't restore Duo values")
     assert(boss.BossDuoSyncToggle:Get()==true and boss.BossDuoRangeBox:Get()=="82","loaded profile left Duo controls showing stale values")
     assert(boss.BossDuoNameBox:Get()=="PartnerPersist" and boss.BossDuoTimeoutBox:Get()=="19","loaded profile didn't refresh all Duo controls")
+    assert(boss.BossDuoAutoToggle:Get() and boss.BossDuoNameBox.Disabled,"restored auto detection did not disable the textbox")
     assert(writes==writesBeforeLoad,"refreshing Duo controls rewrote the profile")
     boss.BossDuoRangeBox:Set("invalid")
     assert(Context.CONFIG.BOSS_DUO_RANGE==82 and boss.BossDuoRangeBox:Get()=="82" and writes==writesBeforeLoad,"invalid range overwrote the saved range")

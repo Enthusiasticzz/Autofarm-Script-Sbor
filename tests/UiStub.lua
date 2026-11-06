@@ -490,6 +490,7 @@ end
 function InstanceMethods:GetFullName() return self.Name end
 function InstanceMethods:TweenPosition() end
 function InstanceMethods:TweenSize() end
+function InstanceMethods:ReleaseFocus() self.FocusLost:Fire(false) end
 
 local function FirePropSignal(inst, key)
     local signals = rawget(inst, "_propSignals")

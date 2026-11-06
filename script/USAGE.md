@@ -606,6 +606,19 @@ unlike the route above them.
   starts **Wait At Spot**; a stop with that wait at 0 still waits for them. The
   timer starts when they arrive, and stepping out and back restarts it. Uses
   **Duo Username** (blank falls back to the Webhook one).
+
+  All boss duo controls are under **Bosses → Duos**. **Auto Detect Duo**
+  (off by default, saved per profile) selects another player currently in the
+  server who is on your **Block Whitelist**. It ignores yourself and players
+  outside the whitelist. If several qualify, the first selection uses the
+  lowest UserId; that selection stays until they leave or lose whitelist
+  membership. The next eligible player is then detected automatically.
+  With nobody eligible, the status says **NO WHITELISTED DUO IN SERVER**.
+
+  Auto detection crosses out and disables the manual **Duo Username** box.
+  Its saved text is preserved and becomes editable again when auto detection
+  is turned off. The detected name is shown separately. Duo range, living
+  character checks, and the configured duo wait timeout still apply.
 - **Wait At Spot (s)** — seconds stood at the stop before the fight starts,
   **0 by default**. Raise it for a boss that spawns a moment after the walk
   arrives; at 0 the first swing is on the frame the stop is reached. It is

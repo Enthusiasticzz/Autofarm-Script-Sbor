@@ -5023,6 +5023,7 @@ SaveConfig.Settings = {
 { Key = "BOSS_EVADE_HOP_MIN", Default = 30, Min = 0, Max = 86400 },
 { Key = "BOSS_EVADE_HOP_MAX", Default = 60, Min = 0, Max = 86400 },
 { Key = "BOSS_DUO_SYNC", Default = false },
+{ Key = "BOSS_DUO_AUTO_DETECT", Default = false },
 { Key = "BOSS_DUO_NAME", Default = "", Normalize = function(Value)
 return type(Value) == "string" and Value:gsub("^%s*(.-)%s*$", "%1") or ""
 end },
